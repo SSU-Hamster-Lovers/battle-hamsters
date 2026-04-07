@@ -1,0 +1,61 @@
+name: Portal CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths: ['apps/portal/**']
+  pull_request:
+    branches: [main, develop]
+    paths: ['apps/portal/**']
+
+jobs:
+  lint:
+    name: ESLint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+        working-directory: apps/portal
+      - run: pnpm lint
+        working-directory: apps/portal
+
+  typecheck:
+    name: TypeScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+        working-directory: apps/portal
+      - run: pnpm typecheck
+        working-directory: apps/portal
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+        working-directory: apps/portal
+      - run: pnpm build
+        working-directory: apps/portal
