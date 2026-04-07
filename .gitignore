@@ -43,3 +43,6 @@ coverage/
 
 # Misc
 *.tsbuildinfo
+
+# AI Agentic Tools
+.kilo/
