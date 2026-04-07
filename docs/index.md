@@ -22,5 +22,6 @@
 
 ## 가이드
 
-- [설정 가이드](guides/setup.md)
-- [기ribution 가이드](guides/contribution.md)
+- [로컬 개발 환경 설정](guides/local-setup.md)
+- [서버 개발 가이드](guides/server-setup.md)
+- [기여 가이드](guides/contribution.md)
