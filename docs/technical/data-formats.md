@@ -32,12 +32,21 @@
     "height": 720
   },
   "spawnPoints": [
-    { "id": "spawn_a", "x": 120, "y": 360 },
-    { "id": "spawn_b", "x": 1160, "y": 360 }
+    { "id": "spawn_a", "x": 120, "y": 80 },
+    { "id": "spawn_b", "x": 1160, "y": 80 }
+  ],
+  "collision": [
+    { "id": "floor_left", "type": "floor", "leftX": 0, "rightX": 330, "topY": 540 },
+    { "id": "floor_right", "type": "floor", "leftX": 470, "rightX": 1280, "topY": 540 },
+    { "id": "platform_mid", "type": "one_way_platform", "leftX": 250, "rightX": 550, "topY": 380 },
+    { "id": "pit_wall_left", "type": "solid_wall", "x": 330, "topY": 540, "bottomY": 720 },
+    { "id": "pit_wall_right", "type": "solid_wall", "x": 470, "topY": 540, "bottomY": 720 }
+  ],
+  "hazards": [
+    { "id": "pit_fall_zone", "type": "fall_zone", "x": 330, "y": 540, "width": 140, "height": 180 },
+    { "id": "spike_strip_right", "type": "instant_kill_hazard", "x": 960, "y": 522, "width": 96, "height": 18 }
   ],
   "terrain": [],
-  "collision": [],
-  "hazards": [],
   "weaponSpawns": [
     {
       "id": "weapon_mid",
@@ -69,10 +78,51 @@
 
 | 필드 | 설명 |
 |------|------|
+| `spawnPoints` | 리스폰 위치 목록 |
+| `collision` | `floor | one_way_platform | solid_wall` primitive 목록 |
+| `hazards` | `fall_zone | instant_kill_hazard` rect 목록 |
 | `weaponSpawns` | 무기 생성 위치 및 소멸 규칙 |
 | `itemSpawns` | 아이템 생성 위치와 연출 |
 | `spawnStyle` | `airdrop | fade_in | triggered` |
 | `despawnStyle` | `shrink_pop` 등 디스폰 연출 |
+
+### 충돌 primitive 규칙
+
+- `floor`
+  - `id`
+  - `type: "floor"`
+  - `leftX`
+  - `rightX`
+  - `topY`
+- `one_way_platform`
+  - `id`
+  - `type: "one_way_platform"`
+  - `leftX`
+  - `rightX`
+  - `topY`
+- `solid_wall`
+  - `id`
+  - `type: "solid_wall"`
+  - `x`
+  - `topY`
+  - `bottomY`
+
+### hazard 규칙
+
+- `fall_zone`
+  - `id`
+  - `type: "fall_zone"`
+  - `x`
+  - `y`
+  - `width`
+  - `height`
+- `instant_kill_hazard`
+  - `id`
+  - `type: "instant_kill_hazard"`
+  - `x`
+  - `y`
+  - `width`
+  - `height`
 
 ## 무기 정의 포맷
 

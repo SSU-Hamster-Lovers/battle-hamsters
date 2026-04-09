@@ -1,8 +1,11 @@
 import Phaser from 'phaser'
 import type {
+  CollisionPrimitive,
+  HazardZone,
   JoinRoomMessage,
   PlayerInputMessage,
   PlayerSnapshot,
+  SpawnPoint,
   RoomSnapshotMessage,
   ServerToClientMessage,
   WorldSnapshotMessage,
@@ -17,16 +20,76 @@ const WS_URL =
 const PLAYER_NAME_STORAGE_KEY = 'battle-hamsters-player-name'
 const INPUT_SEND_INTERVAL_MS = 50
 const GROUND_TOP_Y = 540
+const FALL_ZONE_START_Y = GAME_HEIGHT + 100
+const FALL_ZONE_HEIGHT = 220
 const GROUND_HEIGHT = GAME_HEIGHT - GROUND_TOP_Y
 const PIT_LEFT_X = 330
 const PIT_RIGHT_X = 470
-const KILL_ZONE_TOP_Y = GROUND_TOP_Y
-const ONE_WAY_PLATFORM_TOP_Y = 380
-const ONE_WAY_PLATFORM_LEFT_X = 250
-const ONE_WAY_PLATFORM_WIDTH = 300
-const ONE_WAY_PLATFORM_HEIGHT = 12
 const PLAYER_SIZE = 28
-const SPAWN_POINTS = [140, 660, 320, 480]
+
+const COLLISION_PRIMITIVES: CollisionPrimitive[] = [
+  {
+    id: 'floor_left',
+    type: 'floor',
+    leftX: 0,
+    rightX: PIT_LEFT_X,
+    topY: GROUND_TOP_Y,
+  },
+  {
+    id: 'floor_right',
+    type: 'floor',
+    leftX: PIT_RIGHT_X,
+    rightX: GAME_WIDTH,
+    topY: GROUND_TOP_Y,
+  },
+  {
+    id: 'platform_mid',
+    type: 'one_way_platform',
+    leftX: 250,
+    rightX: 550,
+    topY: 380,
+  },
+  {
+    id: 'pit_wall_left',
+    type: 'solid_wall',
+    x: PIT_LEFT_X,
+    topY: GROUND_TOP_Y,
+    bottomY: FALL_ZONE_START_Y,
+  },
+  {
+    id: 'pit_wall_right',
+    type: 'solid_wall',
+    x: PIT_RIGHT_X,
+    topY: GROUND_TOP_Y,
+    bottomY: FALL_ZONE_START_Y,
+  },
+]
+
+const HAZARDS: HazardZone[] = [
+  {
+    id: 'pit_fall_zone',
+    type: 'fall_zone',
+    x: PIT_LEFT_X,
+    y: FALL_ZONE_START_Y,
+    width: PIT_RIGHT_X - PIT_LEFT_X,
+    height: FALL_ZONE_HEIGHT,
+  },
+  {
+    id: 'spike_strip_right',
+    type: 'instant_kill_hazard',
+    x: 620,
+    y: GROUND_TOP_Y - 18,
+    width: 110,
+    height: 18,
+  },
+]
+
+const SPAWN_POINTS: SpawnPoint[] = [
+  { id: 'spawn_a', x: 140, y: 80 },
+  { id: 'spawn_b', x: 660, y: 80 },
+  { id: 'spawn_c', x: 320, y: 80 },
+  { id: 'spawn_d', x: 480, y: 80 },
+]
 
 type RenderedPlayer = {
   body: Phaser.GameObjects.Rectangle
@@ -41,6 +104,10 @@ function drawCross(
 ) {
   graphics.lineBetween(x - size, y, x + size, y)
   graphics.lineBetween(x, y - size, x, y + size)
+}
+
+function isRectHazard(hazard: HazardZone): hazard is HazardZone & { x: number; y: number; width: number; height: number } {
+  return 'width' in hazard && 'height' in hazard
 }
 
 function getOrCreatePlayerName(): string {
@@ -145,47 +212,84 @@ class MainScene extends Phaser.Scene {
   }
 
   private drawStage() {
-    this.add.rectangle(PIT_LEFT_X / 2, GROUND_TOP_Y + GROUND_HEIGHT / 2, PIT_LEFT_X, GROUND_HEIGHT, 0x1f2937)
-    this.add.rectangle(
-      PIT_RIGHT_X + (GAME_WIDTH - PIT_RIGHT_X) / 2,
-      GROUND_TOP_Y + GROUND_HEIGHT / 2,
-      GAME_WIDTH - PIT_RIGHT_X,
-      GROUND_HEIGHT,
-      0x1f2937,
-    )
-    this.add.rectangle(
-      (PIT_LEFT_X + PIT_RIGHT_X) / 2,
-      KILL_ZONE_TOP_Y + (GAME_HEIGHT - KILL_ZONE_TOP_Y) / 2,
-      PIT_RIGHT_X - PIT_LEFT_X,
-      GAME_HEIGHT - KILL_ZONE_TOP_Y,
-      0x7f1d1d,
-      0.4,
-    )
-    this.add.rectangle(
-      ONE_WAY_PLATFORM_LEFT_X + ONE_WAY_PLATFORM_WIDTH / 2,
-      ONE_WAY_PLATFORM_TOP_Y + ONE_WAY_PLATFORM_HEIGHT / 2,
-      ONE_WAY_PLATFORM_WIDTH,
-      ONE_WAY_PLATFORM_HEIGHT,
-      0x60a5fa,
-    )
+    for (const primitive of COLLISION_PRIMITIVES) {
+      if (primitive.type === 'floor') {
+        this.add.rectangle(
+          primitive.leftX + (primitive.rightX - primitive.leftX) / 2,
+          primitive.topY + GROUND_HEIGHT / 2,
+          primitive.rightX - primitive.leftX,
+          GAME_HEIGHT - primitive.topY,
+          0x1f2937,
+        )
+      }
 
-    const debug = this.add.graphics().setDepth(2)
-    debug.lineStyle(2, 0x22c55e, 0.9)
-    debug.lineBetween(0, GROUND_TOP_Y, PIT_LEFT_X, GROUND_TOP_Y)
-    debug.lineBetween(PIT_RIGHT_X, GROUND_TOP_Y, GAME_WIDTH, GROUND_TOP_Y)
-
-    debug.lineStyle(2, 0x38bdf8, 0.9)
-    debug.lineBetween(ONE_WAY_PLATFORM_LEFT_X, ONE_WAY_PLATFORM_TOP_Y, ONE_WAY_PLATFORM_LEFT_X + ONE_WAY_PLATFORM_WIDTH, ONE_WAY_PLATFORM_TOP_Y)
-
-    debug.lineStyle(2, 0xf87171, 0.9)
-    debug.strokeRect(PIT_LEFT_X, KILL_ZONE_TOP_Y, PIT_RIGHT_X - PIT_LEFT_X, GAME_HEIGHT - KILL_ZONE_TOP_Y)
-
-    debug.lineStyle(2, 0xfbbf24, 0.9)
-    for (const spawnX of SPAWN_POINTS) {
-      drawCross(debug, spawnX, 80, 8)
+      if (primitive.type === 'one_way_platform') {
+        this.add.rectangle(
+          primitive.leftX + (primitive.rightX - primitive.leftX) / 2,
+          primitive.topY + 6,
+          primitive.rightX - primitive.leftX,
+          12,
+          0x60a5fa,
+        )
+      }
     }
 
-    this.add.text(ONE_WAY_PLATFORM_LEFT_X, ONE_WAY_PLATFORM_TOP_Y - 24, '원웨이 플랫폼', {
+    for (const hazard of HAZARDS) {
+      if (!isRectHazard(hazard)) {
+        continue
+      }
+
+      if (hazard.type === 'fall_zone') {
+        continue
+      }
+
+      this.add.rectangle(
+        hazard.x + hazard.width / 2,
+        hazard.y + hazard.height / 2,
+        hazard.width,
+        hazard.height,
+        0xc026d3,
+        0.55,
+      )
+    }
+
+    const debug = this.add.graphics().setDepth(2)
+    for (const primitive of COLLISION_PRIMITIVES) {
+      if (primitive.type === 'floor') {
+        debug.lineStyle(2, 0x22c55e, 0.9)
+        debug.lineBetween(primitive.leftX, primitive.topY, primitive.rightX, primitive.topY)
+      }
+
+      if (primitive.type === 'one_way_platform') {
+        debug.lineStyle(2, 0x38bdf8, 0.9)
+        debug.lineBetween(primitive.leftX, primitive.topY, primitive.rightX, primitive.topY)
+      }
+
+      if (primitive.type === 'solid_wall') {
+        debug.lineStyle(2, 0xfb923c, 0.9)
+        debug.lineBetween(primitive.x, primitive.topY, primitive.x, primitive.bottomY)
+      }
+    }
+
+    for (const hazard of HAZARDS) {
+      if (!isRectHazard(hazard)) {
+        continue
+      }
+
+      if (hazard.type === 'fall_zone') {
+        continue
+      }
+
+      debug.lineStyle(2, 0xe879f9, 0.95)
+      debug.strokeRect(hazard.x, hazard.y, hazard.width, hazard.height)
+    }
+
+    debug.lineStyle(2, 0xfbbf24, 0.9)
+    for (const spawnPoint of SPAWN_POINTS) {
+      drawCross(debug, spawnPoint.x, spawnPoint.y, 8)
+    }
+
+    this.add.text(250, 356, '원웨이 플랫폼', {
       fontSize: '12px',
       color: '#93c5fd',
     })
@@ -193,11 +297,19 @@ class MainScene extends Phaser.Scene {
       fontSize: '12px',
       color: '#d1d5db',
     })
-    this.add.text(PIT_LEFT_X + 8, GAME_HEIGHT - 58, '낙사 구역 / kill zone', {
+    this.add.text(620, GROUND_TOP_Y - 42, '즉사 함정', {
       fontSize: '12px',
-      color: '#fecaca',
+      color: '#f5d0fe',
     })
-    this.add.text(24, 112, '디버그 오버레이: 초록=바닥, 파랑=원웨이, 빨강=kill zone, 노랑=spawn', {
+    this.add.text(PIT_LEFT_X - 48, GROUND_TOP_Y + 24, 'pit wall', {
+      fontSize: '12px',
+      color: '#fed7aa',
+    })
+    this.add.text(PIT_RIGHT_X - 18, GROUND_TOP_Y + 24, 'pit wall', {
+      fontSize: '12px',
+      color: '#fed7aa',
+    })
+    this.add.text(24, 112, '디버그: 초록=바닥, 파랑=원웨이, 주황=벽, 분홍=hazard, 노랑=spawn', {
       fontSize: '12px',
       color: '#a5b4fc',
     }).setDepth(10)
