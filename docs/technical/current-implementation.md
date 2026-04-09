@@ -4,7 +4,7 @@
 
 ## 최신 기준
 
-기준 브랜치: `feature/platform-movement`
+기준 브랜치: `feature/collision-contract`
 
 ## 현재 구현된 것
 
@@ -49,7 +49,9 @@
 
 ### 렌더링
 - 플레이어는 사각형 placeholder로 표시된다.
-- 바닥, 원웨이 플랫폼, 낙사 구역도 단순 도형으로 표시한다.
+- 바닥, 원웨이 플랫폼, 낙사 구역을 계약 기준(top surface / rect)에 맞춰 표시한다.
+- 디버그 오버레이로 바닥 충돌선, 원웨이 플랫폼 윗면, kill zone, spawn 위치를 확인할 수 있다.
+- 플레이어 사각형에는 collider outline이 표시된다.
 - 보간/스무딩이 거의 없어 움직임이 거칠게 보일 수 있다.
 
 ### 전투
@@ -57,11 +59,11 @@
 
 ## 다음 구현 우선순위
 
-1. 좌표/충돌 계약 정리
-2. item / weapon pickup 실제 상태 반영
-3. 클라이언트 보간 및 시각 품질 개선
-4. `maxJumpCount`를 아이템과 실제로 연동
-5. placeholder 사각형 → 실제 햄스터 렌더링
+1. item / weapon pickup 실제 상태 반영
+2. 클라이언트 보간 및 시각 품질 개선
+3. `maxJumpCount`를 아이템과 실제로 연동
+4. placeholder 사각형 → 실제 햄스터 렌더링
+5. 공통 맵 데이터(JSON)를 서버와 클라이언트가 함께 읽도록 이동
 
 ## 참고
 
