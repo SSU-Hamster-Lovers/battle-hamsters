@@ -45,14 +45,15 @@ jobs:
         run: pnpm build
         working-directory: apps/portal
 
+      - name: Install Wrangler CLI
+        run: npm install -g wrangler@3.90.0
+
       - name: Deploy static export to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
-          packageManager: npm
-          command: >-
-            pages deploy apps/portal/out
-            --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT_NAME }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT_NAME: ${{ vars.CLOUDFLARE_PAGES_PROJECT_NAME }}
+        run: |
+          wrangler pages deploy apps/portal/out \
+            --project-name="${CLOUDFLARE_PAGES_PROJECT_NAME}" \
             --branch=main

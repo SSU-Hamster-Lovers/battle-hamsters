@@ -81,7 +81,23 @@ jobs:
           ARCHIVE_PATH="/tmp/release.tar.gz"
           ENV_PATH="/tmp/oracle.env"
 
-          mkdir -p "${DEPLOY_ROOT}/releases" "${RELEASE_DIR}"
+          ensure_deploy_root() {
+            if mkdir -p "${DEPLOY_ROOT}/releases" "${RELEASE_DIR}" 2>/dev/null; then
+              return 0
+            fi
+
+            if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+              sudo mkdir -p "${DEPLOY_ROOT}/releases" "${RELEASE_DIR}"
+              sudo chown -R "$(id -un)":"$(id -gn)" "${DEPLOY_ROOT}"
+              return 0
+            fi
+
+            echo "Cannot create deploy directory: ${DEPLOY_ROOT}" >&2
+            echo "Ensure OCI_DEPLOY_PATH is writable by $(id -un) or allow passwordless sudo." >&2
+            return 1
+          }
+
+          ensure_deploy_root
           tar -xzf "${ARCHIVE_PATH}" -C "${RELEASE_DIR}"
           mv "${ENV_PATH}" "${RELEASE_DIR}/deploy/oracle/.env"
 
