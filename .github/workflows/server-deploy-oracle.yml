@@ -102,7 +102,15 @@ jobs:
           mv "${ENV_PATH}" "${RELEASE_DIR}/deploy/oracle/.env"
 
           cd "${RELEASE_DIR}/deploy/oracle"
-          docker compose -p battle-hamsters --env-file .env up -d --build
+          if docker compose version >/dev/null 2>&1; then
+            COMPOSE_CMD="docker compose"
+            ${COMPOSE_CMD} -p battle-hamsters --env-file .env up -d --build
+          elif command -v docker-compose >/dev/null 2>&1; then
+            docker-compose --env-file .env up -d --build
+          else
+            echo "Neither 'docker compose' nor 'docker-compose' is available on the target host." >&2
+            exit 1
+          fi
 
           ln -sfn "${RELEASE_DIR}" "${DEPLOY_ROOT}/current"
 
