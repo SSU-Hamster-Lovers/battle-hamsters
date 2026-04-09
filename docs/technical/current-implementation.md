@@ -4,7 +4,7 @@
 
 ## 최신 기준
 
-기준 브랜치: `feature/collision-contract`
+기준 브랜치: `feature/collision-primitives`
 
 ## 현재 구현된 것
 
@@ -59,11 +59,12 @@
 
 ## 다음 구현 우선순위
 
-1. item / weapon pickup 실제 상태 반영
-2. 클라이언트 보간 및 시각 품질 개선
-3. `maxJumpCount`를 아이템과 실제로 연동
-4. placeholder 사각형 → 실제 햄스터 렌더링
-5. 공통 맵 데이터(JSON)를 서버와 클라이언트가 함께 읽도록 이동
+1. 충돌 primitive 확장 및 테스트 맵 개선
+2. item / weapon pickup 실제 상태 반영
+3. 클라이언트 보간 및 시각 품질 개선
+4. `maxJumpCount`를 아이템과 실제로 연동
+5. placeholder 사각형 → 실제 햄스터 렌더링
+6. 공통 맵 데이터(JSON)를 서버와 클라이언트가 함께 읽도록 이동
 
 ## 참고
 
