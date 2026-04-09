@@ -108,22 +108,35 @@ oneWayPlatformTopY = 380
 - `dropThrough` 상태가 아니면
 - 착지 처리 가능
 
-## kill zone / hazard 계약
+## solid wall 계약
 
 ### 계약
-- kill zone은 **rect 영역 기준**으로 정의한다.
+- `solid wall`은 **세로 segment 기준**으로 정의한다.
+- 좌우 이동 차단이 목적이며, floor / one-way platform과 분리된 primitive로 취급한다.
+
+예시:
+
+```text
+pitWallLeft = { x: 330, topY: 540, bottomY: 600 }
+pitWallRight = { x: 470, topY: 540, bottomY: 600 }
+```
+
+### 판정 원칙
+- 플레이어 collider의 좌우 변이 wall의 `x`를 가로지르는지 확인한다.
+- wall의 `topY ~ bottomY` 구간과 플레이어 collider가 겹칠 때만 충돌시킨다.
+- x축 충돌 해소와 y축 착지 해소는 분리해 두는 쪽을 권장한다.
+
+## fall zone / instant kill hazard 계약
+
+### 계약
+- `fall zone`과 `instant kill hazard`는 모두 **rect 영역 기준**으로 정의한다.
 - 시각 표현도 같은 rect를 기준으로 표시한다.
 
 예시:
 
 ```text
-killZone = { x, y, width, height }
-```
-
-또는
-
-```text
-pitLeftX, pitRightX, killZoneY
+fallZone = { x, y, width, height }
+instantKillHazard = { x, y, width, height }
 ```
 
 ### 권장 방향
@@ -131,6 +144,11 @@ pitLeftX, pitRightX, killZoneY
 이유는:
 - 맵 에디터와 연동이 쉽고
 - 서버/클라이언트에서 같은 구조를 공유하기 쉽기 때문이다.
+
+### 구분 원칙
+- `fall zone`은 바닥이 없는 구간 아래쪽 낙사 영역이다.
+- `instant kill hazard`는 바닥 위/옆에도 둘 수 있는 즉사 함정 영역이다.
+- 둘 다 사망/리스폰 결과를 만들 수 있어도 **데이터 타입은 분리**한다.
 
 ## 렌더링 계약
 
@@ -146,9 +164,10 @@ pitLeftX, pitRightX, killZoneY
 - `topY` 기준 surface 표시
 - 시각 rectangle을 그릴 때도 topY가 실제 충돌면과 어긋나지 않게 계산
 
-### kill zone
-- 실제 낙사 판정 영역과 같은 위치에 표시
-- 디버그용 색상으로 명확히 구분 가능해야 함
+### wall / fall zone / instant kill hazard
+- wall은 실제 충돌 line과 같은 위치에 표시
+- `fall zone`과 `instant kill hazard`는 실제 판정 rect와 같은 위치에 표시
+- 디버그용 색상/라벨로 서로 구분 가능해야 함
 
 ## 디버그 오버레이 계약
 
@@ -157,7 +176,9 @@ pitLeftX, pitRightX, killZoneY
 - 플레이어 collider outline
 - ground collision line
 - one-way platform collision line
-- kill zone rect
+- solid wall line
+- fall zone rect
+- instant kill hazard rect
 - spawn point marker
 
 ### 목적
@@ -175,9 +196,8 @@ pitLeftX, pitRightX, killZoneY
 
 ### 권장 구조
 - `terrain` — 시각 배치
-- `collision` — 실제 바닥/벽
-- `oneWayPlatforms` — 원웨이 플랫폼
-- `hazards` — 낙사/즉사 영역
+- `collision` — floor / one-way platform / solid wall
+- `hazards` — fall zone / instant kill hazard
 - `spawnPoints` — 리스폰 위치
 - `weaponSpawns`
 - `itemSpawns`
@@ -195,6 +215,7 @@ pitLeftX, pitRightX, killZoneY
 
 - 플레이어 `position` = **center 기준**
 - 바닥/플랫폼 = **top surface 기준**
-- kill zone = **rect 기준**
+- wall = **vertical segment 기준**
+- fall zone / instant kill hazard = **rect 기준**
 - 서버 충돌과 클라이언트 렌더링은 **같은 맵 데이터/같은 기준점**을 사용한다
 - 충돌이 먼저고, 렌더링은 충돌 계약을 따라간다

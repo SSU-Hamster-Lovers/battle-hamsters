@@ -17,13 +17,12 @@ const HEARTBEAT_INTERVAL_SECS: u64 = 5;
 const CLIENT_TIMEOUT_SECS: u64 = 10;
 
 const WORLD_WIDTH: f64 = 800.0;
+const WORLD_HEIGHT: f64 = 600.0;
 const GROUND_TOP_Y: f64 = 540.0;
+const FALL_ZONE_START_Y: f64 = WORLD_HEIGHT + 100.0;
+const FALL_ZONE_HEIGHT: f64 = 220.0;
 const PIT_LEFT_X: f64 = 330.0;
 const PIT_RIGHT_X: f64 = 470.0;
-const ONE_WAY_PLATFORM_TOP_Y: f64 = 380.0;
-const ONE_WAY_PLATFORM_LEFT_X: f64 = 250.0;
-const ONE_WAY_PLATFORM_RIGHT_X: f64 = 550.0;
-const KILL_ZONE_TOP_Y: f64 = GROUND_TOP_Y;
 const PLAYER_HALF_SIZE: f64 = 14.0;
 const RUN_SPEED_PER_TICK: f64 = 8.0;
 const GRAVITY_PER_TICK: f64 = 1.4;
@@ -35,6 +34,91 @@ const DROP_THROUGH_MS: u64 = 220;
 const RESPAWN_DELAY_MS: u64 = 3_000;
 const TEST_LIVES: u8 = 99;
 const MAX_JUMP_COUNT: u8 = 1;
+
+#[derive(Clone, Copy)]
+struct FloorSegment {
+    left_x: f64,
+    right_x: f64,
+    top_y: f64,
+}
+
+#[derive(Clone, Copy)]
+struct OneWayPlatformSegment {
+    left_x: f64,
+    right_x: f64,
+    top_y: f64,
+}
+
+#[derive(Clone, Copy)]
+struct SolidWall {
+    x: f64,
+    top_y: f64,
+    bottom_y: f64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum HazardKind {
+    FallZone,
+    InstantKillHazard,
+}
+
+#[derive(Clone, Copy)]
+struct HazardRect {
+    kind: HazardKind,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+const FLOOR_SEGMENTS: [FloorSegment; 2] = [
+    FloorSegment {
+        left_x: 0.0,
+        right_x: PIT_LEFT_X,
+        top_y: GROUND_TOP_Y,
+    },
+    FloorSegment {
+        left_x: PIT_RIGHT_X,
+        right_x: WORLD_WIDTH,
+        top_y: GROUND_TOP_Y,
+    },
+];
+
+const ONE_WAY_PLATFORMS: [OneWayPlatformSegment; 1] = [OneWayPlatformSegment {
+    left_x: 250.0,
+    right_x: 550.0,
+    top_y: 380.0,
+}];
+
+const SOLID_WALLS: [SolidWall; 2] = [
+    SolidWall {
+        x: PIT_LEFT_X,
+        top_y: GROUND_TOP_Y,
+        bottom_y: FALL_ZONE_START_Y,
+    },
+    SolidWall {
+        x: PIT_RIGHT_X,
+        top_y: GROUND_TOP_Y,
+        bottom_y: FALL_ZONE_START_Y,
+    },
+];
+
+const HAZARDS: [HazardRect; 2] = [
+    HazardRect {
+        kind: HazardKind::FallZone,
+        x: PIT_LEFT_X,
+        y: FALL_ZONE_START_Y,
+        width: PIT_RIGHT_X - PIT_LEFT_X,
+        height: FALL_ZONE_HEIGHT,
+    },
+    HazardRect {
+        kind: HazardKind::InstantKillHazard,
+        x: 620.0,
+        y: GROUND_TOP_Y - 18.0,
+        width: 110.0,
+        height: 18.0,
+    },
+];
 
 #[derive(Serialize)]
 struct HealthResponse {
@@ -176,7 +260,7 @@ impl RoomState {
 
             step_player(player, now_ms);
 
-            if is_in_kill_zone(&player.snapshot) {
+            if intersecting_hazard(&player.snapshot).is_some() {
                 deaths.push(player_id);
             }
         }
@@ -265,50 +349,106 @@ fn step_player(player: &mut PlayerRuntime, now_ms: u64) {
 
     let previous_position = player.snapshot.position.clone();
     player.snapshot.position.x += player.snapshot.velocity.x;
-    player.snapshot.position.y += player.snapshot.velocity.y;
-
     player.snapshot.position.x = player
         .snapshot
         .position
         .x
         .clamp(PLAYER_HALF_SIZE, WORLD_WIDTH - PLAYER_HALF_SIZE);
 
+    player.snapshot.position.y += player.snapshot.velocity.y;
+
     player.snapshot.grounded = false;
+
+    resolve_wall_collisions(&mut player.snapshot, &previous_position);
 
     let previous_bottom = previous_position.y + PLAYER_HALF_SIZE;
     let current_bottom = player.snapshot.position.y + PLAYER_HALF_SIZE;
 
-    if current_bottom >= GROUND_TOP_Y && !is_over_pit(player.snapshot.position.x) {
-        player.snapshot.position.y = GROUND_TOP_Y - PLAYER_HALF_SIZE;
-        player.snapshot.velocity.y = 0.0;
-        player.snapshot.grounded = true;
-        player.snapshot.jump_count_used = 0;
-    } else if player.snapshot.velocity.y >= 0.0
-        && !drop_active
-        && previous_bottom <= ONE_WAY_PLATFORM_TOP_Y
-        && current_bottom >= ONE_WAY_PLATFORM_TOP_Y
-        && (ONE_WAY_PLATFORM_LEFT_X..=ONE_WAY_PLATFORM_RIGHT_X)
-            .contains(&player.snapshot.position.x)
-    {
-        player.snapshot.position.y = ONE_WAY_PLATFORM_TOP_Y - PLAYER_HALF_SIZE;
-        player.snapshot.velocity.y = 0.0;
-        player.snapshot.grounded = true;
-        player.snapshot.jump_count_used = 0;
+    for floor in FLOOR_SEGMENTS {
+        if current_bottom >= floor.top_y
+            && surface_contains_x(floor.left_x, floor.right_x, player.snapshot.position.x)
+        {
+            land_on_surface(&mut player.snapshot, floor.top_y);
+            return;
+        }
+    }
+
+    if player.snapshot.velocity.y >= 0.0 && !drop_active {
+        for platform in ONE_WAY_PLATFORMS {
+            if previous_bottom <= platform.top_y
+                && current_bottom >= platform.top_y
+                && surface_contains_x(
+                    platform.left_x,
+                    platform.right_x,
+                    player.snapshot.position.x,
+                )
+            {
+                land_on_surface(&mut player.snapshot, platform.top_y);
+                return;
+            }
+        }
     }
 }
 
 fn is_on_one_way_platform(player: &PlayerSnapshot) -> bool {
     player.grounded
-        && (player.position.y + PLAYER_HALF_SIZE - ONE_WAY_PLATFORM_TOP_Y).abs() < 1.0
-        && (ONE_WAY_PLATFORM_LEFT_X..=ONE_WAY_PLATFORM_RIGHT_X).contains(&player.position.x)
+        && ONE_WAY_PLATFORMS.iter().any(|platform| {
+            (player.position.y + PLAYER_HALF_SIZE - platform.top_y).abs() < 1.0
+                && surface_contains_x(platform.left_x, platform.right_x, player.position.x)
+        })
 }
 
-fn is_over_pit(x: f64) -> bool {
-    (PIT_LEFT_X..=PIT_RIGHT_X).contains(&x)
+fn surface_contains_x(left_x: f64, right_x: f64, x: f64) -> bool {
+    (left_x..=right_x).contains(&x)
 }
 
-fn is_in_kill_zone(player: &PlayerSnapshot) -> bool {
-    is_over_pit(player.position.x) && player.position.y + PLAYER_HALF_SIZE >= KILL_ZONE_TOP_Y
+fn land_on_surface(player: &mut PlayerSnapshot, top_y: f64) {
+    player.position.y = top_y - PLAYER_HALF_SIZE;
+    player.velocity.y = 0.0;
+    player.grounded = true;
+    player.jump_count_used = 0;
+}
+
+fn resolve_wall_collisions(player: &mut PlayerSnapshot, previous_position: &Vector2) {
+    let current_top = player.position.y - PLAYER_HALF_SIZE;
+    let current_bottom = player.position.y + PLAYER_HALF_SIZE;
+
+    for wall in SOLID_WALLS {
+        if current_bottom <= wall.top_y || current_top >= wall.bottom_y {
+            continue;
+        }
+
+        let previous_left = previous_position.x - PLAYER_HALF_SIZE;
+        let previous_right = previous_position.x + PLAYER_HALF_SIZE;
+        let current_left = player.position.x - PLAYER_HALF_SIZE;
+        let current_right = player.position.x + PLAYER_HALF_SIZE;
+
+        if previous_left >= wall.x && current_left <= wall.x {
+            player.position.x = wall.x + PLAYER_HALF_SIZE;
+            player.velocity.x = 0.0;
+        } else if previous_right <= wall.x && current_right >= wall.x {
+            player.position.x = wall.x - PLAYER_HALF_SIZE;
+            player.velocity.x = 0.0;
+        }
+    }
+}
+
+fn intersecting_hazard(player: &PlayerSnapshot) -> Option<HazardKind> {
+    let player_left = player.position.x - PLAYER_HALF_SIZE;
+    let player_right = player.position.x + PLAYER_HALF_SIZE;
+    let player_top = player.position.y - PLAYER_HALF_SIZE;
+    let player_bottom = player.position.y + PLAYER_HALF_SIZE;
+
+    HAZARDS.iter().find_map(|hazard| {
+        let hazard_right = hazard.x + hazard.width;
+        let hazard_bottom = hazard.y + hazard.height;
+        let overlaps = player_right > hazard.x
+            && player_left < hazard_right
+            && player_bottom > hazard.y
+            && player_top < hazard_bottom;
+
+        overlaps.then_some(hazard.kind)
+    })
 }
 
 fn trigger_respawn(player: &mut PlayerRuntime, now_ms: u64) {
@@ -323,7 +463,7 @@ fn trigger_respawn(player: &mut PlayerRuntime, now_ms: u64) {
     player.snapshot.grounded = false;
     player.snapshot.jump_count_used = 0;
     player.snapshot.drop_through_until = None;
-    player.snapshot.position.y = KILL_ZONE_TOP_Y + 80.0;
+    player.snapshot.position.y = GROUND_TOP_Y + 80.0;
 }
 
 fn respawn_player(player: &mut PlayerRuntime) {
@@ -916,13 +1056,119 @@ async fn main() -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use actix_web::{test, App};
+    use actix_web::{test as actix_test, App};
+
+    fn test_player(x: f64, y: f64) -> PlayerRuntime {
+        PlayerRuntime {
+            snapshot: PlayerSnapshot {
+                id: "player_test".to_string(),
+                name: "hammy".to_string(),
+                position: Vector2 { x, y },
+                velocity: Vector2 { x: 0.0, y: 0.0 },
+                direction: Direction::Right,
+                hp: 100,
+                lives: TEST_LIVES,
+                move_speed_rank: 0,
+                max_jump_count: MAX_JUMP_COUNT,
+                jump_count_used: 0,
+                grounded: false,
+                drop_through_until: None,
+                respawn_at: None,
+                equipped_weapon_id: "paws".to_string(),
+                equipped_weapon_resource: None,
+                grab_state: None,
+                state: PlayerState::Alive,
+            },
+            latest_input: PlayerInputPayload::default(),
+            spawn_index: 0,
+        }
+    }
 
     #[actix_rt::test]
     async fn test_health() {
-        let app = test::init_service(App::new().route("/health", web::get().to(health))).await;
-        let req = test::TestRequest::get().uri("/health").to_request();
-        let resp = test::call_service(&app, req).await;
+        let app =
+            actix_test::init_service(App::new().route("/health", web::get().to(health))).await;
+        let req = actix_test::TestRequest::get().uri("/health").to_request();
+        let resp = actix_test::call_service(&app, req).await;
         assert!(resp.status().is_success());
+    }
+
+    #[test]
+    fn player_lands_on_floor_outside_pit() {
+        let mut player = test_player(180.0, GROUND_TOP_Y - PLAYER_HALF_SIZE - 2.0);
+        player.snapshot.velocity.y = 8.0;
+
+        step_player(&mut player, 0);
+
+        assert!(player.snapshot.grounded);
+        assert_eq!(player.snapshot.position.y, GROUND_TOP_Y - PLAYER_HALF_SIZE);
+        assert_eq!(player.snapshot.velocity.y, 0.0);
+    }
+
+    #[test]
+    fn player_does_not_land_inside_fall_zone_gap() {
+        let mut player = test_player(
+            (PIT_LEFT_X + PIT_RIGHT_X) / 2.0,
+            GROUND_TOP_Y - PLAYER_HALF_SIZE - 2.0,
+        );
+        player.snapshot.velocity.y = 8.0;
+
+        step_player(&mut player, 0);
+
+        assert!(!player.snapshot.grounded);
+        assert!(player.snapshot.position.y > GROUND_TOP_Y - PLAYER_HALF_SIZE);
+        assert_eq!(intersecting_hazard(&player.snapshot), None);
+
+        for _ in 0..24 {
+            step_player(&mut player, 0);
+            if intersecting_hazard(&player.snapshot) == Some(HazardKind::FallZone) {
+                break;
+            }
+        }
+
+        assert_eq!(
+            intersecting_hazard(&player.snapshot),
+            Some(HazardKind::FallZone)
+        );
+    }
+
+    #[test]
+    fn player_collides_with_pit_wall_from_inside() {
+        let mut player = test_player(PIT_LEFT_X + PLAYER_HALF_SIZE + 2.0, GROUND_TOP_Y + 20.0);
+        player.latest_input.movement = Vector2 { x: -1.0, y: 0.0 };
+
+        step_player(&mut player, 0);
+
+        assert_eq!(player.snapshot.position.x, PIT_LEFT_X + PLAYER_HALF_SIZE);
+        assert_eq!(player.snapshot.velocity.x, 0.0);
+    }
+
+    #[test]
+    fn player_still_collides_with_extended_pit_wall_below_screen() {
+        let mut player = test_player(PIT_LEFT_X + PLAYER_HALF_SIZE + 2.0, WORLD_HEIGHT + 40.0);
+        player.latest_input.movement = Vector2 { x: -1.0, y: 0.0 };
+
+        step_player(&mut player, 0);
+
+        assert_eq!(player.snapshot.position.x, PIT_LEFT_X + PLAYER_HALF_SIZE);
+        assert_eq!(player.snapshot.velocity.x, 0.0);
+    }
+
+    #[test]
+    fn instant_kill_hazard_is_separate_from_fall_zone() {
+        let player_on_spikes = test_player(660.0, GROUND_TOP_Y - PLAYER_HALF_SIZE);
+        let player_in_pit = test_player(
+            (PIT_LEFT_X + PIT_RIGHT_X) / 2.0,
+            FALL_ZONE_START_Y + PLAYER_HALF_SIZE + 1.0,
+        );
+
+        assert_eq!(
+            intersecting_hazard(&player_on_spikes.snapshot),
+            Some(HazardKind::InstantKillHazard)
+        );
+        assert_eq!(
+            intersecting_hazard(&player_in_pit.snapshot),
+            Some(HazardKind::FallZone)
+        );
     }
 }

@@ -2,6 +2,60 @@ import type { Direction, EntityId, MatchState, PlayerState, Vector2 } from './co
 import type { ItemSpawnPoint, WorldItemPickup } from './items'
 import type { WeaponSpawnPoint, WorldWeaponPickup } from './weapons'
 
+export interface SpawnPoint {
+  id: EntityId
+  x: number
+  y: number
+}
+
+export interface RectArea {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface FloorCollisionPrimitive {
+  id: EntityId
+  type: 'floor'
+  leftX: number
+  rightX: number
+  topY: number
+}
+
+export interface OneWayPlatformCollisionPrimitive {
+  id: EntityId
+  type: 'one_way_platform'
+  leftX: number
+  rightX: number
+  topY: number
+}
+
+export interface SolidWallCollisionPrimitive {
+  id: EntityId
+  type: 'solid_wall'
+  x: number
+  topY: number
+  bottomY: number
+}
+
+export type CollisionPrimitive =
+  | FloorCollisionPrimitive
+  | OneWayPlatformCollisionPrimitive
+  | SolidWallCollisionPrimitive
+
+export interface FallZoneHazard extends RectArea {
+  id: EntityId
+  type: 'fall_zone'
+}
+
+export interface InstantKillHazard extends RectArea {
+  id: EntityId
+  type: 'instant_kill_hazard'
+}
+
+export type HazardZone = FallZoneHazard | InstantKillHazard
+
 export interface MapDefinition {
   version: number
   id: EntityId
@@ -10,14 +64,10 @@ export interface MapDefinition {
     width: number
     height: number
   }
-  spawnPoints: Array<{
-    id: EntityId
-    x: number
-    y: number
-  }>
+  spawnPoints: SpawnPoint[]
   terrain: unknown[]
-  collision: unknown[]
-  hazards: unknown[]
+  collision: CollisionPrimitive[]
+  hazards: HazardZone[]
   weaponSpawns: WeaponSpawnPoint[]
   itemSpawns: ItemSpawnPoint[]
   decorations: unknown[]
