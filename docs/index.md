@@ -16,6 +16,7 @@
 - [아키텍처](technical/architecture.md)
 - [동기화 프로토콜](technical/sync-protocol.md)
 - [데이터 포맷](technical/data-formats.md)
+- [현재 구현 상태](technical/current-implementation.md)
 
 ## 팀
 
@@ -27,3 +28,4 @@
 - [로컬 개발 환경 설정](guides/local-setup.md)
 - [서버 개발 가이드](guides/server-setup.md)
 - [기여 가이드](guides/contribution.md)
+- [스펙 주도 개발 워크플로](guides/spec-driven-workflow.md)
