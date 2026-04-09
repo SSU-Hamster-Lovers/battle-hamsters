@@ -34,8 +34,8 @@ cd apps/portal && pnpm dev
 # Game
 cd apps/game && pnpm dev
 
-# Server
-cd server && docker compose up -d db && cargo run
+# Server (recommended)
+cd server && docker compose up --build
 ```
 
 ## 프로젝트 구조
@@ -74,6 +74,15 @@ pnpm typecheck    # TypeScript 검사
 ```
 
 ### Server (Rust)
+
+권장 방식:
+
+```bash
+cd server
+docker compose up --build  # DB + API 서버 실행
+```
+
+대안:
 
 ```bash
 cd server

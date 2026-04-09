@@ -53,6 +53,13 @@ pnpm dev
 
 ```bash
 cd server
+docker compose up --build
+```
+
+DB만 Compose로 띄우고 로컬 Rust로 실행하려면:
+
+```bash
+cd server
 docker compose up -d db
 cargo run
 ```
