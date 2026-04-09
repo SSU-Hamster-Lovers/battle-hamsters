@@ -36,6 +36,15 @@ pnpm dev
 
 ### Server
 
+권장 방식:
+
+```bash
+cd server
+docker compose up --build
+```
+
+대안 (DB만 Compose, 서버는 로컬 실행):
+
 ```bash
 cd server
 docker compose up -d db
