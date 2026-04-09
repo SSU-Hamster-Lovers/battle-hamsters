@@ -38,6 +38,10 @@ export interface PlayerSnapshot {
   lives: number
   moveSpeedRank: number
   maxJumpCount: 1 | 2 | 3
+  jumpCountUsed: number
+  grounded: boolean
+  dropThroughUntil: number | null
+  respawnAt: number | null
   equippedWeaponId: EntityId
   equippedWeaponResource: number | null
   grabState: GrabState | null
