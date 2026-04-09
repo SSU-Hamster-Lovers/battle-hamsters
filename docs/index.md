@@ -16,6 +16,7 @@
 - [아키텍처](technical/architecture.md)
 - [동기화 프로토콜](technical/sync-protocol.md)
 - [데이터 포맷](technical/data-formats.md)
+- [좌표 / 충돌 계약](technical/collision-contract.md)
 - [현재 구현 상태](technical/current-implementation.md)
 
 ## 팀

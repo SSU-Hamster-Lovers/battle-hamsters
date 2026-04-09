@@ -57,10 +57,11 @@
 
 ## 다음 구현 우선순위
 
-1. item / weapon pickup 실제 상태 반영
-2. 클라이언트 보간 및 시각 품질 개선
-3. `maxJumpCount`를 아이템과 실제로 연동
-4. placeholder 사각형 → 실제 햄스터 렌더링
+1. 좌표/충돌 계약 정리
+2. item / weapon pickup 실제 상태 반영
+3. 클라이언트 보간 및 시각 품질 개선
+4. `maxJumpCount`를 아이템과 실제로 연동
+5. placeholder 사각형 → 실제 햄스터 렌더링
 
 ## 참고
 
