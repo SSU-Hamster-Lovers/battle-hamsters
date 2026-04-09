@@ -28,5 +28,6 @@
 
 - [로컬 개발 환경 설정](guides/local-setup.md)
 - [서버 개발 가이드](guides/server-setup.md)
+- [배포 가이드](guides/deployment.md)
 - [기여 가이드](guides/contribution.md)
 - [스펙 주도 개발 워크플로](guides/spec-driven-workflow.md)

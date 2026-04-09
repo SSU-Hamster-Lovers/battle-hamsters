@@ -60,8 +60,9 @@
 - [ ] 지연 시간 처리
 
 ### Phase 7: CI/CD 및 배포
-- [ ] Server CI/CD (GitHub Actions)
+- [x] Server CI/CD (GitHub Actions)
 - [ ] Oracle Cloud 배포 설정
+- [ ] Cloudflare Pages 배포 설정
 - [ ] 도메인/SSL 설정
 
 ### Phase 8: 콘텐츠 제작
