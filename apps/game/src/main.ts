@@ -101,7 +101,14 @@ class MainScene extends Phaser.Scene {
     }
 
     this.cursors = keyboard.createCursorKeys()
-    this.keys = keyboard.addKeys('W,A,S,D,Q,SPACE') as MainScene['keys']
+    this.keys = {
+      w: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W),
+      a: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A),
+      s: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S),
+      d: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D),
+      q: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Q),
+      space: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
+    }
 
     this.time.addEvent({
       delay: INPUT_SEND_INTERVAL_MS,
