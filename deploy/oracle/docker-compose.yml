@@ -1,0 +1,33 @@
+services:
+  db:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER}']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ../../server
+      dockerfile: Dockerfile.prod
+    restart: unless-stopped
+    environment:
+      API_PORT: ${API_PORT}
+      DATABASE_URL: ${DATABASE_URL}
+      RUST_LOG: ${RUST_LOG}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - '${API_PORT:-8081}:8081'
+
+volumes:
+  postgres_data:
