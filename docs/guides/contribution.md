@@ -40,3 +40,4 @@ chore: 빌드, CI 설정
 
 - [팀 역할 분담](../team/roles.md)
 - [협업 규칙](../team/collaboration-rules.md)
+- [스펙 주도 개발 워크플로](spec-driven-workflow.md)

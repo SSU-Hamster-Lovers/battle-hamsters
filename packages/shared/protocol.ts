@@ -34,6 +34,7 @@ export interface WelcomePayload {
 
 export interface RoomSnapshotPayload {
   roomId: EntityId
+  selfPlayerId?: EntityId
   players: PlayerSnapshot[]
   weaponPickups: WorldWeaponPickup[]
   itemPickups: WorldItemPickup[]
