@@ -76,4 +76,5 @@
 
 ## 참고
 
-구현을 바꿀 때는 이 문서도 같이 갱신한다.
+- 맵 경계/카메라 확장 아이디어는 `docs/technical/mini-spec-map-boundaries-camera.md`에 별도 정리한다.
+- 구현을 바꿀 때는 이 문서도 같이 갱신한다.
