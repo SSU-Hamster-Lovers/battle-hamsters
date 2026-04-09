@@ -3,8 +3,9 @@
 ## 전제 조건
 
 - Node.js 20+
-- Rust latest
 - pnpm 8+
+- Rust latest
+- Docker Desktop
 
 ## 설치
 
@@ -14,8 +15,29 @@ cd battle-hamsters
 pnpm install
 ```
 
-## 개발 서버 실행
+## 실행 방식
+
+현재는 루트 통합 실행 스크립트가 없습니다.
+아래처럼 앱별로 실행하세요.
+
+### Portal
 
 ```bash
+cd apps/portal
 pnpm dev
+```
+
+### Game
+
+```bash
+cd apps/game
+pnpm dev
+```
+
+### Server
+
+```bash
+cd server
+docker compose up -d db
+cargo run
 ```
