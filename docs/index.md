@@ -8,6 +8,7 @@
 
 - [코어 규칙](game-design/core-rules.md)
 - [맵 설계](game-design/map-design.md)
+- [아이템 설계](game-design/item-design.md)
 - [무기 설계](game-design/weapon-design.md)
 
 ## 기술 설계
@@ -19,6 +20,7 @@
 ## 팀
 
 - [역할 분담](team/roles.md)
+- [협업 규칙](team/collaboration-rules.md)
 
 ## 가이드
 
