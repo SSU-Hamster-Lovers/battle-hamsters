@@ -102,7 +102,7 @@ impl RoomState {
 
         self.sessions.insert(player_id.clone(), recipient);
         self.players.insert(
-            player_id,
+            player_id.clone(),
             PlayerRuntime {
                 snapshot: player,
                 latest_input: None,
@@ -111,6 +111,7 @@ impl RoomState {
 
         RoomSnapshotPayload {
             room_id: self.room_id.clone(),
+            self_player_id: Some(player_id.clone()),
             players: self.player_snapshots(),
             weapon_pickups: vec![],
             item_pickups: vec![],
@@ -516,6 +517,7 @@ struct WelcomePayload {
 #[serde(rename_all = "camelCase")]
 struct RoomSnapshotPayload {
     room_id: String,
+    self_player_id: Option<String>,
     players: Vec<PlayerSnapshot>,
     weapon_pickups: Vec<WorldWeaponPickup>,
     item_pickups: Vec<WorldItemPickup>,

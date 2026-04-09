@@ -23,13 +23,13 @@ type RenderedPlayer = {
 }
 
 function getOrCreatePlayerName(): string {
-  const existing = window.localStorage.getItem(PLAYER_NAME_STORAGE_KEY)
+  const existing = window.sessionStorage.getItem(PLAYER_NAME_STORAGE_KEY)
   if (existing) {
     return existing
   }
 
   const generated = `hammy-${Math.random().toString(36).slice(2, 6)}`
-  window.localStorage.setItem(PLAYER_NAME_STORAGE_KEY, generated)
+  window.sessionStorage.setItem(PLAYER_NAME_STORAGE_KEY, generated)
   return generated
 }
 
@@ -139,6 +139,8 @@ class MainScene extends Phaser.Scene {
     this.socket.addEventListener('close', () => {
       this.connectionText.setText('Disconnected from server. Retrying in 2s...')
       this.connectionText.setColor('#fca5a5')
+      this.localPlayerId = null
+      this.clearRenderedPlayers()
       this.time.delayedCall(2000, () => {
         if (!this.socket || this.socket.readyState === WebSocket.CLOSED) {
           this.connect()
@@ -191,12 +193,16 @@ class MainScene extends Phaser.Scene {
   }
 
   private applyRoomSnapshot(message: RoomSnapshotMessage) {
+    if (message.payload.selfPlayerId) {
+      this.localPlayerId = message.payload.selfPlayerId
+    }
     this.renderPlayers(message.payload.players)
     this.captureLocalPlayer(message.payload.players)
     this.infoText.setText([
       `room: ${message.payload.roomId}`,
       `players: ${message.payload.players.length}`,
       `match: ${message.payload.matchState}`,
+      `self: ${this.localPlayerId ?? 'unknown'}`,
       'tick: waiting',
     ])
   }
@@ -209,6 +215,7 @@ class MainScene extends Phaser.Scene {
       `room: ${message.payload.roomId}`,
       `players: ${message.payload.players.length}`,
       `match: ${message.payload.matchState}`,
+      `self: ${this.localPlayerId ?? 'unknown'}`,
       `tick: ${message.payload.serverTick}`,
       `time remaining: ${Math.ceil(message.payload.timeRemainingMs / 1000)}s`,
     ])
@@ -265,6 +272,12 @@ class MainScene extends Phaser.Scene {
     rendered.body.destroy()
     rendered.label.destroy()
     this.renderedPlayers.delete(playerId)
+  }
+
+  private clearRenderedPlayers() {
+    for (const playerId of [...this.renderedPlayers.keys()]) {
+      this.removeRenderedPlayer(playerId)
+    }
   }
 
   private sendLatestInput() {
