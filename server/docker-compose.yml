@@ -1,0 +1,35 @@
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: battle_hamsters
+      POSTGRES_USER: dev
+      POSTGRES_PASSWORD: dev
+    ports:
+      - '5434:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /app
+    command: cargo run
+    environment:
+      API_PORT: 8081
+      DATABASE_URL: postgres://dev:dev@db:5432/battle_hamsters
+      RUST_LOG: info
+    depends_on:
+      - db
+    ports:
+      - '8081:8081'
+    volumes:
+      - ./:/app
+      - cargo_target:/app/target
+      - cargo_registry:/usr/local/cargo/registry
+
+volumes:
+  postgres_data:
+  cargo_target:
+  cargo_registry:

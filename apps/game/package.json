@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@battle-hamsters/shared": "workspace:*",
     "phaser": "^3.80.0"
   },
   "devDependencies": {

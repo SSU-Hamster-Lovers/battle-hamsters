@@ -1,0 +1,88 @@
+name: Server Deploy (Oracle Cloud)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/**'
+      - 'deploy/oracle/**'
+      - '.github/workflows/server-deploy-oracle.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: server-deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Oracle Cloud
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+
+    env:
+      OCI_HOST: ${{ vars.OCI_HOST }}
+      OCI_USER: ${{ vars.OCI_USER }}
+      OCI_SSH_PORT: ${{ vars.OCI_SSH_PORT || '22' }}
+      OCI_DEPLOY_PATH: ${{ vars.OCI_DEPLOY_PATH }}
+      API_PORT: ${{ vars.API_PORT || '8081' }}
+      RUST_LOG: ${{ vars.RUST_LOG || 'info' }}
+      POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+      POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create release archive
+        run: tar -czf release.tar.gz server deploy/oracle
+
+      - name: Create production environment file
+        run: |
+          cat > oracle.env <<EOF
+          POSTGRES_DB=${POSTGRES_DB}
+          POSTGRES_USER=${POSTGRES_USER}
+          POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+          DATABASE_URL=${DATABASE_URL}
+          API_PORT=${API_PORT}
+          RUST_LOG=${RUST_LOG}
+          EOF
+
+      - name: Configure SSH
+        env:
+          OCI_SSH_PRIVATE_KEY: ${{ secrets.OCI_SSH_PRIVATE_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${OCI_SSH_PRIVATE_KEY}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -p "${OCI_SSH_PORT}" "${OCI_HOST}" >> ~/.ssh/known_hosts
+
+      - name: Upload release bundle
+        run: |
+          scp -P "${OCI_SSH_PORT}" release.tar.gz oracle.env "${OCI_USER}@${OCI_HOST}:/tmp/"
+
+      - name: Deploy on Oracle Cloud instance
+        run: |
+          ssh -p "${OCI_SSH_PORT}" "${OCI_USER}@${OCI_HOST}" bash -s <<EOF
+          set -euo pipefail
+
+          DEPLOY_ROOT="${OCI_DEPLOY_PATH}"
+          RELEASE_DIR="${OCI_DEPLOY_PATH}/releases/${GITHUB_SHA}"
+          ARCHIVE_PATH="/tmp/release.tar.gz"
+          ENV_PATH="/tmp/oracle.env"
+
+          mkdir -p "${DEPLOY_ROOT}/releases" "${RELEASE_DIR}"
+          tar -xzf "${ARCHIVE_PATH}" -C "${RELEASE_DIR}"
+          mv "${ENV_PATH}" "${RELEASE_DIR}/deploy/oracle/.env"
+
+          cd "${RELEASE_DIR}/deploy/oracle"
+          docker compose -p battle-hamsters --env-file .env up -d --build
+
+          ln -sfn "${RELEASE_DIR}" "${DEPLOY_ROOT}/current"
+
+          rm -f "${ARCHIVE_PATH}"
+          docker image prune -f >/dev/null 2>&1 || true
+          EOF

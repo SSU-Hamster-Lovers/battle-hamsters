@@ -1,0 +1,55 @@
+name: Portal Deploy (Cloudflare Pages)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/portal/**'
+      - '.github/workflows/portal-deploy-cloudflare.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: portal-deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy portal to Cloudflare Pages
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install portal dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: apps/portal
+
+      - name: Build static portal
+        run: pnpm build
+        working-directory: apps/portal
+
+      - name: Deploy static export to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          command: >-
+            pages deploy apps/portal/out
+            --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT_NAME }}
+            --branch=main
