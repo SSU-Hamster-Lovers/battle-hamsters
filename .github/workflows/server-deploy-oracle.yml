@@ -25,7 +25,7 @@ jobs:
       OCI_HOST: ${{ vars.OCI_HOST }}
       OCI_USER: ${{ vars.OCI_USER }}
       OCI_SSH_PORT: ${{ vars.OCI_SSH_PORT || '22' }}
-      OCI_DEPLOY_PATH: ${{ vars.OCI_DEPLOY_PATH }}
+      OCI_DEPLOY_PATH: ${{ vars.OCI_DEPLOY_PATH || '/opt/battle-hamsters' }}
       API_PORT: ${{ vars.API_PORT || '8081' }}
       RUST_LOG: ${{ vars.RUST_LOG || 'info' }}
       POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
@@ -64,13 +64,20 @@ jobs:
         run: |
           scp -P "${OCI_SSH_PORT}" release.tar.gz oracle.env "${OCI_USER}@${OCI_HOST}:/tmp/"
 
+      - name: Validate deploy configuration
+        run: |
+          test -n "${OCI_HOST}"
+          test -n "${OCI_USER}"
+          test -n "${OCI_DEPLOY_PATH}"
+
       - name: Deploy on Oracle Cloud instance
         run: |
-          ssh -p "${OCI_SSH_PORT}" "${OCI_USER}@${OCI_HOST}" bash -s <<EOF
+          ssh -p "${OCI_SSH_PORT}" "${OCI_USER}@${OCI_HOST}" bash -s -- "${OCI_DEPLOY_PATH}" "${GITHUB_SHA}" <<'EOF'
           set -euo pipefail
 
-          DEPLOY_ROOT="${OCI_DEPLOY_PATH}"
-          RELEASE_DIR="${OCI_DEPLOY_PATH}/releases/${GITHUB_SHA}"
+          DEPLOY_ROOT="$1"
+          RELEASE_SHA="$2"
+          RELEASE_DIR="${DEPLOY_ROOT}/releases/${RELEASE_SHA}"
           ARCHIVE_PATH="/tmp/release.tar.gz"
           ENV_PATH="/tmp/oracle.env"
 
