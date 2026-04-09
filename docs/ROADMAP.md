@@ -62,7 +62,7 @@
 ### Phase 7: CI/CD 및 배포
 - [x] Server CI/CD (GitHub Actions)
 - [ ] Oracle Cloud 배포 설정
-- [ ] Cloudflare Pages 배포 설정
+- [ ] Cloudflare Pages direct upload 배포 설정
 - [ ] 도메인/SSL 설정
 
 ### Phase 8: 콘텐츠 제작
