@@ -16,6 +16,12 @@ const WS_URL =
   `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname}:8081/ws`
 const PLAYER_NAME_STORAGE_KEY = 'battle-hamsters-player-name'
 const INPUT_SEND_INTERVAL_MS = 50
+const GROUND_TOP_Y = 540
+const PIT_LEFT_X = 330
+const PIT_RIGHT_X = 470
+const ONE_WAY_PLATFORM_TOP_Y = 380
+const ONE_WAY_PLATFORM_LEFT_X = 250
+const ONE_WAY_PLATFORM_WIDTH = 300
 
 type RenderedPlayer = {
   body: Phaser.GameObjects.Rectangle
@@ -59,6 +65,7 @@ class MainScene extends Phaser.Scene {
 
   create() {
     this.cameras.main.setBackgroundColor('#111827')
+    this.drawStage()
 
     this.statusText = this.add
       .text(24, 20, 'Battle Hamsters', {
@@ -82,15 +89,15 @@ class MainScene extends Phaser.Scene {
       })
       .setDepth(10)
 
-    this.add.text(24, GAME_HEIGHT - 70, 'Move: WASD / Arrow Keys', {
+    this.add.text(24, GAME_HEIGHT - 70, 'Move: A / D or Arrow Left / Right', {
       fontSize: '14px',
       color: '#9ca3af',
     })
-    this.add.text(24, GAME_HEIGHT - 46, 'Jump: Space / Up  |  Drop Weapon: Q', {
+    this.add.text(24, GAME_HEIGHT - 46, 'Jump: W / Space / Up  |  Down: S / Down', {
       fontSize: '14px',
       color: '#9ca3af',
     })
-    this.add.text(24, GAME_HEIGHT - 22, 'Aim / Attack: Mouse', {
+    this.add.text(24, GAME_HEIGHT - 22, 'Q: Drop Weapon  |  Mouse: Aim / Attack', {
       fontSize: '14px',
       color: '#9ca3af',
     })
@@ -120,6 +127,37 @@ class MainScene extends Phaser.Scene {
     this.events.on(Phaser.Scenes.Events.DESTROY, () => this.socket?.close())
 
     this.connect()
+  }
+
+  private drawStage() {
+    this.add.rectangle(PIT_LEFT_X / 2, GROUND_TOP_Y + 30, PIT_LEFT_X, 120, 0x1f2937)
+    this.add.rectangle(
+      PIT_RIGHT_X + (GAME_WIDTH - PIT_RIGHT_X) / 2,
+      GROUND_TOP_Y + 30,
+      GAME_WIDTH - PIT_RIGHT_X,
+      120,
+      0x1f2937,
+    )
+    this.add.rectangle((PIT_LEFT_X + PIT_RIGHT_X) / 2, GAME_HEIGHT - 20, PIT_RIGHT_X - PIT_LEFT_X, 80, 0x7f1d1d)
+    this.add.rectangle(
+      ONE_WAY_PLATFORM_LEFT_X + ONE_WAY_PLATFORM_WIDTH / 2,
+      ONE_WAY_PLATFORM_TOP_Y,
+      ONE_WAY_PLATFORM_WIDTH,
+      12,
+      0x60a5fa,
+    )
+    this.add.text(ONE_WAY_PLATFORM_LEFT_X, ONE_WAY_PLATFORM_TOP_Y - 24, '원웨이 플랫폼', {
+      fontSize: '12px',
+      color: '#93c5fd',
+    })
+    this.add.text(24, GROUND_TOP_Y + 12, '바닥', {
+      fontSize: '12px',
+      color: '#d1d5db',
+    })
+    this.add.text(PIT_LEFT_X + 8, GAME_HEIGHT - 58, '낙사 구역', {
+      fontSize: '12px',
+      color: '#fecaca',
+    })
   }
 
   private connect() {
@@ -205,26 +243,37 @@ class MainScene extends Phaser.Scene {
     }
     this.renderPlayers(message.payload.players)
     this.captureLocalPlayer(message.payload.players)
-    this.infoText.setText([
-      `room: ${message.payload.roomId}`,
-      `players: ${message.payload.players.length}`,
-      `match: ${message.payload.matchState}`,
-      `self: ${this.localPlayerId ?? 'unknown'}`,
-      'tick: waiting',
-    ])
+    this.updateInfoText(message.payload.players, 'waiting', null)
   }
 
   private applyWorldSnapshot(message: WorldSnapshotMessage) {
     this.latestTick = message.payload.serverTick
     this.renderPlayers(message.payload.players)
     this.captureLocalPlayer(message.payload.players)
+    this.updateInfoText(
+      message.payload.players,
+      message.payload.matchState,
+      message.payload.timeRemainingMs,
+    )
+  }
+
+  private updateInfoText(
+    players: PlayerSnapshot[],
+    matchState: string,
+    timeRemainingMs: number | null,
+  ) {
+    const localPlayer = players.find((player) => player.id === this.localPlayerId)
     this.infoText.setText([
-      `room: ${message.payload.roomId}`,
-      `players: ${message.payload.players.length}`,
-      `match: ${message.payload.matchState}`,
+      `room: ${ROOM_ID}`,
+      `players: ${players.length}`,
+      `match: ${matchState}`,
       `self: ${this.localPlayerId ?? 'unknown'}`,
-      `tick: ${message.payload.serverTick}`,
-      `time remaining: ${Math.ceil(message.payload.timeRemainingMs / 1000)}s`,
+      `grounded: ${localPlayer?.grounded ?? false}`,
+      `state: ${localPlayer?.state ?? 'unknown'}`,
+      `jumps used: ${localPlayer?.jumpCountUsed ?? 0}`,
+      `lives: ${localPlayer?.lives ?? 0}`,
+      `tick: ${this.latestTick}`,
+      `time remaining: ${timeRemainingMs === null ? 'waiting' : `${Math.ceil(timeRemainingMs / 1000)}s`}`,
     ])
   }
 
@@ -255,12 +304,15 @@ class MainScene extends Phaser.Scene {
         this.renderedPlayers.set(player.id, rendered)
       }
 
-      const isLocalPlayer = player.id === this.localPlayerId || player.name === this.playerName
-      rendered.body.setFillStyle(isLocalPlayer ? 0x34d399 : 0xf59e0b)
+      const isLocalPlayer = player.id === this.localPlayerId
+      const baseColor = isLocalPlayer ? 0x34d399 : 0xf59e0b
+      const color = player.state === 'respawning' ? 0x94a3b8 : baseColor
+
+      rendered.body.setFillStyle(color)
       rendered.body.setPosition(player.position.x, player.position.y)
-      rendered.label.setText(player.name)
+      rendered.label.setText(player.state === 'respawning' ? `${player.name} (리스폰 중)` : player.name)
       rendered.label.setPosition(player.position.x - rendered.label.width / 2, player.position.y - 32)
-      rendered.body.setAlpha(player.state === 'alive' ? 1 : 0.5)
+      rendered.body.setAlpha(player.state === 'alive' ? 1 : 0.35)
     }
 
     for (const [playerId] of this.renderedPlayers) {
@@ -303,9 +355,7 @@ class MainScene extends Phaser.Scene {
     const moveX =
       Number(this.cursors.right.isDown || this.keys.d.isDown) -
       Number(this.cursors.left.isDown || this.keys.a.isDown)
-    const moveY =
-      Number(this.cursors.down.isDown || this.keys.s.isDown) -
-      Number(this.cursors.up.isDown || this.keys.w.isDown)
+    const moveY = Number(this.cursors.down.isDown || this.keys.s.isDown)
 
     this.send({
       type: 'player_input',
@@ -316,7 +366,8 @@ class MainScene extends Phaser.Scene {
         aim: { x: aimX / aimLength, y: aimY / aimLength },
         jump:
           Phaser.Input.Keyboard.JustDown(this.keys.space) ||
-          Phaser.Input.Keyboard.JustDown(this.cursors.up),
+          Phaser.Input.Keyboard.JustDown(this.cursors.up) ||
+          Phaser.Input.Keyboard.JustDown(this.keys.w),
         attack: pointer.isDown,
         dropWeapon: Phaser.Input.Keyboard.JustDown(this.keys.q),
       },
@@ -328,9 +379,7 @@ class MainScene extends Phaser.Scene {
   }
 
   update() {
-    this.statusText.setText(
-      `Battle Hamsters  |  server tick ${this.latestTick}  |  room ${ROOM_ID}`,
-    )
+    this.statusText.setText(`Battle Hamsters  |  server tick ${this.latestTick}  |  room ${ROOM_ID}`)
   }
 }
 

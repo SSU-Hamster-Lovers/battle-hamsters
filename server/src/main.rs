@@ -13,9 +13,28 @@ const ROOM_ID: &str = "room_alpha";
 const DEFAULT_TIME_LIMIT_MS: u64 = 300_000;
 const TICK_RATE: u64 = 20;
 const TICK_INTERVAL_MS: u64 = 1000 / TICK_RATE;
-const PLAYER_SPEED_PER_TICK: f64 = 12.0;
 const HEARTBEAT_INTERVAL_SECS: u64 = 5;
 const CLIENT_TIMEOUT_SECS: u64 = 10;
+
+const WORLD_WIDTH: f64 = 800.0;
+const GROUND_TOP_Y: f64 = 540.0;
+const PIT_LEFT_X: f64 = 330.0;
+const PIT_RIGHT_X: f64 = 470.0;
+const ONE_WAY_PLATFORM_TOP_Y: f64 = 380.0;
+const ONE_WAY_PLATFORM_LEFT_X: f64 = 250.0;
+const ONE_WAY_PLATFORM_RIGHT_X: f64 = 550.0;
+const KILL_ZONE_Y: f64 = 700.0;
+const PLAYER_HALF_SIZE: f64 = 14.0;
+const RUN_SPEED_PER_TICK: f64 = 8.0;
+const GRAVITY_PER_TICK: f64 = 1.4;
+const FAST_FALL_GRAVITY_PER_TICK: f64 = 2.4;
+const JUMP_VELOCITY: f64 = -18.0;
+const MAX_FALL_SPEED: f64 = 20.0;
+const MAX_FAST_FALL_SPEED: f64 = 28.0;
+const DROP_THROUGH_MS: u64 = 220;
+const RESPAWN_DELAY_MS: u64 = 3_000;
+const TEST_LIVES: u8 = 99;
+const MAX_JUMP_COUNT: u8 = 1;
 
 #[derive(Serialize)]
 struct HealthResponse {
@@ -45,7 +64,8 @@ async fn hello(query: web::Query<UserQuery>) -> impl Responder {
 #[derive(Clone)]
 struct PlayerRuntime {
     snapshot: PlayerSnapshot,
-    latest_input: Option<PlayerInputPayload>,
+    latest_input: PlayerInputPayload,
+    spawn_index: usize,
 }
 
 struct RoomState {
@@ -80,20 +100,22 @@ impl RoomState {
         player_name: String,
         recipient: Recipient<WsText>,
     ) -> RoomSnapshotPayload {
-        let index = self.players.len() as f64;
+        let spawn_index = self.players.len();
+        let spawn = spawn_position(spawn_index);
         let player = PlayerSnapshot {
             id: player_id.clone(),
             name: player_name,
-            position: Vector2 {
-                x: 120.0 + (index * 80.0),
-                y: 360.0,
-            },
+            position: spawn,
             velocity: Vector2 { x: 0.0, y: 0.0 },
             direction: Direction::Right,
             hp: 100,
-            lives: 3,
+            lives: TEST_LIVES,
             move_speed_rank: 0,
-            max_jump_count: 1,
+            max_jump_count: MAX_JUMP_COUNT,
+            jump_count_used: 0,
+            grounded: false,
+            drop_through_until: None,
+            respawn_at: None,
             equipped_weapon_id: "paws".to_string(),
             equipped_weapon_resource: None,
             grab_state: None,
@@ -105,13 +127,14 @@ impl RoomState {
             player_id.clone(),
             PlayerRuntime {
                 snapshot: player,
-                latest_input: None,
+                latest_input: PlayerInputPayload::default(),
+                spawn_index,
             },
         );
 
         RoomSnapshotPayload {
             room_id: self.room_id.clone(),
-            self_player_id: Some(player_id.clone()),
+            self_player_id: Some(player_id),
             players: self.player_snapshots(),
             weapon_pickups: vec![],
             item_pickups: vec![],
@@ -126,36 +149,41 @@ impl RoomState {
 
     fn apply_input(&mut self, player_id: &str, input: PlayerInputPayload) {
         if let Some(player) = self.players.get_mut(player_id) {
-            player.latest_input = Some(input);
+            player.latest_input = input;
         }
     }
 
-    fn tick(&mut self) -> WorldSnapshotPayload {
+    fn tick(&mut self, now_ms: u64) -> WorldSnapshotPayload {
         self.server_tick += 1;
         self.time_remaining_ms = self.time_remaining_ms.saturating_sub(TICK_INTERVAL_MS);
 
-        for player in self.players.values_mut() {
-            if let Some(input) = player.latest_input.clone() {
-                let move_x = input.move_ref().x.clamp(-1.0, 1.0);
-                let move_y = input.move_ref().y.clamp(-1.0, 1.0);
+        let player_ids = self.players.keys().cloned().collect::<Vec<_>>();
+        let mut deaths = Vec::new();
 
-                player.snapshot.velocity = Vector2 {
-                    x: move_x * PLAYER_SPEED_PER_TICK,
-                    y: move_y * PLAYER_SPEED_PER_TICK,
-                };
+        for player_id in player_ids {
+            let Some(player) = self.players.get_mut(&player_id) else {
+                continue;
+            };
 
-                player.snapshot.position.x += player.snapshot.velocity.x;
-                player.snapshot.position.y += player.snapshot.velocity.y;
-
-                if move_x < 0.0 {
-                    player.snapshot.direction = Direction::Left;
-                } else if move_x > 0.0 {
-                    player.snapshot.direction = Direction::Right;
-                } else if input.aim.x < 0.0 {
-                    player.snapshot.direction = Direction::Left;
-                } else if input.aim.x > 0.0 {
-                    player.snapshot.direction = Direction::Right;
+            if player.snapshot.state == PlayerState::Respawning {
+                if let Some(respawn_at) = player.snapshot.respawn_at {
+                    if now_ms >= respawn_at {
+                        respawn_player(player);
+                    }
                 }
+                continue;
+            }
+
+            step_player(player, now_ms);
+
+            if player.snapshot.position.y - PLAYER_HALF_SIZE > KILL_ZONE_Y {
+                deaths.push(player_id);
+            }
+        }
+
+        for player_id in deaths {
+            if let Some(player) = self.players.get_mut(&player_id) {
+                trigger_respawn(player, now_ms);
             }
         }
 
@@ -171,6 +199,134 @@ impl RoomState {
             time_remaining_ms: self.time_remaining_ms,
         }
     }
+}
+
+fn spawn_position(spawn_index: usize) -> Vector2 {
+    let positions = [140.0, 660.0, 320.0, 480.0];
+    Vector2 {
+        x: positions[spawn_index % positions.len()],
+        y: 80.0,
+    }
+}
+
+fn step_player(player: &mut PlayerRuntime, now_ms: u64) {
+    let input = player.latest_input.clone();
+    let move_x = input.move_ref().x.clamp(-1.0, 1.0);
+    let down_pressed = input.move_ref().y > 0.5;
+
+    player.snapshot.velocity.x = move_x * RUN_SPEED_PER_TICK;
+
+    if move_x < 0.0 {
+        player.snapshot.direction = Direction::Left;
+    } else if move_x > 0.0 {
+        player.snapshot.direction = Direction::Right;
+    } else if input.aim.x < 0.0 {
+        player.snapshot.direction = Direction::Left;
+    } else if input.aim.x > 0.0 {
+        player.snapshot.direction = Direction::Right;
+    }
+
+    let on_one_way_platform = is_on_one_way_platform(&player.snapshot);
+    let drop_active = player
+        .snapshot
+        .drop_through_until
+        .is_some_and(|until| until > now_ms);
+
+    if input.jump {
+        if player.snapshot.grounded && down_pressed && on_one_way_platform {
+            player.snapshot.drop_through_until = Some(now_ms + DROP_THROUGH_MS);
+            player.snapshot.grounded = false;
+            player.snapshot.position.y += 2.0;
+            player.snapshot.velocity.y = 2.0;
+        } else if player.snapshot.jump_count_used < player.snapshot.max_jump_count {
+            player.snapshot.velocity.y = JUMP_VELOCITY;
+            player.snapshot.grounded = false;
+            player.snapshot.jump_count_used += 1;
+        }
+    }
+
+    if !player.snapshot.grounded {
+        let gravity = if down_pressed && player.snapshot.velocity.y > 0.0 {
+            FAST_FALL_GRAVITY_PER_TICK
+        } else {
+            GRAVITY_PER_TICK
+        };
+        let max_fall_speed = if down_pressed && player.snapshot.velocity.y > 0.0 {
+            MAX_FAST_FALL_SPEED
+        } else {
+            MAX_FALL_SPEED
+        };
+        player.snapshot.velocity.y = (player.snapshot.velocity.y + gravity).min(max_fall_speed);
+    }
+
+    let previous_position = player.snapshot.position.clone();
+    player.snapshot.position.x += player.snapshot.velocity.x;
+    player.snapshot.position.y += player.snapshot.velocity.y;
+
+    player.snapshot.position.x = player
+        .snapshot
+        .position
+        .x
+        .clamp(PLAYER_HALF_SIZE, WORLD_WIDTH - PLAYER_HALF_SIZE);
+
+    player.snapshot.grounded = false;
+
+    let previous_bottom = previous_position.y + PLAYER_HALF_SIZE;
+    let current_bottom = player.snapshot.position.y + PLAYER_HALF_SIZE;
+
+    if current_bottom >= GROUND_TOP_Y && !is_over_pit(player.snapshot.position.x) {
+        player.snapshot.position.y = GROUND_TOP_Y - PLAYER_HALF_SIZE;
+        player.snapshot.velocity.y = 0.0;
+        player.snapshot.grounded = true;
+        player.snapshot.jump_count_used = 0;
+    } else if player.snapshot.velocity.y >= 0.0
+        && !drop_active
+        && previous_bottom <= ONE_WAY_PLATFORM_TOP_Y
+        && current_bottom >= ONE_WAY_PLATFORM_TOP_Y
+        && (ONE_WAY_PLATFORM_LEFT_X..=ONE_WAY_PLATFORM_RIGHT_X)
+            .contains(&player.snapshot.position.x)
+    {
+        player.snapshot.position.y = ONE_WAY_PLATFORM_TOP_Y - PLAYER_HALF_SIZE;
+        player.snapshot.velocity.y = 0.0;
+        player.snapshot.grounded = true;
+        player.snapshot.jump_count_used = 0;
+    }
+}
+
+fn is_on_one_way_platform(player: &PlayerSnapshot) -> bool {
+    player.grounded
+        && (player.position.y + PLAYER_HALF_SIZE - ONE_WAY_PLATFORM_TOP_Y).abs() < 1.0
+        && (ONE_WAY_PLATFORM_LEFT_X..=ONE_WAY_PLATFORM_RIGHT_X).contains(&player.position.x)
+}
+
+fn is_over_pit(x: f64) -> bool {
+    (PIT_LEFT_X..=PIT_RIGHT_X).contains(&x)
+}
+
+fn trigger_respawn(player: &mut PlayerRuntime, now_ms: u64) {
+    if player.snapshot.lives > 0 {
+        player.snapshot.lives -= 1;
+    }
+
+    player.snapshot.hp = 0;
+    player.snapshot.state = PlayerState::Respawning;
+    player.snapshot.respawn_at = Some(now_ms + RESPAWN_DELAY_MS);
+    player.snapshot.velocity = Vector2 { x: 0.0, y: 0.0 };
+    player.snapshot.grounded = false;
+    player.snapshot.jump_count_used = 0;
+    player.snapshot.drop_through_until = None;
+    player.snapshot.position.y = KILL_ZONE_Y + 80.0;
+}
+
+fn respawn_player(player: &mut PlayerRuntime) {
+    player.snapshot.position = spawn_position(player.spawn_index);
+    player.snapshot.velocity = Vector2 { x: 0.0, y: 0.0 };
+    player.snapshot.hp = 100;
+    player.snapshot.grounded = false;
+    player.snapshot.jump_count_used = 0;
+    player.snapshot.drop_through_until = None;
+    player.snapshot.respawn_at = None;
+    player.snapshot.state = PlayerState::Alive;
 }
 
 struct AppState {
@@ -344,13 +500,8 @@ impl Actor for WsSession {
         };
 
         if removed {
-            let message = serialize_message(
-                "player_left",
-                PlayerLeftPayload {
-                    player_id: player_id.clone(),
-                },
-            )
-            .expect("serialize player_left");
+            let message = serialize_message("player_left", PlayerLeftPayload { player_id })
+                .expect("serialize player_left");
             broadcast_to_room(&self.app_state, &message);
         }
     }
@@ -450,8 +601,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                     },
                 );
             }
-            Ok(ws::Message::Continuation(_)) => {}
-            Ok(ws::Message::Nop) => {}
+            Ok(ws::Message::Continuation(_)) | Ok(ws::Message::Nop) => {}
             Err(error) => {
                 log::warn!("WebSocket protocol error: {}", error);
                 ctx.stop();
@@ -483,7 +633,7 @@ struct JoinRoomPayload {
 }
 
 #[allow(dead_code)]
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 struct PlayerInputPayload {
     sequence: u64,
@@ -594,6 +744,10 @@ struct PlayerSnapshot {
     lives: u8,
     move_speed_rank: i8,
     max_jump_count: u8,
+    jump_count_used: u8,
+    grounded: bool,
+    drop_through_until: Option<u64>,
+    respawn_at: Option<u64>,
     equipped_weapon_id: String,
     equipped_weapon_resource: Option<u32>,
     grab_state: Option<GrabState>,
@@ -607,8 +761,7 @@ struct GrabState {
     remaining_ms: u64,
 }
 
-#[allow(dead_code)]
-#[derive(Serialize, Deserialize, Clone, Copy)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 enum MatchState {
     Waiting,
@@ -624,7 +777,7 @@ enum Direction {
 }
 
 #[allow(dead_code)]
-#[derive(Serialize, Clone, Copy)]
+#[derive(Serialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 enum PlayerState {
     Alive,
@@ -665,7 +818,7 @@ enum DespawnStyle {
     ShrinkPop,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Default)]
 struct Vector2 {
     x: f64,
     y: f64,
@@ -706,15 +859,13 @@ fn start_room_loop(app_state: web::Data<AppState>) {
 
         loop {
             ticker.tick().await;
-
-            let snapshot_message = {
+            let message = {
                 let mut room = app_state.room.lock().expect("room mutex poisoned");
-                let snapshot = room.tick();
+                let snapshot = room.tick(now_ms());
                 serialize_message("world_snapshot", snapshot)
                     .expect("world_snapshot should serialize")
             };
-
-            broadcast_to_room(&app_state, &snapshot_message);
+            broadcast_to_room(&app_state, &message);
         }
     });
 }
@@ -762,10 +913,8 @@ mod tests {
     #[actix_rt::test]
     async fn test_health() {
         let app = test::init_service(App::new().route("/health", web::get().to(health))).await;
-
         let req = test::TestRequest::get().uri("/health").to_request();
         let resp = test::call_service(&app, req).await;
-
         assert!(resp.status().is_success());
     }
 }

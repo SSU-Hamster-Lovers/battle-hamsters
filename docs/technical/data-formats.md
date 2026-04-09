@@ -241,9 +241,13 @@
   "velocity": { "x": 0, "y": 0 },
   "direction": "right",
   "hp": 100,
-  "lives": 3,
+  "lives": 99,
   "moveSpeedRank": 0,
   "maxJumpCount": 1,
+  "jumpCountUsed": 0,
+  "grounded": true,
+  "dropThroughUntil": null,
+  "respawnAt": null,
   "equippedWeaponId": "paws",
   "equippedWeaponResource": null,
   "grabState": null,
@@ -258,6 +262,10 @@
 - `moveSpeedRank`: `-7 ~ 7`
 - `maxJumpCount`: `1 | 2 | 3`
 - `equippedWeaponResource`: 기본 무기는 `null`, 보급 무기는 숫자 사용
+- `jumpCountUsed`: 현재까지 사용한 점프 횟수
+- `grounded`: 지면/플랫폼에 착지 중인지 여부
+- `dropThroughUntil`: 플랫폼 내려오기 충돌 무시 종료 시각
+- `respawnAt`: 리스폰 예정 시각
 - `grabState`: grab 중이면 대상/남은 시간 정보 포함 가능
 
 ## 룸 설정 포맷
