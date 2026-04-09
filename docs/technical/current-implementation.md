@@ -4,7 +4,7 @@
 
 ## 최신 기준
 
-기준 브랜치: `feature/collision-primitives`
+기준 브랜치: `develop`
 
 ## 현재 구현된 것
 
@@ -76,4 +76,6 @@
 
 ## 참고
 
-구현을 바꿀 때는 이 문서도 같이 갱신한다.
+- 맵 경계/카메라 확장 아이디어는 `docs/technical/mini-spec-map-boundaries-camera.md`에 별도 정리한다.
+- `boundaryPolicy`, `cameraPolicy`, `gameplayBounds`, `deathBounds`는 현재 문서 스펙 초안이며 아직 런타임 구현은 아니다.
+- 구현을 바꿀 때는 이 문서도 같이 갱신한다.

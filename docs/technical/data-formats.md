@@ -31,6 +31,20 @@
     "width": 1280,
     "height": 720
   },
+  "boundaryPolicy": "closed",
+  "cameraPolicy": "static",
+  "gameplayBounds": {
+    "left": 0,
+    "right": 1280,
+    "top": 0,
+    "bottom": 720
+  },
+  "deathBounds": {
+    "left": -200,
+    "right": 1480,
+    "top": -9999,
+    "bottom": 900
+  },
   "spawnPoints": [
     { "id": "spawn_a", "x": 120, "y": 80 },
     { "id": "spawn_b", "x": 1160, "y": 80 }
@@ -78,6 +92,10 @@
 
 | 필드 | 설명 |
 |------|------|
+| `boundaryPolicy` | `closed | open` |
+| `cameraPolicy` | `static | follow | dynamic` |
+| `gameplayBounds` | 실제 이동 가능 범위 |
+| `deathBounds` | out-of-bounds 사망 범위 |
 | `spawnPoints` | 리스폰 위치 목록 |
 | `collision` | `floor | one_way_platform | solid_wall` primitive 목록 |
 | `hazards` | `fall_zone | instant_kill_hazard` rect 목록 |
@@ -123,6 +141,29 @@
   - `y`
   - `width`
   - `height`
+
+### 경계 / 카메라 정책 규칙
+
+- `boundaryPolicy`
+  - `closed | open`
+- `cameraPolicy`
+  - `static | follow | dynamic`
+- `gameplayBounds`
+  - `left`
+  - `right`
+  - `top`
+  - `bottom`
+- `deathBounds`
+  - `left`
+  - `right`
+  - `top`
+  - `bottom`
+
+## 현재 구현 참고
+
+- 위 필드들은 맵 경계 정책과 카메라 규칙을 위한 장기 맵 포맷 기준이다.
+- 현재 구현은 아직 이 필드를 실제 런타임 로딩에 사용하지 않는다.
+- 현재 상태는 `docs/technical/current-implementation.md`를 기준으로 본다.
 
 ## 무기 정의 포맷
 

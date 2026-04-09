@@ -9,6 +9,8 @@
 - Server: Rust + Actix-web + PostgreSQL (Docker)
 - CI/CD: GitHub Actions (portal, server)
 - 문서: 로컬 설정, 코어 규칙, 맵/아이템/무기 설계, 아키텍처/데이터 포맷/동기화 프로토콜
+- 플랫폼 이동 1차 구현
+- 충돌 primitive / hazard 계약 분리
 - Branch protection: main, develop
 
 ---
@@ -45,9 +47,10 @@
 
 ### Phase 5: Game Client 개발
 - [ ] Phaser 기본 씬 구성
-- [ ] 캐릭터 이동/애니메이션
+- [x] 캐릭터 이동 1차 (플랫폼 이동 테스트)
+- [ ] 캐릭터 애니메이션
 - [ ] 무기 시스템
-- [ ] 충돌 감지
+- [x] 충돌 감지 1차
 - [ ] WebSocket 연결 (서버 연동)
 
 ### Phase 6: 동기화 및 멀티플레이
@@ -71,14 +74,14 @@
 ## 상세 작업 목록
 
 ### 즉시 할 일 (Next Sprint)
-1. Shared 패키지에 무기/아이템/스냅샷 타입 정의
-2. Server: WebSocket 기본 구조
-3. Game: 서버 연결 및 room/world snapshot 렌더링
+1. 공통 맵 데이터(JSON)를 서버와 클라이언트가 함께 읽도록 이동
+2. 맵 `boundaryPolicy / cameraPolicy / gameplayBounds / deathBounds` 필드 초안 정리
+3. item / weapon pickup 실제 상태 반영
 4. PostgreSQL 스키마 및 마이그레이션 구조 정의
 
 ### 나중에 할 일
 1. Portal: 기본 UI 컴포넌트
-2. Game: Phaser 씬 기본 구조
+2. Game: 카메라 정책(`static / follow / dynamic`) 첫 구현
 3. 매칭/방 시스템 API
 
 ---
