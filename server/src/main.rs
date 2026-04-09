@@ -246,12 +246,16 @@ fn step_player(player: &mut PlayerRuntime, now_ms: u64) {
     }
 
     if !player.snapshot.grounded {
-        let gravity = if down_pressed && player.snapshot.velocity.y > 0.0 {
+        if down_pressed && player.snapshot.velocity.y < 0.0 {
+            player.snapshot.velocity.y = 0.0;
+        }
+
+        let gravity = if down_pressed {
             FAST_FALL_GRAVITY_PER_TICK
         } else {
             GRAVITY_PER_TICK
         };
-        let max_fall_speed = if down_pressed && player.snapshot.velocity.y > 0.0 {
+        let max_fall_speed = if down_pressed {
             MAX_FAST_FALL_SPEED
         } else {
             MAX_FALL_SPEED
