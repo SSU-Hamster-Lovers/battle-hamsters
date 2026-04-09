@@ -23,7 +23,7 @@ const PIT_RIGHT_X: f64 = 470.0;
 const ONE_WAY_PLATFORM_TOP_Y: f64 = 380.0;
 const ONE_WAY_PLATFORM_LEFT_X: f64 = 250.0;
 const ONE_WAY_PLATFORM_RIGHT_X: f64 = 550.0;
-const KILL_ZONE_Y: f64 = 700.0;
+const KILL_ZONE_TOP_Y: f64 = GROUND_TOP_Y;
 const PLAYER_HALF_SIZE: f64 = 14.0;
 const RUN_SPEED_PER_TICK: f64 = 8.0;
 const GRAVITY_PER_TICK: f64 = 1.4;
@@ -176,7 +176,7 @@ impl RoomState {
 
             step_player(player, now_ms);
 
-            if player.snapshot.position.y - PLAYER_HALF_SIZE > KILL_ZONE_Y {
+            if is_in_kill_zone(&player.snapshot) {
                 deaths.push(player_id);
             }
         }
@@ -307,6 +307,10 @@ fn is_over_pit(x: f64) -> bool {
     (PIT_LEFT_X..=PIT_RIGHT_X).contains(&x)
 }
 
+fn is_in_kill_zone(player: &PlayerSnapshot) -> bool {
+    is_over_pit(player.position.x) && player.position.y + PLAYER_HALF_SIZE >= KILL_ZONE_TOP_Y
+}
+
 fn trigger_respawn(player: &mut PlayerRuntime, now_ms: u64) {
     if player.snapshot.lives > 0 {
         player.snapshot.lives -= 1;
@@ -319,7 +323,7 @@ fn trigger_respawn(player: &mut PlayerRuntime, now_ms: u64) {
     player.snapshot.grounded = false;
     player.snapshot.jump_count_used = 0;
     player.snapshot.drop_through_until = None;
-    player.snapshot.position.y = KILL_ZONE_Y + 80.0;
+    player.snapshot.position.y = KILL_ZONE_TOP_Y + 80.0;
 }
 
 fn respawn_player(player: &mut PlayerRuntime) {

@@ -17,15 +17,30 @@ const WS_URL =
 const PLAYER_NAME_STORAGE_KEY = 'battle-hamsters-player-name'
 const INPUT_SEND_INTERVAL_MS = 50
 const GROUND_TOP_Y = 540
+const GROUND_HEIGHT = GAME_HEIGHT - GROUND_TOP_Y
 const PIT_LEFT_X = 330
 const PIT_RIGHT_X = 470
+const KILL_ZONE_TOP_Y = GROUND_TOP_Y
 const ONE_WAY_PLATFORM_TOP_Y = 380
 const ONE_WAY_PLATFORM_LEFT_X = 250
 const ONE_WAY_PLATFORM_WIDTH = 300
+const ONE_WAY_PLATFORM_HEIGHT = 12
+const PLAYER_SIZE = 28
+const SPAWN_POINTS = [140, 660, 320, 480]
 
 type RenderedPlayer = {
   body: Phaser.GameObjects.Rectangle
   label: Phaser.GameObjects.Text
+}
+
+function drawCross(
+  graphics: Phaser.GameObjects.Graphics,
+  x: number,
+  y: number,
+  size: number,
+) {
+  graphics.lineBetween(x - size, y, x + size, y)
+  graphics.lineBetween(x, y - size, x, y + size)
 }
 
 function getOrCreatePlayerName(): string {
@@ -130,34 +145,62 @@ class MainScene extends Phaser.Scene {
   }
 
   private drawStage() {
-    this.add.rectangle(PIT_LEFT_X / 2, GROUND_TOP_Y + 30, PIT_LEFT_X, 120, 0x1f2937)
+    this.add.rectangle(PIT_LEFT_X / 2, GROUND_TOP_Y + GROUND_HEIGHT / 2, PIT_LEFT_X, GROUND_HEIGHT, 0x1f2937)
     this.add.rectangle(
       PIT_RIGHT_X + (GAME_WIDTH - PIT_RIGHT_X) / 2,
-      GROUND_TOP_Y + 30,
+      GROUND_TOP_Y + GROUND_HEIGHT / 2,
       GAME_WIDTH - PIT_RIGHT_X,
-      120,
+      GROUND_HEIGHT,
       0x1f2937,
     )
-    this.add.rectangle((PIT_LEFT_X + PIT_RIGHT_X) / 2, GAME_HEIGHT - 20, PIT_RIGHT_X - PIT_LEFT_X, 80, 0x7f1d1d)
+    this.add.rectangle(
+      (PIT_LEFT_X + PIT_RIGHT_X) / 2,
+      KILL_ZONE_TOP_Y + (GAME_HEIGHT - KILL_ZONE_TOP_Y) / 2,
+      PIT_RIGHT_X - PIT_LEFT_X,
+      GAME_HEIGHT - KILL_ZONE_TOP_Y,
+      0x7f1d1d,
+      0.4,
+    )
     this.add.rectangle(
       ONE_WAY_PLATFORM_LEFT_X + ONE_WAY_PLATFORM_WIDTH / 2,
-      ONE_WAY_PLATFORM_TOP_Y,
+      ONE_WAY_PLATFORM_TOP_Y + ONE_WAY_PLATFORM_HEIGHT / 2,
       ONE_WAY_PLATFORM_WIDTH,
-      12,
+      ONE_WAY_PLATFORM_HEIGHT,
       0x60a5fa,
     )
+
+    const debug = this.add.graphics().setDepth(2)
+    debug.lineStyle(2, 0x22c55e, 0.9)
+    debug.lineBetween(0, GROUND_TOP_Y, PIT_LEFT_X, GROUND_TOP_Y)
+    debug.lineBetween(PIT_RIGHT_X, GROUND_TOP_Y, GAME_WIDTH, GROUND_TOP_Y)
+
+    debug.lineStyle(2, 0x38bdf8, 0.9)
+    debug.lineBetween(ONE_WAY_PLATFORM_LEFT_X, ONE_WAY_PLATFORM_TOP_Y, ONE_WAY_PLATFORM_LEFT_X + ONE_WAY_PLATFORM_WIDTH, ONE_WAY_PLATFORM_TOP_Y)
+
+    debug.lineStyle(2, 0xf87171, 0.9)
+    debug.strokeRect(PIT_LEFT_X, KILL_ZONE_TOP_Y, PIT_RIGHT_X - PIT_LEFT_X, GAME_HEIGHT - KILL_ZONE_TOP_Y)
+
+    debug.lineStyle(2, 0xfbbf24, 0.9)
+    for (const spawnX of SPAWN_POINTS) {
+      drawCross(debug, spawnX, 80, 8)
+    }
+
     this.add.text(ONE_WAY_PLATFORM_LEFT_X, ONE_WAY_PLATFORM_TOP_Y - 24, '원웨이 플랫폼', {
       fontSize: '12px',
       color: '#93c5fd',
     })
-    this.add.text(24, GROUND_TOP_Y + 12, '바닥', {
+    this.add.text(24, GROUND_TOP_Y + 12, '바닥 충돌면', {
       fontSize: '12px',
       color: '#d1d5db',
     })
-    this.add.text(PIT_LEFT_X + 8, GAME_HEIGHT - 58, '낙사 구역', {
+    this.add.text(PIT_LEFT_X + 8, GAME_HEIGHT - 58, '낙사 구역 / kill zone', {
       fontSize: '12px',
       color: '#fecaca',
     })
+    this.add.text(24, 112, '디버그 오버레이: 초록=바닥, 파랑=원웨이, 빨강=kill zone, 노랑=spawn', {
+      fontSize: '12px',
+      color: '#a5b4fc',
+    }).setDepth(10)
   }
 
   private connect() {
@@ -295,7 +338,7 @@ class MainScene extends Phaser.Scene {
       let rendered = this.renderedPlayers.get(player.id)
       if (!rendered) {
         rendered = {
-          body: this.add.rectangle(player.position.x, player.position.y, 28, 28, 0xf59e0b),
+          body: this.add.rectangle(player.position.x, player.position.y, PLAYER_SIZE, PLAYER_SIZE, 0xf59e0b),
           label: this.add.text(player.position.x, player.position.y - 28, player.name, {
             fontSize: '12px',
             color: '#f9fafb',
@@ -309,6 +352,7 @@ class MainScene extends Phaser.Scene {
       const color = player.state === 'respawning' ? 0x94a3b8 : baseColor
 
       rendered.body.setFillStyle(color)
+      rendered.body.setStrokeStyle(2, isLocalPlayer ? 0xeafff7 : 0xffedd5, 0.95)
       rendered.body.setPosition(player.position.x, player.position.y)
       rendered.label.setText(player.state === 'respawning' ? `${player.name} (리스폰 중)` : player.name)
       rendered.label.setPosition(player.position.x - rendered.label.width / 2, player.position.y - 32)
