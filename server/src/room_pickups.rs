@@ -1,4 +1,4 @@
-use crate::game_data::{item_definition, runtime_map_data, weapon_definition};
+use crate::game_data::{item_definition, runtime_map_data, weapon_definition, SpawnMode};
 use crate::{
     surface_contains_x, DespawnStyle, ItemSource, PickupKinematics, PickupSource, PlayerRuntime,
     RoomState, SpawnStyle, Vector2, WorldItemPickup, WorldWeaponPickup, ITEM_PICKUP_RADIUS, MAX_HP,
@@ -8,14 +8,18 @@ use crate::{
 impl RoomState {
     pub(crate) fn spawn_initial_weapons(&mut self, now_ms: u64) {
         let spawns = runtime_map_data().weapon_spawns.clone();
-        for spawn in spawns {
+        let grouped_spawns = group_weapon_spawns(&spawns);
+        for (_, candidates) in grouped_spawns {
+            let spawn = select_weapon_spawn_candidate(&candidates, now_ms);
             self.spawn_weapon_from_spawn(&spawn, now_ms);
         }
     }
 
     pub(crate) fn spawn_initial_items(&mut self, now_ms: u64) {
         let spawns = runtime_map_data().item_spawns.clone();
-        for spawn in spawns {
+        let grouped_spawns = group_item_spawns(&spawns);
+        for (_, candidates) in grouped_spawns {
+            let spawn = select_item_spawn_candidate(&candidates, now_ms);
             self.spawn_item_from_spawn(&spawn, now_ms);
         }
     }
@@ -49,7 +53,7 @@ impl RoomState {
             despawn_style: spawn.despawn_style,
             spawned_at: now_ms,
             despawn_at: Some(now_ms + spawn.despawn_after_ms),
-            spawn_id: Some(spawn.id.clone()),
+            spawn_cycle_key: spawn_cycle_key_for_weapon(spawn),
             respawn_ms: Some(spawn.respawn_ms),
             kinematics: PickupKinematics {
                 velocity_y: 0.0,
@@ -81,7 +85,7 @@ impl RoomState {
             despawn_style: DespawnStyle::ShrinkPop,
             spawned_at: now_ms,
             despawn_at: Some(now_ms + definition.world_despawn_ms),
-            spawn_id: None,
+            spawn_cycle_key: None,
             respawn_ms: None,
             kinematics: PickupKinematics {
                 velocity_y: 0.0,
@@ -108,7 +112,7 @@ impl RoomState {
             spawned_at: now_ms,
             despawn_at: None,
             spawn_style: spawn.spawn_style,
-            spawn_id: Some(spawn.id.clone()),
+            spawn_cycle_key: spawn_cycle_key_for_item(spawn),
             respawn_ms: Some(spawn.respawn_ms),
             kinematics: PickupKinematics {
                 velocity_y: 0.0,
@@ -129,21 +133,23 @@ impl RoomState {
 
     pub(crate) fn refresh_weapon_spawns(&mut self, now_ms: u64) {
         let spawns = runtime_map_data().weapon_spawns.clone();
-        for spawn in spawns {
+        let grouped_spawns = group_weapon_spawns(&spawns);
+        for (cycle_key, candidates) in grouped_spawns {
             let active = self
                 .weapon_pickups
                 .values()
-                .any(|pickup| pickup.spawn_id.as_deref() == Some(spawn.id.as_str()));
+                .any(|pickup| pickup.spawn_cycle_key.as_deref() == Some(cycle_key.as_str()));
             if active {
                 continue;
             }
 
             let ready = self
                 .next_spawn_respawn_at
-                .get(&spawn.id)
+                .get(&cycle_key)
                 .is_none_or(|respawn_at| now_ms >= *respawn_at);
             if ready {
-                self.next_spawn_respawn_at.remove(&spawn.id);
+                self.next_spawn_respawn_at.remove(&cycle_key);
+                let spawn = select_weapon_spawn_candidate(&candidates, now_ms);
                 self.spawn_weapon_from_spawn(&spawn, now_ms);
             }
         }
@@ -151,21 +157,23 @@ impl RoomState {
 
     pub(crate) fn refresh_item_spawns(&mut self, now_ms: u64) {
         let spawns = runtime_map_data().item_spawns.clone();
-        for spawn in spawns {
+        let grouped_spawns = group_item_spawns(&spawns);
+        for (cycle_key, candidates) in grouped_spawns {
             let active = self
                 .item_pickups
                 .values()
-                .any(|pickup| pickup.spawn_id.as_deref() == Some(spawn.id.as_str()));
+                .any(|pickup| pickup.spawn_cycle_key.as_deref() == Some(cycle_key.as_str()));
             if active {
                 continue;
             }
 
             let ready = self
                 .next_item_spawn_respawn_at
-                .get(&spawn.id)
+                .get(&cycle_key)
                 .is_none_or(|respawn_at| now_ms >= *respawn_at);
             if ready {
-                self.next_item_spawn_respawn_at.remove(&spawn.id);
+                self.next_item_spawn_respawn_at.remove(&cycle_key);
+                let spawn = select_item_spawn_candidate(&candidates, now_ms);
                 self.spawn_item_from_spawn(&spawn, now_ms);
             }
         }
@@ -185,9 +193,11 @@ impl RoomState {
 
         for pickup_id in expired_ids {
             if let Some(pickup) = self.weapon_pickups.remove(&pickup_id) {
-                if let (Some(spawn_id), Some(respawn_ms)) = (pickup.spawn_id, pickup.respawn_ms) {
+                if let (Some(spawn_cycle_key), Some(respawn_ms)) =
+                    (pickup.spawn_cycle_key, pickup.respawn_ms)
+                {
                     self.next_spawn_respawn_at
-                        .insert(spawn_id, now_ms + respawn_ms);
+                        .insert(spawn_cycle_key, now_ms + respawn_ms);
                 }
             }
         }
@@ -375,9 +385,11 @@ impl RoomState {
             return;
         };
 
-        if let (Some(spawn_id), Some(respawn_ms)) = (pickup.spawn_id.clone(), pickup.respawn_ms) {
+        if let (Some(spawn_cycle_key), Some(respawn_ms)) =
+            (pickup.spawn_cycle_key.clone(), pickup.respawn_ms)
+        {
             self.next_spawn_respawn_at
-                .insert(spawn_id, now_ms + respawn_ms);
+                .insert(spawn_cycle_key, now_ms + respawn_ms);
         }
 
         let current_weapon_to_drop = self.players.get(player_id).and_then(|player| {
@@ -415,9 +427,11 @@ impl RoomState {
             return;
         };
 
-        if let (Some(spawn_id), Some(respawn_ms)) = (pickup.spawn_id.clone(), pickup.respawn_ms) {
+        if let (Some(spawn_cycle_key), Some(respawn_ms)) =
+            (pickup.spawn_cycle_key.clone(), pickup.respawn_ms)
+        {
             self.next_item_spawn_respawn_at
-                .insert(spawn_id, now_ms + respawn_ms);
+                .insert(spawn_cycle_key, now_ms + respawn_ms);
         }
 
         let item = item_definition(&pickup.item_id).clone();
@@ -456,4 +470,78 @@ impl RoomState {
             }
         }
     }
+}
+
+fn spawn_cycle_key_for_weapon(spawn: &crate::game_data::RuntimeWeaponSpawnPoint) -> Option<String> {
+    Some(match spawn.mode {
+        SpawnMode::Fixed => spawn.id.clone(),
+        SpawnMode::RandomCandidates => spawn
+            .spawn_group_id
+            .clone()
+            .unwrap_or_else(|| spawn.id.clone()),
+    })
+}
+
+fn spawn_cycle_key_for_item(spawn: &crate::game_data::RuntimeItemSpawnPoint) -> Option<String> {
+    Some(match spawn.mode {
+        SpawnMode::Fixed => spawn.id.clone(),
+        SpawnMode::RandomCandidates => spawn
+            .spawn_group_id
+            .clone()
+            .unwrap_or_else(|| spawn.id.clone()),
+    })
+}
+
+fn group_weapon_spawns(
+    spawns: &[crate::game_data::RuntimeWeaponSpawnPoint],
+) -> Vec<(String, Vec<crate::game_data::RuntimeWeaponSpawnPoint>)> {
+    let mut groups: Vec<(String, Vec<crate::game_data::RuntimeWeaponSpawnPoint>)> = Vec::new();
+    for spawn in spawns {
+        let key = spawn_cycle_key_for_weapon(spawn).expect("weapon spawn key should exist");
+        if let Some((_, entries)) = groups.iter_mut().find(|(group_key, _)| *group_key == key) {
+            entries.push(spawn.clone());
+        } else {
+            groups.push((key, vec![spawn.clone()]));
+        }
+    }
+    groups
+}
+
+fn group_item_spawns(
+    spawns: &[crate::game_data::RuntimeItemSpawnPoint],
+) -> Vec<(String, Vec<crate::game_data::RuntimeItemSpawnPoint>)> {
+    let mut groups: Vec<(String, Vec<crate::game_data::RuntimeItemSpawnPoint>)> = Vec::new();
+    for spawn in spawns {
+        let key = spawn_cycle_key_for_item(spawn).expect("item spawn key should exist");
+        if let Some((_, entries)) = groups.iter_mut().find(|(group_key, _)| *group_key == key) {
+            entries.push(spawn.clone());
+        } else {
+            groups.push((key, vec![spawn.clone()]));
+        }
+    }
+    groups
+}
+
+fn select_weapon_spawn_candidate(
+    candidates: &[crate::game_data::RuntimeWeaponSpawnPoint],
+    now_ms: u64,
+) -> crate::game_data::RuntimeWeaponSpawnPoint {
+    let index = select_candidate_index(candidates.len(), now_ms);
+    candidates[index].clone()
+}
+
+fn select_item_spawn_candidate(
+    candidates: &[crate::game_data::RuntimeItemSpawnPoint],
+    now_ms: u64,
+) -> crate::game_data::RuntimeItemSpawnPoint {
+    let index = select_candidate_index(candidates.len(), now_ms);
+    candidates[index].clone()
+}
+
+fn select_candidate_index(candidate_len: usize, now_ms: u64) -> usize {
+    if candidate_len <= 1 {
+        return 0;
+    }
+
+    ((now_ms / 10) as usize) % candidate_len
 }

@@ -90,15 +90,28 @@
   ],
   "weaponSpawns": [
     {
-      "id": "weapon_mid",
+      "id": "weapon_mid_left",
       "weaponId": "acorn_blaster",
-      "x": 560,
+      "x": 520,
       "y": 320,
       "respawnMs": 10000,
       "despawnAfterMs": 10000,
       "spawnStyle": "airdrop",
       "despawnStyle": "shrink_pop",
-      "mode": "fixed"
+      "mode": "random_candidates",
+      "spawnGroupId": "weapon_mid_group"
+    },
+    {
+      "id": "weapon_mid_right",
+      "weaponId": "acorn_blaster",
+      "x": 620,
+      "y": 320,
+      "respawnMs": 10000,
+      "despawnAfterMs": 10000,
+      "spawnStyle": "airdrop",
+      "despawnStyle": "shrink_pop",
+      "mode": "random_candidates",
+      "spawnGroupId": "weapon_mid_group"
     }
   ],
   "itemSpawns": [
@@ -108,15 +121,28 @@
       "x": 400,
       "y": 352,
       "respawnMs": 12000,
-      "spawnStyle": "fade_in"
+      "spawnStyle": "fade_in",
+      "mode": "fixed"
     },
     {
-      "id": "item_heal_left",
+      "id": "item_heal_left_candidate",
       "itemId": "health_pack_small",
       "x": 220,
       "y": 220,
       "respawnMs": 15000,
-      "spawnStyle": "airdrop"
+      "spawnStyle": "airdrop",
+      "mode": "random_candidates",
+      "spawnGroupId": "health_pack_group"
+    },
+    {
+      "id": "item_heal_right_candidate",
+      "itemId": "health_pack_small",
+      "x": 680,
+      "y": 220,
+      "respawnMs": 15000,
+      "spawnStyle": "airdrop",
+      "mode": "random_candidates",
+      "spawnGroupId": "health_pack_group"
     }
   ],
   "decorations": []

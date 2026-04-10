@@ -55,7 +55,8 @@ export interface WeaponSpawnPoint {
   despawnAfterMs: number;
   spawnStyle: SpawnStyle;
   despawnStyle: DespawnStyle;
-  mode: "fixed" | "random";
+  mode: "fixed" | "random_candidates";
+  spawnGroupId?: EntityId;
 }
 
 export interface WorldWeaponPickup extends TimedWorldEntity {

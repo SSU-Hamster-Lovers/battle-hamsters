@@ -28,6 +28,7 @@
 - 테스트 맵 `weaponSpawns`를 실제 월드 pickup 상태로 올리고, spawn/드롭 무기 despawn/respawn 1차를 처리한다.
 - 테스트 맵 `itemSpawns`를 실제 월드 pickup 상태로 올리고, spawn/respawn 1차를 처리한다.
 - `spawnStyle`에 따라 떠 있는 스폰(`fade_in`)과 중력 낙하 스폰(`airdrop`)을 구분하기 시작했다.
+- `random_candidates` + `spawnGroupId`를 통해 후보 지점 집합 중 한 곳에서만 spawn되는 구조를 처리하기 시작했다.
 - `jump_boost_small`, `health_pack_small` 아이템 정의를 shared JSON에서 읽어 효과를 적용한다.
 - `Acorn Blaster` 히트스캔 발사, 상대 넉백, 자기 반동(`self recoil`), 탄 소모, 빈 무기 폐기까지 1차 구현이 들어갔다.
 - 서버 리팩토링 1차로 런타임 데이터 로딩은 `server/src/game_data.rs`, room의 spawn/pickup 관리는 `server/src/room_pickups.rs`, 전투/사망 리셋 로직은 `server/src/room_combat.rs`, room loop / movement orchestration은 `server/src/room_runtime.rs`, ws/session 처리는 `server/src/ws_runtime.rs`로 분리하기 시작했다.
@@ -100,6 +101,7 @@
 - 보간/스무딩이 거의 없어 움직임이 거칠게 보일 수 있다.
 - 서버와 클라이언트는 같은 테스트 맵 JSON 원본을 공유한다.
 - item pickup은 `spawnStyle`에 따라 색이 달라지고, `airdrop` item은 실제로 아래로 떨어져 착지한다.
+- random candidate group으로 묶인 무기/아이템은 그룹당 하나만 활성화된다.
 
 ### 전투
 
@@ -114,16 +116,15 @@
 
 ## 다음 구현 우선순위
 
-1. 후보 지점 랜덤 스폰 1차
-2. 클라이언트 보간 및 시각 품질 개선
-3. placeholder 사각형 → 실제 햄스터 렌더링
-4. hazard 진입 피드백 / 사망 원인 표현 정리
-5. `visualBounds` 기반 카메라 clamp 및 follow 카메라 감쇠 이동 구현
+1. 클라이언트 보간 및 시각 품질 개선
+2. placeholder 사각형 → 실제 햄스터 렌더링
+3. hazard 진입 피드백 / 사망 원인 표현 정리
+4. `visualBounds` 기반 카메라 clamp 및 follow 카메라 감쇠 이동 구현
 
 ## 참고
 
 - 맵 경계/카메라 확장 아이디어는 `docs/technical/mini-spec-map-boundaries-camera.md`에 별도 정리한다.
 - `boundaryPolicy`, `cameraPolicy`, `visualBounds`, `gameplayBounds`, `deathBounds`는 shared 타입/JSON 예시에 반영됐지만 카메라 런타임에서는 아직 사용하지 않는다.
-- 이번 브랜치 작업 미니 스펙은 `docs/technical/mini-spec-spawn-behavior-v1.md`에 정리한다.
+- 이번 브랜치 작업 미니 스펙은 `docs/technical/mini-spec-random-spawn-candidates-v1.md`에 정리한다.
 - 점프 아이템 세부 규칙 후속은 `docs/technical/mini-spec-jump-item-integration-v1.md`에 정리한다.
 - 구현을 바꿀 때는 이 문서도 같이 갱신한다.

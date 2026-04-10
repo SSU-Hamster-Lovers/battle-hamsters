@@ -84,6 +84,8 @@ struct MapWeaponSpawnPoint {
     despawn_after_ms: u64,
     spawn_style: SpawnStyle,
     despawn_style: DespawnStyle,
+    mode: SpawnMode,
+    spawn_group_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -95,6 +97,8 @@ struct MapItemSpawnPoint {
     y: f64,
     respawn_ms: u64,
     spawn_style: SpawnStyle,
+    mode: SpawnMode,
+    spawn_group_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -162,6 +166,8 @@ pub(crate) struct RuntimeWeaponSpawnPoint {
     pub(crate) despawn_after_ms: u64,
     pub(crate) spawn_style: SpawnStyle,
     pub(crate) despawn_style: DespawnStyle,
+    pub(crate) mode: SpawnMode,
+    pub(crate) spawn_group_id: Option<String>,
 }
 
 #[derive(Clone)]
@@ -171,6 +177,15 @@ pub(crate) struct RuntimeItemSpawnPoint {
     pub(crate) position: Vector2,
     pub(crate) respawn_ms: u64,
     pub(crate) spawn_style: SpawnStyle,
+    pub(crate) mode: SpawnMode,
+    pub(crate) spawn_group_id: Option<String>,
+}
+
+#[derive(Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum SpawnMode {
+    Fixed,
+    RandomCandidates,
 }
 
 #[allow(dead_code)]
@@ -331,6 +346,8 @@ pub(crate) fn runtime_map_data() -> &'static RuntimeMapData {
                 despawn_after_ms: spawn.despawn_after_ms,
                 spawn_style: spawn.spawn_style,
                 despawn_style: spawn.despawn_style,
+                mode: spawn.mode,
+                spawn_group_id: spawn.spawn_group_id,
             })
             .collect::<Vec<_>>();
 
@@ -346,6 +363,8 @@ pub(crate) fn runtime_map_data() -> &'static RuntimeMapData {
                 },
                 respawn_ms: spawn.respawn_ms,
                 spawn_style: spawn.spawn_style,
+                mode: spawn.mode,
+                spawn_group_id: spawn.spawn_group_id,
             })
             .collect::<Vec<_>>();
 
