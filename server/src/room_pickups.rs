@@ -369,6 +369,8 @@ impl RoomState {
         }
 
         let item = item_definition(&pickup.item_id).clone();
+        let base_jump_count = self.gameplay_config.base_jump_count;
+        let max_jump_count_limit = self.gameplay_config.max_jump_count_limit;
         let Some(player) = self.players.get_mut(player_id) else {
             return;
         };
@@ -378,7 +380,8 @@ impl RoomState {
                 if let Some(jump_count_delta) = item.effect.jump_count_delta {
                     let next_jump_count = (player.snapshot.max_jump_count as i16
                         + jump_count_delta as i16)
-                        .clamp(1, 3) as u8;
+                        .clamp(base_jump_count as i16, max_jump_count_limit as i16)
+                        as u8;
                     player.snapshot.max_jump_count = next_jump_count;
                 }
             }

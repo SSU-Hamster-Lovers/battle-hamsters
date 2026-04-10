@@ -28,7 +28,11 @@ impl RoomState {
             if player.snapshot.state == PlayerState::Respawning {
                 if let Some(respawn_at) = player.snapshot.respawn_at {
                     if now_ms >= respawn_at {
-                        respawn_player(player, spawn_position(player.spawn_index));
+                        respawn_player(
+                            player,
+                            spawn_position(player.spawn_index),
+                            &self.gameplay_config,
+                        );
                     }
                 }
                 continue;
@@ -57,7 +61,7 @@ impl RoomState {
 
         for player_id in deaths {
             if let Some(player) = self.players.get_mut(&player_id) {
-                trigger_respawn(player, now_ms, ground_top_y());
+                trigger_respawn(player, now_ms, ground_top_y(), &self.gameplay_config);
             }
         }
 

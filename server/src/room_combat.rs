@@ -1,6 +1,6 @@
 use crate::{
-    weapon_definition, Direction, FireMode, HitType, PlayerRuntime, PlayerState, RoomState,
-    Vector2, BASE_MAX_JUMP_COUNT, MAX_HP, PLAYER_HALF_SIZE, RESPAWN_DELAY_MS,
+    room_config::RoomGameplayConfig, weapon_definition, Direction, FireMode, HitType,
+    PlayerRuntime, PlayerState, RoomState, Vector2, PLAYER_HALF_SIZE, RESPAWN_DELAY_MS,
 };
 
 impl RoomState {
@@ -152,9 +152,12 @@ impl RoomState {
     }
 }
 
-pub(crate) fn reset_general_combat_state(player: &mut PlayerRuntime) {
+pub(crate) fn reset_general_combat_state(
+    player: &mut PlayerRuntime,
+    gameplay_config: &RoomGameplayConfig,
+) {
     player.snapshot.move_speed_rank = 0;
-    player.snapshot.max_jump_count = BASE_MAX_JUMP_COUNT;
+    player.snapshot.max_jump_count = gameplay_config.base_jump_count;
     player.snapshot.jump_count_used = 0;
     player.snapshot.drop_through_until = None;
     player.snapshot.equipped_weapon_id = "paws".to_string();
@@ -167,7 +170,12 @@ pub(crate) fn reset_general_combat_state(player: &mut PlayerRuntime) {
     player.next_attack_at = 0;
 }
 
-pub(crate) fn trigger_respawn(player: &mut PlayerRuntime, now_ms: u64, ground_top_y: f64) {
+pub(crate) fn trigger_respawn(
+    player: &mut PlayerRuntime,
+    now_ms: u64,
+    ground_top_y: f64,
+    gameplay_config: &RoomGameplayConfig,
+) {
     if player.snapshot.lives > 0 {
         player.snapshot.lives -= 1;
     }
@@ -175,14 +183,18 @@ pub(crate) fn trigger_respawn(player: &mut PlayerRuntime, now_ms: u64, ground_to
     player.snapshot.hp = 0;
     player.snapshot.state = PlayerState::Respawning;
     player.snapshot.respawn_at = Some(now_ms + RESPAWN_DELAY_MS);
-    reset_general_combat_state(player);
+    reset_general_combat_state(player, gameplay_config);
     player.snapshot.position.y = ground_top_y + 80.0;
 }
 
-pub(crate) fn respawn_player(player: &mut PlayerRuntime, spawn_position: Vector2) {
+pub(crate) fn respawn_player(
+    player: &mut PlayerRuntime,
+    spawn_position: Vector2,
+    gameplay_config: &RoomGameplayConfig,
+) {
     player.snapshot.position = spawn_position;
-    reset_general_combat_state(player);
-    player.snapshot.hp = MAX_HP;
+    reset_general_combat_state(player, gameplay_config);
+    player.snapshot.hp = gameplay_config.start_hp;
     player.snapshot.respawn_at = None;
     player.snapshot.state = PlayerState::Alive;
 }

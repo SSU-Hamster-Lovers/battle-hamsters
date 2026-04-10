@@ -128,6 +128,9 @@ export interface RoomConfig {
   mapId: EntityId;
   timeLimitSec: number;
   stockLives: number;
+  startHp: number;
+  baseJumpCount: 1 | 2 | 3;
+  maxJumpCountLimit: 1 | 2 | 3;
   friendlyFire: boolean;
 }
 
