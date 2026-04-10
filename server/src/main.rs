@@ -2,6 +2,7 @@ use actix::Recipient;
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 mod game_data;
 mod room_combat;
+mod room_config;
 mod room_pickups;
 mod room_runtime;
 mod ws_runtime;
@@ -10,6 +11,7 @@ use game_data::{
     weapon_definition, world_height, HazardKind,
 };
 use room_combat::{respawn_player, trigger_respawn};
+use room_config::RoomGameplayConfig;
 use room_runtime::{intersecting_hazard, spawn_position, step_player, surface_contains_x};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -88,6 +90,7 @@ struct RoomState {
     room_id: String,
     server_tick: u64,
     time_remaining_ms: u64,
+    gameplay_config: RoomGameplayConfig,
     players: HashMap<String, PlayerRuntime>,
     weapon_pickups: HashMap<String, WorldWeaponPickup>,
     item_pickups: HashMap<String, WorldItemPickup>,
@@ -100,11 +103,16 @@ struct RoomState {
 
 impl RoomState {
     fn new() -> Self {
+        Self::with_gameplay_config(RoomGameplayConfig::default())
+    }
+
+    fn with_gameplay_config(gameplay_config: RoomGameplayConfig) -> Self {
         let now = now_ms();
         let mut room = Self {
             room_id: room_id().to_string(),
             server_tick: 0,
-            time_remaining_ms: DEFAULT_TIME_LIMIT_MS,
+            time_remaining_ms: gameplay_config.time_limit_ms,
+            gameplay_config,
             players: HashMap::new(),
             weapon_pickups: HashMap::new(),
             item_pickups: HashMap::new(),
@@ -126,24 +134,23 @@ impl RoomState {
             .collect()
     }
 
-    fn add_player(
-        &mut self,
+    fn build_player_snapshot(
+        &self,
         player_id: String,
         player_name: String,
-        recipient: Recipient<WsText>,
-    ) -> RoomSnapshotPayload {
-        let spawn_index = self.players.len();
+        spawn_index: usize,
+    ) -> PlayerSnapshot {
         let spawn = spawn_position(spawn_index);
-        let player = PlayerSnapshot {
-            id: player_id.clone(),
+        PlayerSnapshot {
+            id: player_id,
             name: player_name,
             position: spawn,
             velocity: Vector2 { x: 0.0, y: 0.0 },
             direction: Direction::Right,
-            hp: 100,
-            lives: TEST_LIVES,
+            hp: self.gameplay_config.start_hp,
+            lives: self.gameplay_config.stock_lives,
             move_speed_rank: 0,
-            max_jump_count: BASE_MAX_JUMP_COUNT,
+            max_jump_count: self.gameplay_config.base_jump_count,
             jump_count_used: 0,
             grounded: false,
             drop_through_until: None,
@@ -152,7 +159,17 @@ impl RoomState {
             equipped_weapon_resource: None,
             grab_state: None,
             state: PlayerState::Alive,
-        };
+        }
+    }
+
+    fn add_player(
+        &mut self,
+        player_id: String,
+        player_name: String,
+        recipient: Recipient<WsText>,
+    ) -> RoomSnapshotPayload {
+        let spawn_index = self.players.len();
+        let player = self.build_player_snapshot(player_id.clone(), player_name, spawn_index);
 
         self.sessions.insert(player_id.clone(), recipient);
         self.players.insert(
@@ -715,6 +732,24 @@ mod tests {
     }
 
     #[test]
+    fn room_gameplay_config_applies_to_new_players() {
+        let gameplay_config = RoomGameplayConfig {
+            start_hp: 150,
+            stock_lives: 7,
+            base_jump_count: 2,
+            max_jump_count_limit: 3,
+            time_limit_ms: 123_000,
+        };
+        let room = RoomState::with_gameplay_config(gameplay_config);
+        let player = room.build_player_snapshot("player_cfg".to_string(), "cfg".to_string(), 0);
+
+        assert_eq!(room.time_remaining_ms, gameplay_config.time_limit_ms);
+        assert_eq!(player.hp, gameplay_config.start_hp);
+        assert_eq!(player.lives, gameplay_config.stock_lives);
+        assert_eq!(player.max_jump_count, gameplay_config.base_jump_count);
+    }
+
+    #[test]
     fn hitscan_attack_consumes_weapon_and_applies_recoil() {
         let mut room = RoomState::new();
 
@@ -827,7 +862,12 @@ mod tests {
         player.attack_was_down = true;
         player.next_attack_at = 1234;
 
-        trigger_respawn(&mut player, 1000, ground_top_y());
+        trigger_respawn(
+            &mut player,
+            1000,
+            ground_top_y(),
+            &RoomGameplayConfig::default(),
+        );
 
         assert_eq!(player.snapshot.move_speed_rank, 0);
         assert_eq!(player.snapshot.max_jump_count, BASE_MAX_JUMP_COUNT);
@@ -848,9 +888,10 @@ mod tests {
         player.snapshot.equipped_weapon_id = "acorn_blaster".to_string();
         player.snapshot.equipped_weapon_resource = Some(2);
 
+        let gameplay_config = RoomGameplayConfig::default();
         let respawn_position = spawn_position(player.spawn_index);
-        trigger_respawn(&mut player, 1000, ground_top_y());
-        respawn_player(&mut player, respawn_position);
+        trigger_respawn(&mut player, 1000, ground_top_y(), &gameplay_config);
+        respawn_player(&mut player, respawn_position, &gameplay_config);
 
         assert_eq!(player.snapshot.state, PlayerState::Alive);
         assert_eq!(player.snapshot.move_speed_rank, 0);
@@ -859,5 +900,30 @@ mod tests {
         assert_eq!(player.snapshot.equipped_weapon_id, "paws");
         assert_eq!(player.snapshot.equipped_weapon_resource, None);
         assert_eq!(player.snapshot.hp, MAX_HP);
+    }
+
+    #[test]
+    fn respawn_uses_room_gameplay_config_values() {
+        let gameplay_config = RoomGameplayConfig {
+            start_hp: 150,
+            stock_lives: 5,
+            base_jump_count: 2,
+            max_jump_count_limit: 3,
+            time_limit_ms: 90_000,
+        };
+        let mut player = test_player(140.0, 120.0);
+        player.snapshot.max_jump_count = 3;
+        player.snapshot.jump_count_used = 2;
+        player.snapshot.hp = 1;
+
+        let respawn_position = spawn_position(player.spawn_index);
+        trigger_respawn(&mut player, 1000, ground_top_y(), &gameplay_config);
+        respawn_player(&mut player, respawn_position, &gameplay_config);
+
+        assert_eq!(player.snapshot.hp, gameplay_config.start_hp);
+        assert_eq!(
+            player.snapshot.max_jump_count,
+            gameplay_config.base_jump_count
+        );
     }
 }

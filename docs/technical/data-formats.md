@@ -469,9 +469,23 @@
   "mapId": "arena_01",
   "timeLimitSec": 300,
   "stockLives": 3,
+  "startHp": 100,
+  "baseJumpCount": 1,
+  "maxJumpCountLimit": 3,
   "friendlyFire": false
 }
 ```
+
+### 룸 설정 필드 설명
+
+| 필드 | 설명 |
+|------|------|
+| `timeLimitSec` | 매치 시간 제한(초) |
+| `stockLives` | 시작 생명 수 |
+| `startHp` | 시작 HP |
+| `baseJumpCount` | 기본 점프 수 |
+| `maxJumpCountLimit` | 룸에서 허용하는 최대 점프 수 상한 |
+| `friendlyFire` | 아군 피해 허용 여부 |
 
 ## 매치 스냅샷 포맷
 

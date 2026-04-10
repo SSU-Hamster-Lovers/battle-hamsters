@@ -30,6 +30,7 @@
 - `jump_boost_small`, `health_pack_small` 아이템 정의를 shared JSON에서 읽어 효과를 적용한다.
 - `Acorn Blaster` 히트스캔 발사, 상대 넉백, 자기 반동(`self recoil`), 탄 소모, 빈 무기 폐기까지 1차 구현이 들어갔다.
 - 서버 리팩토링 1차로 런타임 데이터 로딩은 `server/src/game_data.rs`, room의 spawn/pickup 관리는 `server/src/room_pickups.rs`, 전투/사망 리셋 로직은 `server/src/room_combat.rs`, room loop / movement orchestration은 `server/src/room_runtime.rs`, ws/session 처리는 `server/src/ws_runtime.rs`로 분리하기 시작했다.
+- 룸은 이제 `RoomGameplayConfig`를 가져 기본 HP / 시작 생명 / 기본 점프 수 / 최대 점프 수 상한 / 시간 제한을 자체 값으로 가질 수 있다.
 - pit wall / fall zone / instant kill hazard 판정을 검증하는 단위 테스트가 있다.
 
 ### Game Client
@@ -84,7 +85,8 @@
 - `fall zone`은 현재 화면 아래 바깥(`600px` 화면 기준 `y=700`)에서 시작해서, 중앙 구멍으로 내려간 뒤 충분히 떨어졌을 때만 낙사 처리된다.
 - `instant kill hazard`에 닿거나 `fall zone` 깊이까지 떨어지면 3초 뒤 상공에서 리스폰한다.
 - 현재 테스트용 생명 수는 99다.
-- 기본 점프 횟수는 다시 1로 두고, 아이템으로 최대 3까지 올릴 수 있다.
+- 현재 기본 room gameplay config는 시작 HP 100, 생명 99, 기본 점프 1, 최대 점프 상한 3, 5분 제한이다.
+- 기본 점프 횟수는 다시 1로 두고, 아이템으로 room의 최대 점프 상한까지 올릴 수 있다.
 - 죽으면 점프 증가와 이동 관련 일반 전투 상태는 기본값으로 초기화된다.
 
 ### 렌더링
@@ -110,15 +112,17 @@
 
 ## 다음 구현 우선순위
 
-1. 클라이언트 보간 및 시각 품질 개선
-2. placeholder 사각형 → 실제 햄스터 렌더링
-3. hazard 진입 피드백 / 사망 원인 표현 정리
-4. `visualBounds` 기반 카메라 clamp 및 follow 카메라 감쇠 이동 구현
+1. 스폰 동작 구분 1차
+2. 후보 지점 랜덤 스폰 1차
+3. 클라이언트 보간 및 시각 품질 개선
+4. placeholder 사각형 → 실제 햄스터 렌더링
+5. hazard 진입 피드백 / 사망 원인 표현 정리
+6. `visualBounds` 기반 카메라 clamp 및 follow 카메라 감쇠 이동 구현
 
 ## 참고
 
 - 맵 경계/카메라 확장 아이디어는 `docs/technical/mini-spec-map-boundaries-camera.md`에 별도 정리한다.
 - `boundaryPolicy`, `cameraPolicy`, `visualBounds`, `gameplayBounds`, `deathBounds`는 shared 타입/JSON 예시에 반영됐지만 카메라 런타임에서는 아직 사용하지 않는다.
-- 이번 브랜치 작업 미니 스펙은 `docs/technical/mini-spec-server-runtime-refactor-v1.md`에 정리한다.
+- 이번 브랜치 작업 미니 스펙은 `docs/technical/mini-spec-room-gameplay-config-v1.md`에 정리한다.
 - 점프 아이템 세부 규칙 후속은 `docs/technical/mini-spec-jump-item-integration-v1.md`에 정리한다.
 - 구현을 바꿀 때는 이 문서도 같이 갱신한다.
