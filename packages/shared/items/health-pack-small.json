@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "id": "health_pack_small",
+  "name": "Health Pack",
+  "itemType": "health_recover",
+  "maxStack": 1,
+  "effect": {
+    "healAmount": 30
+  }
+}

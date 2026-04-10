@@ -26,6 +26,8 @@
 - 플랫폼 이동 테스트 맵에서 좌우 바닥, 원웨이 플랫폼, pit 내부 wall 충돌, fall zone, instant kill hazard를 따로 판정한다.
 - 테스트 맵 충돌 / hazard / spawn 위치를 이제 `packages/shared/maps/training-arena.json`에서 읽는다.
 - 테스트 맵 `weaponSpawns`를 실제 월드 pickup 상태로 올리고, spawn/드롭 무기 despawn/respawn 1차를 처리한다.
+- 테스트 맵 `itemSpawns`를 실제 월드 pickup 상태로 올리고, spawn/respawn 1차를 처리한다.
+- `jump_boost_small`, `health_pack_small` 아이템 정의를 shared JSON에서 읽어 효과를 적용한다.
 - `Acorn Blaster` 히트스캔 발사, 상대 넉백, 자기 반동(`self recoil`), 탄 소모, 빈 무기 폐기까지 1차 구현이 들어갔다.
 - pit wall / fall zone / instant kill hazard 판정을 검증하는 단위 테스트가 있다.
 
@@ -38,7 +40,8 @@
 - 키 입력을 `player_input`으로 전송 가능
 - 테스트 맵용 바닥 / 플랫폼 / pit wall / hazard / spawn 위치를 `trainingArenaMap` 공통 데이터에서 읽어 렌더링한다.
 - 월드 무기 pickup을 간단한 도형/라벨로 렌더링한다.
-- HUD 텍스트에 현재 장착 무기와 탄 수를 표시한다.
+- 월드 아이템 pickup을 간단한 다이아몬드 도형/라벨로 렌더링한다.
+- HUD 텍스트에 현재 장착 무기와 탄 수, HP, 최대 점프 수를 표시한다.
 - 발사 시 로컬 보조용 muzzle flash를 짧게 표시한다.
 
 ### Portal
@@ -80,7 +83,7 @@
 - `fall zone`은 현재 화면 아래 바깥(`600px` 화면 기준 `y=700`)에서 시작해서, 중앙 구멍으로 내려간 뒤 충분히 떨어졌을 때만 낙사 처리된다.
 - `instant kill hazard`에 닿거나 `fall zone` 깊이까지 떨어지면 3초 뒤 상공에서 리스폰한다.
 - 현재 테스트용 생명 수는 99다.
-- 현재 테스트용 점프 횟수는 3으로 열어 두고 있다.
+- 기본 점프 횟수는 다시 1로 두고, 아이템으로 최대 3까지 올릴 수 있다.
 
 ### 렌더링
 
@@ -96,23 +99,24 @@
 
 - `Acorn Blaster` 1종에 한해 실제 발사/피격/넉백/자기 반동/탄 소모/빈 무기 폐기를 처리한다.
 - 월드 무기는 `E`로 명시적으로 획득하고 `Q`로 드롭한다.
+- 월드 아이템은 닿으면 자동으로 획득한다.
+- `jump_boost_small`은 `maxJumpCount`를 `1..3` 범위에서 증가시키고, `health_pack_small`은 HP를 최대치까지 회복한다.
 - 드롭한 무기는 즉시 재pickup되지 않도록 짧은 본인 pickup 차단 시간이 있다.
 - 사망 시 장착 무기는 초기화되어 맨손(`paws`)으로 리스폰한다.
-- beam/grab/throwable, item pickup, 다중 무기 밸런싱은 아직 미구현이다.
+- beam/grab/throwable, speed rank/extra life 아이템, 다중 무기 밸런싱은 아직 미구현이다.
 
 ## 다음 구현 우선순위
 
-1. item pickup 실제 상태 반영
-2. 클라이언트 보간 및 시각 품질 개선
-3. `maxJumpCount`를 아이템과 실제로 연동
-4. placeholder 사각형 → 실제 햄스터 렌더링
-5. hazard 진입 피드백 / 사망 원인 표현 정리
-6. `visualBounds` 기반 카메라 clamp 및 follow 카메라 감쇠 이동 구현
+1. 클라이언트 보간 및 시각 품질 개선
+2. 점프 아이템의 리스폰/사망 초기화 규칙 정리
+3. placeholder 사각형 → 실제 햄스터 렌더링
+4. hazard 진입 피드백 / 사망 원인 표현 정리
+5. `visualBounds` 기반 카메라 clamp 및 follow 카메라 감쇠 이동 구현
 
 ## 참고
 
 - 맵 경계/카메라 확장 아이디어는 `docs/technical/mini-spec-map-boundaries-camera.md`에 별도 정리한다.
 - `boundaryPolicy`, `cameraPolicy`, `visualBounds`, `gameplayBounds`, `deathBounds`는 shared 타입/JSON 예시에 반영됐지만 카메라 런타임에서는 아직 사용하지 않는다.
-- 이번 브랜치 작업 미니 스펙은 `docs/technical/mini-spec-shared-map-json.md`에 정리한다.
-- 다음 전투 작업 미니 스펙은 `docs/technical/mini-spec-weapon-runtime-v1.md`에 정리한다.
+- 이번 브랜치 작업 미니 스펙은 `docs/technical/mini-spec-item-runtime-v1.md`에 정리한다.
+- 점프 아이템 세부 규칙 후속은 `docs/technical/mini-spec-jump-item-integration-v1.md`에 정리한다.
 - 구현을 바꿀 때는 이 문서도 같이 갱신한다.
