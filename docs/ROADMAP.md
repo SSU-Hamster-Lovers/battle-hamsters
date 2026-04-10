@@ -98,6 +98,9 @@
 2. Game: 카메라 정책(`static / follow / dynamic`) 첫 구현
 3. 매칭/방 시스템 API
 4. 로비 월드맵 / 채널 전환 / 상점 같은 비전투 허브 시스템 검토
+5. backlog 스펙 참고:
+   - `docs/technical/mini-spec-lobby-world-foundation.md`
+   - `docs/technical/mini-spec-lobby-channel-system.md`
 
 ---
 
