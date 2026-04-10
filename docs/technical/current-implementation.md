@@ -29,6 +29,7 @@
 - 테스트 맵 `itemSpawns`를 실제 월드 pickup 상태로 올리고, spawn/respawn 1차를 처리한다.
 - `jump_boost_small`, `health_pack_small` 아이템 정의를 shared JSON에서 읽어 효과를 적용한다.
 - `Acorn Blaster` 히트스캔 발사, 상대 넉백, 자기 반동(`self recoil`), 탄 소모, 빈 무기 폐기까지 1차 구현이 들어갔다.
+- 서버 리팩토링 1차로 런타임 데이터 로딩은 `server/src/game_data.rs`, room의 spawn/pickup 관리는 `server/src/room_pickups.rs`로 분리하기 시작했다.
 - pit wall / fall zone / instant kill hazard 판정을 검증하는 단위 테스트가 있다.
 
 ### Game Client
