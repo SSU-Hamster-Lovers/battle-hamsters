@@ -114,9 +114,9 @@
       "id": "item_heal_left",
       "itemId": "health_pack_small",
       "x": 220,
-      "y": 512,
+      "y": 220,
       "respawnMs": 15000,
-      "spawnStyle": "fade_in"
+      "spawnStyle": "airdrop"
     }
   ],
   "decorations": []

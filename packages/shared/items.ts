@@ -51,4 +51,5 @@ export interface WorldItemPickup extends TimedWorldEntity {
   itemId: EntityId
   position: Vector2
   source: 'spawn' | 'reward'
+  spawnStyle: SpawnStyle
 }

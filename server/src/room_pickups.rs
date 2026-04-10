@@ -38,6 +38,7 @@ impl RoomState {
         now_ms: u64,
     ) {
         let definition = weapon_definition(&spawn.weapon_id);
+        let affected_by_gravity = matches!(spawn.spawn_style, SpawnStyle::Airdrop);
         let pickup = WorldWeaponPickup {
             id: self.next_world_pickup_id(),
             weapon_id: spawn.weapon_id.clone(),
@@ -52,7 +53,8 @@ impl RoomState {
             respawn_ms: Some(spawn.respawn_ms),
             kinematics: PickupKinematics {
                 velocity_y: 0.0,
-                grounded: false,
+                grounded: !affected_by_gravity,
+                affected_by_gravity,
             },
             pickup_blocked_until: None,
             pickup_blocked_player_id: None,
@@ -84,6 +86,7 @@ impl RoomState {
             kinematics: PickupKinematics {
                 velocity_y: 0.0,
                 grounded: false,
+                affected_by_gravity: true,
             },
             pickup_blocked_until: Some(now_ms + 250),
             pickup_blocked_player_id: Some(player_id.to_string()),
@@ -96,6 +99,7 @@ impl RoomState {
         spawn: &crate::game_data::RuntimeItemSpawnPoint,
         now_ms: u64,
     ) {
+        let affected_by_gravity = matches!(spawn.spawn_style, SpawnStyle::Airdrop);
         let pickup = WorldItemPickup {
             id: self.next_world_item_pickup_id(),
             item_id: spawn.item_id.clone(),
@@ -103,9 +107,14 @@ impl RoomState {
             source: ItemSource::Spawn,
             spawned_at: now_ms,
             despawn_at: None,
+            spawn_style: spawn.spawn_style,
             spawn_id: Some(spawn.id.clone()),
             respawn_ms: Some(spawn.respawn_ms),
-            spawn_style: spawn.spawn_style,
+            kinematics: PickupKinematics {
+                velocity_y: 0.0,
+                grounded: !affected_by_gravity,
+                affected_by_gravity,
+            },
         };
         self.item_pickups.insert(pickup.id.clone(), pickup);
     }
@@ -186,7 +195,50 @@ impl RoomState {
 
     pub(crate) fn step_weapon_pickups(&mut self) {
         for pickup in self.weapon_pickups.values_mut() {
-            if pickup.kinematics.grounded {
+            if !pickup.kinematics.affected_by_gravity || pickup.kinematics.grounded {
+                continue;
+            }
+
+            let previous_bottom = pickup.position.y + PICKUP_HALF_HEIGHT;
+            pickup.kinematics.velocity_y =
+                (pickup.kinematics.velocity_y + PICKUP_GRAVITY_PER_TICK).min(PICKUP_MAX_FALL_SPEED);
+            pickup.position.y += pickup.kinematics.velocity_y;
+            let current_bottom = pickup.position.y + PICKUP_HALF_HEIGHT;
+
+            let mut landed = false;
+            for floor in &runtime_map_data().floor_segments {
+                if current_bottom >= floor.top_y
+                    && surface_contains_x(floor.left_x, floor.right_x, pickup.position.x)
+                {
+                    pickup.position.y = floor.top_y - PICKUP_HALF_HEIGHT;
+                    pickup.kinematics.velocity_y = 0.0;
+                    pickup.kinematics.grounded = true;
+                    landed = true;
+                    break;
+                }
+            }
+
+            if landed {
+                continue;
+            }
+
+            for platform in &runtime_map_data().one_way_platforms {
+                if previous_bottom <= platform.top_y
+                    && current_bottom >= platform.top_y
+                    && surface_contains_x(platform.left_x, platform.right_x, pickup.position.x)
+                {
+                    pickup.position.y = platform.top_y - PICKUP_HALF_HEIGHT;
+                    pickup.kinematics.velocity_y = 0.0;
+                    pickup.kinematics.grounded = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn step_item_pickups(&mut self) {
+        for pickup in self.item_pickups.values_mut() {
+            if !pickup.kinematics.affected_by_gravity || pickup.kinematics.grounded {
                 continue;
             }
 
