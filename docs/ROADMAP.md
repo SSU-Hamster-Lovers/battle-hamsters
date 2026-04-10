@@ -33,10 +33,10 @@
 - [x] 스킬/버프/디버프 상세 정의
 
 ### Phase 3: 서버 개발
-- [ ] WebSocket 기본 구조
+- [x] WebSocket 기본 구조
 - [ ] 매칭 시스템 API
 - [ ] 방 생성/입장/퇴장 API
-- [ ] 게임 세션 관리
+- [x] 게임 세션 관리 (단일 in-memory room loop 1차)
 - [ ] PostgreSQL 스키마 (users, matches, players)
 
 ### Phase 4: Portal 개발
@@ -51,18 +51,18 @@
 - [ ] 캐릭터 애니메이션
 - [ ] 무기 시스템
 - [x] 충돌 감지 1차
-- [ ] WebSocket 연결 (서버 연동)
+- [x] WebSocket 연결 (서버 연동 1차)
 
 ### Phase 6: 동기화 및 멀티플레이
-- [ ] 입력 전송 프로토콜
-- [ ] 상태 동기화
+- [x] 입력 전송 프로토콜 1차
+- [x] 상태 동기화 1차
 - [ ] 클라이언트 예측/보간
 - [ ] 지연 시간 처리
 
 ### Phase 7: CI/CD 및 배포
 - [x] Server CI/CD (GitHub Actions)
-- [ ] Oracle Cloud 배포 설정
-- [ ] Cloudflare Pages direct upload 배포 설정
+- [x] Oracle Cloud 배포 설정 1차
+- [x] Cloudflare Pages direct upload 배포 설정
 - [ ] 도메인/SSL 설정
 
 ### Phase 8: 콘텐츠 제작
@@ -76,8 +76,8 @@
 
 ### 즉시 할 일 (Next Sprint)
 1. 공통 맵 데이터(JSON)를 서버와 클라이언트가 함께 읽도록 이동
-2. 맵 `boundaryPolicy / cameraPolicy / gameplayBounds / deathBounds` 필드 초안 정리
-3. item / weapon pickup 실제 상태 반영
+2. item / weapon pickup 실제 상태 반영
+3. 클라이언트 보간 및 시각 품질 개선
 4. PostgreSQL 스키마 및 마이그레이션 구조 정의
 
 ### 나중에 할 일

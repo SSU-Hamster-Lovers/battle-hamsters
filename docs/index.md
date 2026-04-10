@@ -19,6 +19,11 @@
 - [좌표 / 충돌 계약](technical/collision-contract.md)
 - [현재 구현 상태](technical/current-implementation.md)
 
+## 작업용 미니 스펙
+
+- [공통 맵 JSON 런타임 이관](technical/mini-spec-shared-map-json.md)
+- [맵 경계 정책과 카메라 규칙](technical/mini-spec-map-boundaries-camera.md)
+
 ## 팀
 
 - [역할 분담](team/roles.md)

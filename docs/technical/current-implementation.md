@@ -12,6 +12,7 @@
 - map / item / weapon / snapshot / protocol 타입 존재
 - 서버와 클라이언트가 같은 메시지 계약을 참조 가능
 - 맵 `collision`을 `floor / one_way_platform / solid_wall`, `hazards`를 `fall_zone / instant_kill_hazard`로 구분하는 타입이 추가되었다.
+- 다만 **공통 맵 JSON 파일을 실제로 읽는 단계는 아직 아니며**, 서버와 클라이언트는 테스트 맵 구조를 각각 하드코딩하고 있다.
 
 ### Server
 - Rust + Actix-web 서버 동작
@@ -28,16 +29,22 @@
 - `room_snapshot`, `world_snapshot` 수신 가능
 - 플레이어를 사각형 placeholder로 렌더링 가능
 - 키 입력을 `player_input`으로 전송 가능
+- 테스트 맵용 바닥 / 플랫폼 / pit wall / hazard / spawn 위치를 클라이언트 내부 상수로 렌더링한다.
+
+### Portal
+- Next.js 정적 포털 페이지가 Cloudflare Pages에 배포되어 있다.
+- 현재 첫 화면은 `Battle Hamsters / 로비 화면 - 매칭 대기 중` 문구를 보여주는 **placeholder UI**다.
+- 실제 매칭 상태/서버 연결 상태를 반영하는 로비 로직은 아직 없다.
 
 ### 배포
 - Portal은 Cloudflare Pages direct upload 경로를 통해 실제 배포 성공을 확인했다.
 - Server는 Oracle Cloud 자동 배포 경로를 준비했고, SSH 접속 / 디렉터리 생성 / compose 실행 / production 이미지 빌드까지는 확인했다.
 - Oracle 배포 스크립트는 이제 `API_PORT`를 컨테이너 내부/외부에 동일하게 적용하고, Postgres 18 볼륨을 `/var/lib/postgresql`에 마운트하며, 배포 직후 `127.0.0.1:${API_PORT}/health`를 확인한 뒤 실패 시 compose 로그를 출력한다.
-- 다만 가장 최근 실제 Oracle 배포 기록은 `api` 컨테이너가 unhealthy 상태로 끝나 있어, 위 수정이 production에서 재검증되기 전까지는 외부 `/health` 응답 성공을 확정하지 않는다.
+- 2026-04-10 기준 최신 Oracle 배포에서는 외부 `http://161.118.216.248:8082/health` 응답 `200 {"status":"ok","version":"0.1.0"}`까지 확인했다.
 
-## 이번 브랜치 목표
+## 최근까지 완료한 핵심 범위
 
-### 플랫폼 이동 1차 구현
+### 플랫폼 이동 / 충돌 1차
 - 좌우 이동
 - 점프
 - 중력
@@ -67,6 +74,7 @@
 - `fall zone`은 현재 화면 밖 낙사 판정용이라 클라이언트에 블록으로 표시하지 않는다.
 - 플레이어 사각형에는 collider outline이 표시된다.
 - 보간/스무딩이 거의 없어 움직임이 거칠게 보일 수 있다.
+- 클라이언트 렌더링용 테스트 맵 값은 아직 서버와 공유되지 않는다.
 
 ### 전투
 - 실제 무기 판정, 아이템 획득, beam/grab/throwable 로직은 아직 미구현이다.
@@ -83,6 +91,6 @@
 ## 참고
 
 - 맵 경계/카메라 확장 아이디어는 `docs/technical/mini-spec-map-boundaries-camera.md`에 별도 정리한다.
-- `boundaryPolicy`, `cameraPolicy`, `gameplayBounds`, `deathBounds`는 현재 문서 스펙 초안이며 아직 런타임 구현은 아니다.
-- Oracle 배포 후속 디버깅은 `docker-compose logs db`, `docker-compose logs api`, `/opt/battle-hamsters/current/deploy/oracle/.env` 확인부터 이어가면 된다.
+- `boundaryPolicy`, `cameraPolicy`, `gameplayBounds`, `deathBounds`는 현재 문서 스펙 초안이며 shared 타입/런타임 반영은 아직 아니다.
+- 다음 구현 1순위 미니 스펙은 `docs/technical/mini-spec-shared-map-json.md`에 정리한다.
 - 구현을 바꿀 때는 이 문서도 같이 갱신한다.
