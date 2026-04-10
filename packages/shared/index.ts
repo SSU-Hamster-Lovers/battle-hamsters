@@ -3,5 +3,6 @@ export * from "./constants";
 export * from "./items";
 export * from "./map-data";
 export * from "./protocol";
+export * from "./weapon-data";
 export * from "./weapons";
 export * from "./world";

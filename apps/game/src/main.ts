@@ -1,5 +1,8 @@
 import Phaser from "phaser";
-import { trainingArenaMap } from "@battle-hamsters/shared";
+import {
+  trainingArenaMap,
+  weaponDefinitionById,
+} from "@battle-hamsters/shared";
 import type {
   CollisionPrimitive,
   HazardZone,
@@ -9,6 +12,7 @@ import type {
   SpawnPoint,
   RoomSnapshotMessage,
   ServerToClientMessage,
+  WorldWeaponPickup,
   WorldSnapshotMessage,
 } from "@battle-hamsters/shared";
 
@@ -64,6 +68,11 @@ type RenderedPlayer = {
   label: Phaser.GameObjects.Text;
 };
 
+type RenderedWeaponPickup = {
+  body: Phaser.GameObjects.Ellipse;
+  label: Phaser.GameObjects.Text;
+};
+
 function drawCross(
   graphics: Phaser.GameObjects.Graphics,
   x: number,
@@ -100,6 +109,7 @@ class MainScene extends Phaser.Scene {
   private infoText!: Phaser.GameObjects.Text;
   private connectionText!: Phaser.GameObjects.Text;
   private renderedPlayers = new Map<string, RenderedPlayer>();
+  private renderedWeaponPickups = new Map<string, RenderedWeaponPickup>();
   private playerName = getOrCreatePlayerName();
   private localPlayerId: string | null = null;
   private latestTick = 0;
@@ -398,6 +408,7 @@ class MainScene extends Phaser.Scene {
       this.connectionText.setColor("#fca5a5");
       this.localPlayerId = null;
       this.clearRenderedPlayers();
+      this.clearRenderedWeaponPickups();
       this.time.delayedCall(2000, () => {
         if (!this.socket || this.socket.readyState === WebSocket.CLOSED) {
           this.connect();
@@ -454,6 +465,7 @@ class MainScene extends Phaser.Scene {
       this.localPlayerId = message.payload.selfPlayerId;
     }
     this.renderPlayers(message.payload.players);
+    this.renderWeaponPickups(message.payload.weaponPickups);
     this.captureLocalPlayer(message.payload.players);
     this.updateInfoText(message.payload.players, "waiting", null);
   }
@@ -461,6 +473,7 @@ class MainScene extends Phaser.Scene {
   private applyWorldSnapshot(message: WorldSnapshotMessage) {
     this.latestTick = message.payload.serverTick;
     this.renderPlayers(message.payload.players);
+    this.renderWeaponPickups(message.payload.weaponPickups);
     this.captureLocalPlayer(message.payload.players);
     this.updateInfoText(
       message.payload.players,
@@ -482,6 +495,8 @@ class MainScene extends Phaser.Scene {
       `players: ${players.length}`,
       `match: ${matchState}`,
       `self: ${this.localPlayerId ?? "unknown"}`,
+      `weapon: ${localPlayer ? (weaponDefinitionById[localPlayer.equippedWeaponId]?.name ?? localPlayer.equippedWeaponId) : "unknown"}`,
+      `ammo: ${localPlayer?.equippedWeaponResource ?? "∞"}`,
       `grounded: ${localPlayer?.grounded ?? false}`,
       `state: ${localPlayer?.state ?? "unknown"}`,
       `jumps used: ${localPlayer?.jumpCountUsed ?? 0}`,
@@ -573,6 +588,66 @@ class MainScene extends Phaser.Scene {
   private clearRenderedPlayers() {
     for (const playerId of [...this.renderedPlayers.keys()]) {
       this.removeRenderedPlayer(playerId);
+    }
+  }
+
+  private clearRenderedWeaponPickups() {
+    for (const [pickupId, rendered] of this.renderedWeaponPickups) {
+      rendered.body.destroy();
+      rendered.label.destroy();
+      this.renderedWeaponPickups.delete(pickupId);
+    }
+  }
+
+  private renderWeaponPickups(weaponPickups: WorldWeaponPickup[]) {
+    const nextIds = new Set(weaponPickups.map((pickup) => pickup.id));
+
+    for (const pickup of weaponPickups) {
+      let rendered = this.renderedWeaponPickups.get(pickup.id);
+      const weaponName =
+        weaponDefinitionById[pickup.weaponId]?.name ?? pickup.weaponId;
+
+      if (!rendered) {
+        rendered = {
+          body: this.add.ellipse(
+            pickup.position.x,
+            pickup.position.y,
+            22,
+            14,
+            pickup.source === "spawn" ? 0x38bdf8 : 0xf97316,
+            0.95,
+          ),
+          label: this.add.text(
+            pickup.position.x,
+            pickup.position.y - 18,
+            weaponName,
+            {
+              fontSize: "11px",
+              color: "#f8fafc",
+            },
+          ),
+        };
+        this.renderedWeaponPickups.set(pickup.id, rendered);
+      }
+
+      rendered.body.setPosition(pickup.position.x, pickup.position.y);
+      rendered.body.setFillStyle(
+        pickup.source === "spawn" ? 0x38bdf8 : 0xf97316,
+        0.95,
+      );
+      rendered.label.setText(`${weaponName} (${pickup.resourceRemaining})`);
+      rendered.label.setPosition(
+        pickup.position.x - rendered.label.width / 2,
+        pickup.position.y - 20,
+      );
+    }
+
+    for (const [pickupId, rendered] of this.renderedWeaponPickups) {
+      if (!nextIds.has(pickupId)) {
+        rendered.body.destroy();
+        rendered.label.destroy();
+        this.renderedWeaponPickups.delete(pickupId);
+      }
     }
   }
 

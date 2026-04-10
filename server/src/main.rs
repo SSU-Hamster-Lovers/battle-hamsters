@@ -69,6 +69,7 @@ struct RuntimeMapData {
     width: f64,
     height: f64,
     spawn_points: Vec<Vector2>,
+    weapon_spawns: Vec<RuntimeWeaponSpawnPoint>,
     floor_segments: Vec<FloorSegment>,
     one_way_platforms: Vec<OneWayPlatformSegment>,
     solid_walls: Vec<SolidWall>,
@@ -76,6 +77,8 @@ struct RuntimeMapData {
 }
 
 static RUNTIME_MAP_DATA: OnceLock<RuntimeMapData> = OnceLock::new();
+static RUNTIME_WEAPON_DEFINITIONS: OnceLock<HashMap<String, RuntimeWeaponDefinition>> =
+    OnceLock::new();
 
 #[derive(Serialize)]
 struct HealthResponse {
@@ -113,6 +116,19 @@ struct MapSize {
 struct MapSpawnPoint {
     x: f64,
     y: f64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MapWeaponSpawnPoint {
+    id: String,
+    weapon_id: String,
+    x: f64,
+    y: f64,
+    respawn_ms: u64,
+    despawn_after_ms: u64,
+    spawn_style: SpawnStyle,
+    despawn_style: DespawnStyle,
 }
 
 #[derive(Deserialize)]
@@ -167,6 +183,66 @@ struct RuntimeMapDefinition {
     spawn_points: Vec<MapSpawnPoint>,
     collision: Vec<MapCollisionPrimitive>,
     hazards: Vec<MapHazard>,
+    weapon_spawns: Vec<MapWeaponSpawnPoint>,
+}
+
+#[derive(Clone)]
+struct RuntimeWeaponSpawnPoint {
+    id: String,
+    weapon_id: String,
+    position: Vector2,
+    respawn_ms: u64,
+    despawn_after_ms: u64,
+    spawn_style: SpawnStyle,
+    despawn_style: DespawnStyle,
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeWeaponDefinition {
+    id: String,
+    name: String,
+    hit_type: HitType,
+    fire_mode: FireMode,
+    resource_model: ResourceModel,
+    damage: u16,
+    knockback: f64,
+    self_recoil_force: f64,
+    self_recoil_angle_deg: f64,
+    self_recoil_angle_jitter_deg: f64,
+    self_recoil_ground_multiplier: f64,
+    self_recoil_air_multiplier: f64,
+    attack_interval_ms: u64,
+    range: f64,
+    projectile_speed: f64,
+    spread_deg: f64,
+    pellet_count: u8,
+    max_resource: u32,
+    resource_per_shot: u32,
+    resource_per_second: u32,
+    discard_on_empty: bool,
+    pickup_weight: u32,
+    rarity: WeaponRarity,
+    world_despawn_ms: u64,
+    special_effect: RuntimeWeaponSpecialEffect,
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize, Clone)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum RuntimeWeaponSpecialEffect {
+    None,
+    Explode {
+        fuse_ms: Option<u64>,
+        radius: Option<f64>,
+    },
+    Grab {
+        grab_duration_ms: u64,
+    },
+    HealBlock {
+        duration_ms: u64,
+    },
 }
 
 fn runtime_map_data() -> &'static RuntimeMapData {
@@ -236,6 +312,23 @@ fn runtime_map_data() -> &'static RuntimeMapData {
             })
             .collect::<Vec<_>>();
 
+        let weapon_spawns = map_definition
+            .weapon_spawns
+            .into_iter()
+            .map(|spawn| RuntimeWeaponSpawnPoint {
+                id: spawn.id,
+                weapon_id: spawn.weapon_id,
+                position: Vector2 {
+                    x: spawn.x,
+                    y: spawn.y,
+                },
+                respawn_ms: spawn.respawn_ms,
+                despawn_after_ms: spawn.despawn_after_ms,
+                spawn_style: spawn.spawn_style,
+                despawn_style: spawn.despawn_style,
+            })
+            .collect::<Vec<_>>();
+
         RuntimeMapData {
             room_id: ROOM_ID.to_string(),
             width: map_definition.size.width,
@@ -248,12 +341,33 @@ fn runtime_map_data() -> &'static RuntimeMapData {
                     y: spawn.y,
                 })
                 .collect(),
+            weapon_spawns,
             floor_segments,
             one_way_platforms,
             solid_walls,
             hazards,
         }
     })
+}
+
+fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinition> {
+    RUNTIME_WEAPON_DEFINITIONS.get_or_init(|| {
+        let paws_raw = include_str!("../../packages/shared/weapons/paws.json");
+        let acorn_raw = include_str!("../../packages/shared/weapons/acorn-blaster.json");
+
+        let paws: RuntimeWeaponDefinition =
+            serde_json::from_str(paws_raw).expect("paws JSON should deserialize");
+        let acorn: RuntimeWeaponDefinition =
+            serde_json::from_str(acorn_raw).expect("acorn blaster JSON should deserialize");
+
+        HashMap::from([(paws.id.clone(), paws), (acorn.id.clone(), acorn)])
+    })
+}
+
+fn weapon_definition(weapon_id: &str) -> &'static RuntimeWeaponDefinition {
+    runtime_weapon_definitions()
+        .get(weapon_id)
+        .unwrap_or_else(|| panic!("missing weapon definition: {weapon_id}"))
 }
 
 fn world_width() -> f64 {
@@ -297,6 +411,8 @@ struct PlayerRuntime {
     snapshot: PlayerSnapshot,
     latest_input: PlayerInputPayload,
     spawn_index: usize,
+    external_velocity: Vector2,
+    next_attack_at: u64,
 }
 
 struct RoomState {
@@ -304,18 +420,82 @@ struct RoomState {
     server_tick: u64,
     time_remaining_ms: u64,
     players: HashMap<String, PlayerRuntime>,
+    weapon_pickups: HashMap<String, WorldWeaponPickup>,
+    next_weapon_pickup_id: u64,
+    next_spawn_respawn_at: HashMap<String, u64>,
     sessions: HashMap<String, Recipient<WsText>>,
 }
 
 impl RoomState {
     fn new() -> Self {
-        Self {
+        let now = now_ms();
+        let mut room = Self {
             room_id: room_id().to_string(),
             server_tick: 0,
             time_remaining_ms: DEFAULT_TIME_LIMIT_MS,
             players: HashMap::new(),
+            weapon_pickups: HashMap::new(),
+            next_weapon_pickup_id: 1,
+            next_spawn_respawn_at: HashMap::new(),
             sessions: HashMap::new(),
+        };
+        room.spawn_initial_weapons(now);
+        room
+    }
+
+    fn spawn_initial_weapons(&mut self, now_ms: u64) {
+        let spawns = runtime_map_data().weapon_spawns.clone();
+        for spawn in spawns {
+            self.spawn_weapon_from_spawn(&spawn, now_ms);
         }
+    }
+
+    fn next_world_pickup_id(&mut self) -> String {
+        let id = format!("weapon_pickup_{}", self.next_weapon_pickup_id);
+        self.next_weapon_pickup_id += 1;
+        id
+    }
+
+    fn spawn_weapon_from_spawn(&mut self, spawn: &RuntimeWeaponSpawnPoint, now_ms: u64) {
+        let definition = weapon_definition(&spawn.weapon_id);
+        let pickup = WorldWeaponPickup {
+            id: self.next_world_pickup_id(),
+            weapon_id: spawn.weapon_id.clone(),
+            position: spawn.position.clone(),
+            source: PickupSource::Spawn,
+            resource_remaining: definition.max_resource,
+            spawn_style: spawn.spawn_style,
+            despawn_style: spawn.despawn_style,
+            spawned_at: now_ms,
+            despawn_at: Some(now_ms + spawn.despawn_after_ms),
+            spawn_id: Some(spawn.id.clone()),
+            respawn_ms: Some(spawn.respawn_ms),
+        };
+        self.weapon_pickups.insert(pickup.id.clone(), pickup);
+    }
+
+    fn create_dropped_pickup(
+        &mut self,
+        weapon_id: String,
+        resource_remaining: u32,
+        position: Vector2,
+        now_ms: u64,
+    ) {
+        let definition = weapon_definition(&weapon_id);
+        let pickup = WorldWeaponPickup {
+            id: self.next_world_pickup_id(),
+            weapon_id,
+            position,
+            source: PickupSource::Dropped,
+            resource_remaining,
+            spawn_style: SpawnStyle::FadeIn,
+            despawn_style: DespawnStyle::ShrinkPop,
+            spawned_at: now_ms,
+            despawn_at: Some(now_ms + definition.world_despawn_ms),
+            spawn_id: None,
+            respawn_ms: None,
+        };
+        self.weapon_pickups.insert(pickup.id.clone(), pickup);
     }
 
     fn player_snapshots(&self) -> Vec<PlayerSnapshot> {
@@ -323,6 +503,266 @@ impl RoomState {
             .values()
             .map(|player| player.snapshot.clone())
             .collect()
+    }
+
+    fn weapon_pickup_snapshots(&self) -> Vec<WorldWeaponPickup> {
+        self.weapon_pickups.values().cloned().collect()
+    }
+
+    fn refresh_weapon_spawns(&mut self, now_ms: u64) {
+        let spawns = runtime_map_data().weapon_spawns.clone();
+        for spawn in spawns {
+            let active = self
+                .weapon_pickups
+                .values()
+                .any(|pickup| pickup.spawn_id.as_deref() == Some(spawn.id.as_str()));
+            if active {
+                continue;
+            }
+
+            let ready = self
+                .next_spawn_respawn_at
+                .get(&spawn.id)
+                .is_none_or(|respawn_at| now_ms >= *respawn_at);
+            if ready {
+                self.next_spawn_respawn_at.remove(&spawn.id);
+                self.spawn_weapon_from_spawn(&spawn, now_ms);
+            }
+        }
+    }
+
+    fn cleanup_expired_pickups(&mut self, now_ms: u64) {
+        let expired_ids = self
+            .weapon_pickups
+            .iter()
+            .filter_map(|(pickup_id, pickup)| {
+                pickup
+                    .despawn_at
+                    .is_some_and(|despawn_at| now_ms >= despawn_at)
+                    .then_some(pickup_id.clone())
+            })
+            .collect::<Vec<_>>();
+
+        for pickup_id in expired_ids {
+            if let Some(pickup) = self.weapon_pickups.remove(&pickup_id) {
+                if let (Some(spawn_id), Some(respawn_ms)) = (pickup.spawn_id, pickup.respawn_ms) {
+                    self.next_spawn_respawn_at
+                        .insert(spawn_id, now_ms + respawn_ms);
+                }
+            }
+        }
+    }
+
+    fn drop_equipped_weapon_if_needed(&mut self, player_id: &str, now_ms: u64) {
+        let Some(player_view) = self.players.get(player_id) else {
+            return;
+        };
+
+        if !player_view.latest_input.drop_weapon
+            || player_view.snapshot.equipped_weapon_id == "paws"
+        {
+            return;
+        }
+
+        let drop_payload = (
+            player_view.snapshot.equipped_weapon_id.clone(),
+            player_view.snapshot.equipped_weapon_resource.unwrap_or(0),
+            player_view.snapshot.position.clone(),
+        );
+
+        if let Some(player) = self.players.get_mut(player_id) {
+            player.snapshot.equipped_weapon_id = "paws".to_string();
+            player.snapshot.equipped_weapon_resource = None;
+        }
+
+        if drop_payload.1 > 0 {
+            self.create_dropped_pickup(drop_payload.0, drop_payload.1, drop_payload.2, now_ms);
+        }
+    }
+
+    fn pickup_near_player(&self, player: &PlayerRuntime) -> Option<String> {
+        self.weapon_pickups
+            .iter()
+            .filter_map(|(pickup_id, pickup)| {
+                let dx = pickup.position.x - player.snapshot.position.x;
+                let dy = pickup.position.y - player.snapshot.position.y;
+                let distance_sq = dx * dx + dy * dy;
+                (distance_sq <= 36.0 * 36.0).then_some((pickup_id.clone(), distance_sq))
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(pickup_id, _)| pickup_id)
+    }
+
+    fn handle_weapon_pickup(&mut self, player_id: &str, now_ms: u64) {
+        let Some(pickup_id) = self
+            .players
+            .get(player_id)
+            .and_then(|player| self.pickup_near_player(player))
+        else {
+            return;
+        };
+
+        let Some(pickup) = self.weapon_pickups.remove(&pickup_id) else {
+            return;
+        };
+
+        if let (Some(spawn_id), Some(respawn_ms)) = (pickup.spawn_id.clone(), pickup.respawn_ms) {
+            self.next_spawn_respawn_at
+                .insert(spawn_id, now_ms + respawn_ms);
+        }
+
+        let current_weapon_to_drop = self.players.get(player_id).and_then(|player| {
+            (player.snapshot.equipped_weapon_id != "paws"
+                && player.snapshot.equipped_weapon_resource.unwrap_or(0) > 0)
+                .then_some((
+                    player.snapshot.equipped_weapon_id.clone(),
+                    player.snapshot.equipped_weapon_resource.unwrap_or(0),
+                    player.snapshot.position.clone(),
+                ))
+        });
+
+        let Some(player) = self.players.get_mut(player_id) else {
+            return;
+        };
+
+        player.snapshot.equipped_weapon_id = pickup.weapon_id;
+        player.snapshot.equipped_weapon_resource = Some(pickup.resource_remaining);
+
+        if let Some((weapon_id, resource_remaining, position)) = current_weapon_to_drop {
+            self.create_dropped_pickup(weapon_id, resource_remaining, position, now_ms);
+        }
+    }
+
+    fn handle_weapon_attack(&mut self, player_id: &str, now_ms: u64, deaths: &mut Vec<String>) {
+        let Some(shooter_view) = self.players.get(player_id) else {
+            return;
+        };
+        if !shooter_view.latest_input.attack {
+            return;
+        }
+        if now_ms < shooter_view.next_attack_at {
+            return;
+        }
+
+        let weapon_id = shooter_view.snapshot.equipped_weapon_id.clone();
+        if weapon_id == "paws" {
+            return;
+        }
+
+        let weapon = weapon_definition(&weapon_id).clone();
+        if !matches!(weapon.hit_type, HitType::Hitscan)
+            || !matches!(weapon.fire_mode, FireMode::Single)
+        {
+            return;
+        }
+
+        let Some(current_resource) = shooter_view.snapshot.equipped_weapon_resource else {
+            return;
+        };
+        if current_resource < weapon.resource_per_shot {
+            return;
+        }
+
+        let shooter_position = shooter_view.snapshot.position.clone();
+        let shooter_grounded = shooter_view.snapshot.grounded;
+        let aim_direction = normalize_or_fallback(
+            shooter_view.latest_input.aim.clone(),
+            shooter_view.snapshot.direction,
+        );
+        let recoil_direction = rotate_vector(
+            Vector2 {
+                x: -aim_direction.x,
+                y: -aim_direction.y,
+            },
+            weapon.self_recoil_angle_deg
+                + pseudo_jitter_deg(
+                    shooter_view.latest_input.sequence
+                        + self.server_tick
+                        + shooter_position.x.to_bits(),
+                    weapon.self_recoil_angle_jitter_deg,
+                ),
+        );
+        let target_id =
+            self.find_hitscan_target(player_id, &shooter_position, &aim_direction, weapon.range);
+
+        {
+            let shooter = self
+                .players
+                .get_mut(player_id)
+                .expect("shooter should exist");
+            shooter.next_attack_at = now_ms + weapon.attack_interval_ms;
+            shooter.external_velocity.x += recoil_direction.x
+                * weapon.self_recoil_force
+                * if shooter_grounded {
+                    weapon.self_recoil_ground_multiplier
+                } else {
+                    weapon.self_recoil_air_multiplier
+                };
+            shooter.external_velocity.y += recoil_direction.y
+                * weapon.self_recoil_force
+                * if shooter_grounded {
+                    weapon.self_recoil_ground_multiplier
+                } else {
+                    weapon.self_recoil_air_multiplier
+                };
+
+            let remaining = current_resource.saturating_sub(weapon.resource_per_shot);
+            if remaining == 0 && weapon.discard_on_empty {
+                shooter.snapshot.equipped_weapon_id = "paws".to_string();
+                shooter.snapshot.equipped_weapon_resource = None;
+            } else {
+                shooter.snapshot.equipped_weapon_resource = Some(remaining);
+            }
+        }
+
+        if let Some(target_id) = target_id {
+            let target = self
+                .players
+                .get_mut(&target_id)
+                .expect("target should exist");
+            target.external_velocity.x += aim_direction.x * weapon.knockback;
+            target.external_velocity.y += aim_direction.y * weapon.knockback;
+            target.snapshot.hp = target.snapshot.hp.saturating_sub(weapon.damage);
+            if target.snapshot.hp == 0 {
+                deaths.push(target_id);
+            }
+        }
+    }
+
+    fn find_hitscan_target(
+        &self,
+        shooter_id: &str,
+        shooter_position: &Vector2,
+        aim_direction: &Vector2,
+        range: f64,
+    ) -> Option<String> {
+        self.players
+            .iter()
+            .filter(|(target_id, target)| {
+                target_id.as_str() != shooter_id && target.snapshot.state == PlayerState::Alive
+            })
+            .filter_map(|(target_id, target)| {
+                let to_target = Vector2 {
+                    x: target.snapshot.position.x - shooter_position.x,
+                    y: target.snapshot.position.y - shooter_position.y,
+                };
+                let projected = dot(&to_target, aim_direction);
+                if !(0.0..=range).contains(&projected) {
+                    return None;
+                }
+
+                let closest_point = Vector2 {
+                    x: shooter_position.x + aim_direction.x * projected,
+                    y: shooter_position.y + aim_direction.y * projected,
+                };
+                let dx = target.snapshot.position.x - closest_point.x;
+                let dy = target.snapshot.position.y - closest_point.y;
+                let distance_sq = dx * dx + dy * dy;
+                (distance_sq <= (PLAYER_HALF_SIZE * PLAYER_HALF_SIZE * 1.5))
+                    .then_some((target_id.clone(), projected))
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(target_id, _)| target_id)
     }
 
     fn add_player(
@@ -360,6 +800,8 @@ impl RoomState {
                 snapshot: player,
                 latest_input: PlayerInputPayload::default(),
                 spawn_index,
+                external_velocity: Vector2 { x: 0.0, y: 0.0 },
+                next_attack_at: 0,
             },
         );
 
@@ -367,7 +809,7 @@ impl RoomState {
             room_id: self.room_id.clone(),
             self_player_id: Some(player_id),
             players: self.player_snapshots(),
-            weapon_pickups: vec![],
+            weapon_pickups: self.weapon_pickup_snapshots(),
             item_pickups: vec![],
             match_state: MatchState::Waiting,
         }
@@ -387,12 +829,14 @@ impl RoomState {
     fn tick(&mut self, now_ms: u64) -> WorldSnapshotPayload {
         self.server_tick += 1;
         self.time_remaining_ms = self.time_remaining_ms.saturating_sub(TICK_INTERVAL_MS);
+        self.cleanup_expired_pickups(now_ms);
+        self.refresh_weapon_spawns(now_ms);
 
         let player_ids = self.players.keys().cloned().collect::<Vec<_>>();
         let mut deaths = Vec::new();
 
-        for player_id in player_ids {
-            let Some(player) = self.players.get_mut(&player_id) else {
+        for player_id in &player_ids {
+            let Some(player) = self.players.get_mut(player_id) else {
                 continue;
             };
 
@@ -408,8 +852,21 @@ impl RoomState {
             step_player(player, now_ms);
 
             if intersecting_hazard(&player.snapshot).is_some() {
-                deaths.push(player_id);
+                deaths.push(player_id.clone());
             }
+        }
+
+        for player_id in &player_ids {
+            let is_alive = self
+                .players
+                .get(player_id)
+                .is_some_and(|player| player.snapshot.state == PlayerState::Alive);
+            if !is_alive {
+                continue;
+            }
+            self.drop_equipped_weapon_if_needed(player_id, now_ms);
+            self.handle_weapon_pickup(player_id, now_ms);
+            self.handle_weapon_attack(player_id, now_ms, &mut deaths);
         }
 
         for player_id in deaths {
@@ -425,7 +882,7 @@ impl RoomState {
             server_tick: self.server_tick,
             players: self.player_snapshots(),
             projectiles: vec![],
-            weapon_pickups: vec![],
+            weapon_pickups: self.weapon_pickup_snapshots(),
             item_pickups: vec![],
             time_remaining_ms: self.time_remaining_ms,
         }
@@ -441,8 +898,6 @@ fn step_player(player: &mut PlayerRuntime, now_ms: u64) {
     let input = player.latest_input.clone();
     let move_x = input.move_ref().x.clamp(-1.0, 1.0);
     let down_pressed = input.move_ref().y > 0.5;
-
-    player.snapshot.velocity.x = move_x * RUN_SPEED_PER_TICK;
 
     if move_x < 0.0 {
         player.snapshot.direction = Direction::Left;
@@ -491,19 +946,34 @@ fn step_player(player: &mut PlayerRuntime, now_ms: u64) {
         player.snapshot.velocity.y = (player.snapshot.velocity.y + gravity).min(max_fall_speed);
     }
 
+    let desired_velocity_x = move_x * RUN_SPEED_PER_TICK;
+    let combined_velocity_x = desired_velocity_x + player.external_velocity.x;
+    let combined_velocity_y = player.snapshot.velocity.y + player.external_velocity.y;
+
     let previous_position = player.snapshot.position.clone();
-    player.snapshot.position.x += player.snapshot.velocity.x;
+    player.snapshot.position.x += combined_velocity_x;
     player.snapshot.position.x = player
         .snapshot
         .position
         .x
         .clamp(PLAYER_HALF_SIZE, world_width() - PLAYER_HALF_SIZE);
 
-    player.snapshot.position.y += player.snapshot.velocity.y;
+    player.snapshot.position.y += combined_velocity_y;
 
     player.snapshot.grounded = false;
+    player.snapshot.velocity.x = combined_velocity_x;
+    player.snapshot.velocity.y = combined_velocity_y;
 
     resolve_wall_collisions(&mut player.snapshot, &previous_position);
+
+    player.external_velocity.x *= if player.snapshot.grounded { 0.5 } else { 0.84 };
+    player.external_velocity.y *= 0.84;
+    if player.external_velocity.x.abs() < 0.05 {
+        player.external_velocity.x = 0.0;
+    }
+    if player.external_velocity.y.abs() < 0.05 {
+        player.external_velocity.y = 0.0;
+    }
 
     let previous_bottom = previous_position.y + PLAYER_HALF_SIZE;
     let current_bottom = player.snapshot.position.y + PLAYER_HALF_SIZE;
@@ -512,7 +982,7 @@ fn step_player(player: &mut PlayerRuntime, now_ms: u64) {
         if current_bottom >= floor.top_y
             && surface_contains_x(floor.left_x, floor.right_x, player.snapshot.position.x)
         {
-            land_on_surface(&mut player.snapshot, floor.top_y);
+            land_on_surface(player, floor.top_y);
             return;
         }
     }
@@ -527,7 +997,7 @@ fn step_player(player: &mut PlayerRuntime, now_ms: u64) {
                     player.snapshot.position.x,
                 )
             {
-                land_on_surface(&mut player.snapshot, platform.top_y);
+                land_on_surface(player, platform.top_y);
                 return;
             }
         }
@@ -546,11 +1016,12 @@ fn surface_contains_x(left_x: f64, right_x: f64, x: f64) -> bool {
     (left_x..=right_x).contains(&x)
 }
 
-fn land_on_surface(player: &mut PlayerSnapshot, top_y: f64) {
-    player.position.y = top_y - PLAYER_HALF_SIZE;
-    player.velocity.y = 0.0;
-    player.grounded = true;
-    player.jump_count_used = 0;
+fn land_on_surface(player: &mut PlayerRuntime, top_y: f64) {
+    player.snapshot.position.y = top_y - PLAYER_HALF_SIZE;
+    player.snapshot.velocity.y = 0.0;
+    player.snapshot.grounded = true;
+    player.snapshot.jump_count_used = 0;
+    player.external_velocity.y = 0.0;
 }
 
 fn resolve_wall_collisions(player: &mut PlayerSnapshot, previous_position: &Vector2) {
@@ -604,6 +1075,7 @@ fn trigger_respawn(player: &mut PlayerRuntime, now_ms: u64) {
     player.snapshot.state = PlayerState::Respawning;
     player.snapshot.respawn_at = Some(now_ms + RESPAWN_DELAY_MS);
     player.snapshot.velocity = Vector2 { x: 0.0, y: 0.0 };
+    player.external_velocity = Vector2 { x: 0.0, y: 0.0 };
     player.snapshot.grounded = false;
     player.snapshot.jump_count_used = 0;
     player.snapshot.drop_through_until = None;
@@ -613,6 +1085,7 @@ fn trigger_respawn(player: &mut PlayerRuntime, now_ms: u64) {
 fn respawn_player(player: &mut PlayerRuntime) {
     player.snapshot.position = spawn_position(player.spawn_index);
     player.snapshot.velocity = Vector2 { x: 0.0, y: 0.0 };
+    player.external_velocity = Vector2 { x: 0.0, y: 0.0 };
     player.snapshot.hp = 100;
     player.snapshot.grounded = false;
     player.snapshot.jump_count_used = 0;
@@ -1011,6 +1484,10 @@ struct WorldWeaponPickup {
     despawn_style: DespawnStyle,
     spawned_at: u64,
     despawn_at: Option<u64>,
+    #[serde(skip_serializing)]
+    spawn_id: Option<String>,
+    #[serde(skip_serializing)]
+    respawn_ms: Option<u64>,
 }
 
 #[derive(Serialize, Clone)]
@@ -1095,7 +1572,7 @@ enum ItemSource {
 }
 
 #[allow(dead_code)]
-#[derive(Serialize, Clone, Copy)]
+#[derive(Serialize, Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 enum SpawnStyle {
     Airdrop,
@@ -1104,16 +1581,91 @@ enum SpawnStyle {
 }
 
 #[allow(dead_code)]
-#[derive(Serialize, Clone, Copy)]
+#[derive(Serialize, Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 enum DespawnStyle {
     ShrinkPop,
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
+enum HitType {
+    Melee,
+    Hitscan,
+    Projectile,
+    Beam,
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
+enum FireMode {
+    Single,
+    Burst,
+    Auto,
+    Channel,
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
+enum ResourceModel {
+    Infinite,
+    Magazine,
+    Capacity,
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
+enum WeaponRarity {
+    Common,
+    Uncommon,
+    Rare,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 struct Vector2 {
     x: f64,
     y: f64,
+}
+
+fn dot(a: &Vector2, b: &Vector2) -> f64 {
+    a.x * b.x + a.y * b.y
+}
+
+fn rotate_vector(vector: Vector2, angle_deg: f64) -> Vector2 {
+    let radians = angle_deg.to_radians();
+    let cos = radians.cos();
+    let sin = radians.sin();
+    Vector2 {
+        x: vector.x * cos - vector.y * sin,
+        y: vector.x * sin + vector.y * cos,
+    }
+}
+
+fn normalize_or_fallback(vector: Vector2, direction: Direction) -> Vector2 {
+    let length = (vector.x * vector.x + vector.y * vector.y).sqrt();
+    if length > 0.0001 {
+        Vector2 {
+            x: vector.x / length,
+            y: vector.y / length,
+        }
+    } else {
+        match direction {
+            Direction::Left => Vector2 { x: -1.0, y: 0.0 },
+            Direction::Right => Vector2 { x: 1.0, y: 0.0 },
+        }
+    }
+}
+
+fn pseudo_jitter_deg(seed: u64, max_abs_deg: f64) -> f64 {
+    if max_abs_deg == 0.0 {
+        return 0.0;
+    }
+
+    let mixed = seed
+        .wrapping_mul(6364136223846793005)
+        .wrapping_add(1442695040888963407);
+    let normalized = ((mixed >> 33) as f64 / u32::MAX as f64) * 2.0 - 1.0;
+    normalized * max_abs_deg
 }
 
 fn now_ms() -> u64 {
@@ -1225,6 +1777,8 @@ mod tests {
             },
             latest_input: PlayerInputPayload::default(),
             spawn_index: 0,
+            external_velocity: Vector2 { x: 0.0, y: 0.0 },
+            next_attack_at: 0,
         }
     }
 
@@ -1317,5 +1871,98 @@ mod tests {
             intersecting_hazard(&player_in_pit.snapshot),
             Some(HazardKind::FallZone)
         );
+    }
+
+    #[test]
+    fn room_starts_with_spawned_weapon_pickup() {
+        let room = RoomState::new();
+        assert_eq!(room.weapon_pickups.len(), 1);
+        let pickup = room
+            .weapon_pickups
+            .values()
+            .next()
+            .expect("spawn pickup should exist");
+        assert_eq!(pickup.weapon_id, "acorn_blaster");
+        assert_eq!(pickup.resource_remaining, 8);
+    }
+
+    #[test]
+    fn hitscan_attack_consumes_weapon_and_applies_recoil() {
+        let mut room = RoomState::new();
+
+        let shooter = PlayerRuntime {
+            snapshot: PlayerSnapshot {
+                id: "shooter".to_string(),
+                name: "shooter".to_string(),
+                position: Vector2 { x: 140.0, y: 120.0 },
+                velocity: Vector2 { x: 0.0, y: 0.0 },
+                direction: Direction::Right,
+                hp: 100,
+                lives: TEST_LIVES,
+                move_speed_rank: 0,
+                max_jump_count: MAX_JUMP_COUNT,
+                jump_count_used: 0,
+                grounded: true,
+                drop_through_until: None,
+                respawn_at: None,
+                equipped_weapon_id: "acorn_blaster".to_string(),
+                equipped_weapon_resource: Some(1),
+                grab_state: None,
+                state: PlayerState::Alive,
+            },
+            latest_input: PlayerInputPayload {
+                sequence: 1,
+                movement: Vector2 { x: 0.0, y: 0.0 },
+                aim: Vector2 { x: 1.0, y: 0.0 },
+                jump: false,
+                attack: true,
+                drop_weapon: false,
+            },
+            spawn_index: 0,
+            external_velocity: Vector2 { x: 0.0, y: 0.0 },
+            next_attack_at: 0,
+        };
+
+        let target = PlayerRuntime {
+            snapshot: PlayerSnapshot {
+                id: "target".to_string(),
+                name: "target".to_string(),
+                position: Vector2 { x: 240.0, y: 120.0 },
+                velocity: Vector2 { x: 0.0, y: 0.0 },
+                direction: Direction::Left,
+                hp: 100,
+                lives: TEST_LIVES,
+                move_speed_rank: 0,
+                max_jump_count: MAX_JUMP_COUNT,
+                jump_count_used: 0,
+                grounded: true,
+                drop_through_until: None,
+                respawn_at: None,
+                equipped_weapon_id: "paws".to_string(),
+                equipped_weapon_resource: None,
+                grab_state: None,
+                state: PlayerState::Alive,
+            },
+            latest_input: PlayerInputPayload::default(),
+            spawn_index: 1,
+            external_velocity: Vector2 { x: 0.0, y: 0.0 },
+            next_attack_at: 0,
+        };
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths);
+
+        let shooter_after = room.players.get("shooter").expect("shooter should exist");
+        let target_after = room.players.get("target").expect("target should exist");
+
+        assert_eq!(shooter_after.snapshot.equipped_weapon_id, "paws");
+        assert_eq!(shooter_after.snapshot.equipped_weapon_resource, None);
+        assert!(shooter_after.external_velocity.x < 0.0);
+        assert!(target_after.external_velocity.x > 0.0);
+        assert_eq!(target_after.snapshot.hp, 88);
+        assert!(deaths.is_empty());
     }
 }

@@ -25,6 +25,8 @@
 - `welcome`, `join_room`, `room_snapshot`, `world_snapshot` 흐름 구현
 - 플랫폼 이동 테스트 맵에서 좌우 바닥, 원웨이 플랫폼, pit 내부 wall 충돌, fall zone, instant kill hazard를 따로 판정한다.
 - 테스트 맵 충돌 / hazard / spawn 위치를 이제 `packages/shared/maps/training-arena.json`에서 읽는다.
+- 테스트 맵 `weaponSpawns`를 실제 월드 pickup 상태로 올리고, spawn/드롭 무기 despawn/respawn 1차를 처리한다.
+- `Acorn Blaster` 히트스캔 발사, 상대 넉백, 자기 반동(`self recoil`), 탄 소모, 빈 무기 폐기까지 1차 구현이 들어갔다.
 - pit wall / fall zone / instant kill hazard 판정을 검증하는 단위 테스트가 있다.
 
 ### Game Client
@@ -35,6 +37,8 @@
 - 플레이어를 사각형 placeholder로 렌더링 가능
 - 키 입력을 `player_input`으로 전송 가능
 - 테스트 맵용 바닥 / 플랫폼 / pit wall / hazard / spawn 위치를 `trainingArenaMap` 공통 데이터에서 읽어 렌더링한다.
+- 월드 무기 pickup을 간단한 도형/라벨로 렌더링한다.
+- HUD 텍스트에 현재 장착 무기와 탄 수를 표시한다.
 
 ### Portal
 
@@ -88,12 +92,13 @@
 
 ### 전투
 
-- 실제 무기 판정, 아이템 획득, beam/grab/throwable 로직은 아직 미구현이다.
-- 자기 반동(`self recoil`) 시스템도 아직 미구현이다.
+- `Acorn Blaster` 1종에 한해 실제 발사/피격/넉백/자기 반동/탄 소모/빈 무기 폐기를 처리한다.
+- 월드 무기 spawn pickup / 드롭 pickup / 자동 pickup / 드롭 입력(`Q`)을 1차 처리한다.
+- beam/grab/throwable, item pickup, 다중 무기 밸런싱은 아직 미구현이다.
 
 ## 다음 구현 우선순위
 
-1. 무기 시스템 1차 (`pickup / 장착 / 발사 / 넉백 / 자기 반동`)
+1. item pickup 실제 상태 반영
 2. 클라이언트 보간 및 시각 품질 개선
 3. `maxJumpCount`를 아이템과 실제로 연동
 4. placeholder 사각형 → 실제 햄스터 렌더링
