@@ -102,13 +102,51 @@ jobs:
           mv "${ENV_PATH}" "${RELEASE_DIR}/deploy/oracle/.env"
 
           cd "${RELEASE_DIR}/deploy/oracle"
+          API_PORT_VALUE="$(awk -F= '$1 == "API_PORT" { print $2 }' .env | tail -n 1)"
+          if [ -z "${API_PORT_VALUE}" ]; then
+            API_PORT_VALUE="8081"
+          fi
+
           if docker compose version >/dev/null 2>&1; then
-            COMPOSE_CMD="docker compose"
-            ${COMPOSE_CMD} -p battle-hamsters --env-file .env up -d --build
+            COMPOSE_CMD=(docker compose -p battle-hamsters --env-file .env)
           elif command -v docker-compose >/dev/null 2>&1; then
-            docker-compose --env-file .env up -d --build
+            COMPOSE_CMD=(docker-compose -p battle-hamsters --env-file .env)
           else
             echo "Neither 'docker compose' nor 'docker-compose' is available on the target host." >&2
+            exit 1
+          fi
+
+          "${COMPOSE_CMD[@]}" up -d --build
+
+          if ! python3 - "${API_PORT_VALUE}" <<'PY'
+          import json
+          import sys
+          import time
+          from urllib.error import URLError
+          from urllib.request import urlopen
+
+          port = sys.argv[1]
+          url = f"http://127.0.0.1:{port}/health"
+          deadline = time.time() + 30
+
+          while time.time() < deadline:
+              try:
+                  with urlopen(url, timeout=3) as response:
+                      if response.status != 200:
+                          raise RuntimeError(f"Unexpected status: {response.status}")
+                      payload = json.loads(response.read().decode("utf-8"))
+                      if payload.get("status") != "ok":
+                          raise RuntimeError(f"Unexpected payload: {payload}")
+                      sys.exit(0)
+              except (OSError, URLError, RuntimeError, ValueError):
+                  time.sleep(3)
+
+          sys.exit(1)
+          PY
+          then
+            "${COMPOSE_CMD[@]}" ps || true
+            "${COMPOSE_CMD[@]}" logs db --tail=200 || true
+            "${COMPOSE_CMD[@]}" logs api --tail=200 || true
             exit 1
           fi
 

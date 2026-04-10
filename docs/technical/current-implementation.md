@@ -32,7 +32,8 @@
 ### 배포
 - Portal은 Cloudflare Pages direct upload 경로를 통해 실제 배포 성공을 확인했다.
 - Server는 Oracle Cloud 자동 배포 경로를 준비했고, SSH 접속 / 디렉터리 생성 / compose 실행 / production 이미지 빌드까지는 확인했다.
-- 다만 최신 Oracle 배포는 `api` 컨테이너가 unhealthy 상태로 끝나 아직 `/health` 외부 응답까지는 확인하지 못했다.
+- Oracle 배포 스크립트는 이제 `API_PORT`를 컨테이너 내부/외부에 동일하게 적용하고, Postgres 18 볼륨을 `/var/lib/postgresql`에 마운트하며, 배포 직후 `127.0.0.1:${API_PORT}/health`를 확인한 뒤 실패 시 compose 로그를 출력한다.
+- 다만 가장 최근 실제 Oracle 배포 기록은 `api` 컨테이너가 unhealthy 상태로 끝나 있어, 위 수정이 production에서 재검증되기 전까지는 외부 `/health` 응답 성공을 확정하지 않는다.
 
 ## 이번 브랜치 목표
 
