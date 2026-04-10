@@ -84,6 +84,7 @@
 - `instant kill hazard`에 닿거나 `fall zone` 깊이까지 떨어지면 3초 뒤 상공에서 리스폰한다.
 - 현재 테스트용 생명 수는 99다.
 - 기본 점프 횟수는 다시 1로 두고, 아이템으로 최대 3까지 올릴 수 있다.
+- 죽으면 점프 증가와 이동 관련 일반 전투 상태는 기본값으로 초기화된다.
 
 ### 렌더링
 
@@ -103,15 +104,15 @@
 - `jump_boost_small`은 `maxJumpCount`를 `1..3` 범위에서 증가시키고, `health_pack_small`은 HP를 최대치까지 회복한다.
 - 드롭한 무기는 즉시 재pickup되지 않도록 짧은 본인 pickup 차단 시간이 있다.
 - 사망 시 장착 무기는 초기화되어 맨손(`paws`)으로 리스폰한다.
+- 사망 시 점프 증가와 속도 랭크업도 함께 초기화된다.
 - beam/grab/throwable, speed rank/extra life 아이템, 다중 무기 밸런싱은 아직 미구현이다.
 
 ## 다음 구현 우선순위
 
 1. 클라이언트 보간 및 시각 품질 개선
-2. 점프 아이템의 리스폰/사망 초기화 규칙 정리
-3. placeholder 사각형 → 실제 햄스터 렌더링
-4. hazard 진입 피드백 / 사망 원인 표현 정리
-5. `visualBounds` 기반 카메라 clamp 및 follow 카메라 감쇠 이동 구현
+2. placeholder 사각형 → 실제 햄스터 렌더링
+3. hazard 진입 피드백 / 사망 원인 표현 정리
+4. `visualBounds` 기반 카메라 clamp 및 follow 카메라 감쇠 이동 구현
 
 ## 참고
 

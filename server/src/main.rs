@@ -963,6 +963,21 @@ fn intersecting_hazard(player: &PlayerSnapshot) -> Option<HazardKind> {
     })
 }
 
+fn reset_general_combat_state(player: &mut PlayerRuntime) {
+    player.snapshot.move_speed_rank = 0;
+    player.snapshot.max_jump_count = BASE_MAX_JUMP_COUNT;
+    player.snapshot.jump_count_used = 0;
+    player.snapshot.drop_through_until = None;
+    player.snapshot.equipped_weapon_id = "paws".to_string();
+    player.snapshot.equipped_weapon_resource = None;
+    player.snapshot.velocity = Vector2 { x: 0.0, y: 0.0 };
+    player.external_velocity = Vector2 { x: 0.0, y: 0.0 };
+    player.snapshot.grounded = false;
+    player.attack_queued = false;
+    player.attack_was_down = false;
+    player.next_attack_at = 0;
+}
+
 fn trigger_respawn(player: &mut PlayerRuntime, now_ms: u64) {
     if player.snapshot.lives > 0 {
         player.snapshot.lives -= 1;
@@ -971,32 +986,14 @@ fn trigger_respawn(player: &mut PlayerRuntime, now_ms: u64) {
     player.snapshot.hp = 0;
     player.snapshot.state = PlayerState::Respawning;
     player.snapshot.respawn_at = Some(now_ms + RESPAWN_DELAY_MS);
-    player.snapshot.velocity = Vector2 { x: 0.0, y: 0.0 };
-    player.external_velocity = Vector2 { x: 0.0, y: 0.0 };
-    player.snapshot.grounded = false;
-    player.snapshot.jump_count_used = 0;
-    player.snapshot.drop_through_until = None;
-    player.snapshot.equipped_weapon_id = "paws".to_string();
-    player.snapshot.equipped_weapon_resource = None;
-    player.attack_queued = false;
-    player.attack_was_down = false;
-    player.next_attack_at = 0;
+    reset_general_combat_state(player);
     player.snapshot.position.y = ground_top_y() + 80.0;
 }
 
 fn respawn_player(player: &mut PlayerRuntime) {
     player.snapshot.position = spawn_position(player.spawn_index);
-    player.snapshot.velocity = Vector2 { x: 0.0, y: 0.0 };
-    player.external_velocity = Vector2 { x: 0.0, y: 0.0 };
-    player.snapshot.hp = 100;
-    player.snapshot.grounded = false;
-    player.snapshot.jump_count_used = 0;
-    player.snapshot.drop_through_until = None;
-    player.snapshot.equipped_weapon_id = "paws".to_string();
-    player.snapshot.equipped_weapon_resource = None;
-    player.attack_queued = false;
-    player.attack_was_down = false;
-    player.next_attack_at = 0;
+    reset_general_combat_state(player);
+    player.snapshot.hp = MAX_HP;
     player.snapshot.respawn_at = None;
     player.snapshot.state = PlayerState::Alive;
 }
@@ -1469,7 +1466,7 @@ enum Direction {
 }
 
 #[allow(dead_code)]
-#[derive(Serialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 enum PlayerState {
     Alive,
@@ -1982,8 +1979,11 @@ mod tests {
     }
 
     #[test]
-    fn death_resets_weapon_to_paws() {
+    fn death_resets_general_combat_state() {
         let mut player = test_player(140.0, 120.0);
+        player.snapshot.move_speed_rank = 3;
+        player.snapshot.max_jump_count = 3;
+        player.snapshot.jump_count_used = 2;
         player.snapshot.equipped_weapon_id = "acorn_blaster".to_string();
         player.snapshot.equipped_weapon_resource = Some(3);
         player.attack_queued = true;
@@ -1992,10 +1992,34 @@ mod tests {
 
         trigger_respawn(&mut player, 1000);
 
+        assert_eq!(player.snapshot.move_speed_rank, 0);
+        assert_eq!(player.snapshot.max_jump_count, BASE_MAX_JUMP_COUNT);
+        assert_eq!(player.snapshot.jump_count_used, 0);
         assert_eq!(player.snapshot.equipped_weapon_id, "paws");
         assert_eq!(player.snapshot.equipped_weapon_resource, None);
         assert!(!player.attack_queued);
         assert!(!player.attack_was_down);
         assert_eq!(player.next_attack_at, 0);
+    }
+
+    #[test]
+    fn respawn_keeps_general_state_reset() {
+        let mut player = test_player(140.0, 120.0);
+        player.snapshot.move_speed_rank = 2;
+        player.snapshot.max_jump_count = 3;
+        player.snapshot.jump_count_used = 1;
+        player.snapshot.equipped_weapon_id = "acorn_blaster".to_string();
+        player.snapshot.equipped_weapon_resource = Some(2);
+
+        trigger_respawn(&mut player, 1000);
+        respawn_player(&mut player);
+
+        assert_eq!(player.snapshot.state, PlayerState::Alive);
+        assert_eq!(player.snapshot.move_speed_rank, 0);
+        assert_eq!(player.snapshot.max_jump_count, BASE_MAX_JUMP_COUNT);
+        assert_eq!(player.snapshot.jump_count_used, 0);
+        assert_eq!(player.snapshot.equipped_weapon_id, "paws");
+        assert_eq!(player.snapshot.equipped_weapon_resource, None);
+        assert_eq!(player.snapshot.hp, MAX_HP);
     }
 }
