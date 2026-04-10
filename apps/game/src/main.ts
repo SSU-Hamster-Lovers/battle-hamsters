@@ -28,6 +28,11 @@ const WS_URL =
 const PLAYER_NAME_STORAGE_KEY = "battle-hamsters-player-name";
 const INPUT_SEND_INTERVAL_MS = 50;
 const PLAYER_SIZE = 28;
+const REMOTE_PLAYER_LERP = 0.22;
+const LOCAL_PLAYER_LERP = 0.35;
+const PICKUP_LERP = 0.24;
+const PLAYER_SNAP_DISTANCE = 96;
+const PICKUP_SNAP_DISTANCE = 72;
 
 const COLLISION_PRIMITIVES: CollisionPrimitive[] = MAP_DEFINITION.collision;
 const HAZARDS: HazardZone[] = MAP_DEFINITION.hazards;
@@ -68,16 +73,24 @@ const PIT_WALLS = COLLISION_PRIMITIVES.filter(
 type RenderedPlayer = {
   body: Phaser.GameObjects.Rectangle;
   label: Phaser.GameObjects.Text;
+  targetX: number;
+  targetY: number;
+  isLocal: boolean;
+  state: PlayerSnapshot["state"];
 };
 
 type RenderedWeaponPickup = {
   body: Phaser.GameObjects.Ellipse;
   label: Phaser.GameObjects.Text;
+  targetX: number;
+  targetY: number;
 };
 
 type RenderedItemPickup = {
   body: Phaser.GameObjects.Rectangle;
   label: Phaser.GameObjects.Text;
+  targetX: number;
+  targetY: number;
 };
 
 function drawCross(
@@ -88,6 +101,18 @@ function drawCross(
 ) {
   graphics.lineBetween(x - size, y, x + size, y);
   graphics.lineBetween(x, y - size, x, y + size);
+}
+
+function shouldSnapToTarget(
+  currentX: number,
+  currentY: number,
+  targetX: number,
+  targetY: number,
+  threshold: number,
+) {
+  const dx = targetX - currentX;
+  const dy = targetY - currentY;
+  return dx * dx + dy * dy > threshold * threshold;
 }
 
 function isRectHazard(hazard: HazardZone): hazard is HazardZone & {
@@ -572,11 +597,17 @@ class MainScene extends Phaser.Scene {
               color: "#f9fafb",
             },
           ),
+          targetX: player.position.x,
+          targetY: player.position.y,
+          isLocal: false,
+          state: player.state,
         };
         this.renderedPlayers.set(player.id, rendered);
       }
 
       const isLocalPlayer = player.id === this.localPlayerId;
+      rendered.isLocal = isLocalPlayer;
+      rendered.state = player.state;
       const baseColor = isLocalPlayer ? 0x34d399 : 0xf59e0b;
       const color = player.state === "respawning" ? 0x94a3b8 : baseColor;
 
@@ -586,15 +617,28 @@ class MainScene extends Phaser.Scene {
         isLocalPlayer ? 0xeafff7 : 0xffedd5,
         0.95,
       );
-      rendered.body.setPosition(player.position.x, player.position.y);
+      rendered.targetX = player.position.x;
+      rendered.targetY = player.position.y;
+      if (
+        player.state === "respawning" ||
+        shouldSnapToTarget(
+          rendered.body.x,
+          rendered.body.y,
+          rendered.targetX,
+          rendered.targetY,
+          PLAYER_SNAP_DISTANCE,
+        )
+      ) {
+        rendered.body.setPosition(rendered.targetX, rendered.targetY);
+      }
       rendered.label.setText(
         player.state === "respawning"
           ? `${player.name} (리스폰 중)`
           : player.name,
       );
       rendered.label.setPosition(
-        player.position.x - rendered.label.width / 2,
-        player.position.y - 32,
+        rendered.body.x - rendered.label.width / 2,
+        rendered.body.y - 32,
       );
       rendered.body.setAlpha(player.state === "alive" ? 1 : 0.35);
     }
@@ -666,19 +710,33 @@ class MainScene extends Phaser.Scene {
               color: "#f8fafc",
             },
           ),
+          targetX: pickup.position.x,
+          targetY: pickup.position.y,
         };
         this.renderedWeaponPickups.set(pickup.id, rendered);
       }
 
-      rendered.body.setPosition(pickup.position.x, pickup.position.y);
+      rendered.targetX = pickup.position.x;
+      rendered.targetY = pickup.position.y;
+      if (
+        shouldSnapToTarget(
+          rendered.body.x,
+          rendered.body.y,
+          rendered.targetX,
+          rendered.targetY,
+          PICKUP_SNAP_DISTANCE,
+        )
+      ) {
+        rendered.body.setPosition(rendered.targetX, rendered.targetY);
+      }
       rendered.body.setFillStyle(
         pickup.source === "spawn" ? 0x38bdf8 : 0xf97316,
         0.95,
       );
       rendered.label.setText(`${weaponName} (${pickup.resourceRemaining})`);
       rendered.label.setPosition(
-        pickup.position.x - rendered.label.width / 2,
-        pickup.position.y - 20,
+        rendered.body.x - rendered.label.width / 2,
+        rendered.body.y - 20,
       );
     }
 
@@ -721,6 +779,8 @@ class MainScene extends Phaser.Scene {
               color: "#dcfce7",
             },
           ),
+          targetX: pickup.position.x,
+          targetY: pickup.position.y,
         };
         rendered.body.setStrokeStyle(2, strokeColor, 0.95);
         rendered.body.setAngle(45);
@@ -736,11 +796,23 @@ class MainScene extends Phaser.Scene {
         pickup.spawnStyle === "airdrop" ? 0x7c2d12 : 0x14532d,
         0.95,
       );
-      rendered.body.setPosition(pickup.position.x, pickup.position.y);
+      rendered.targetX = pickup.position.x;
+      rendered.targetY = pickup.position.y;
+      if (
+        shouldSnapToTarget(
+          rendered.body.x,
+          rendered.body.y,
+          rendered.targetX,
+          rendered.targetY,
+          PICKUP_SNAP_DISTANCE,
+        )
+      ) {
+        rendered.body.setPosition(rendered.targetX, rendered.targetY);
+      }
       rendered.label.setText(itemName);
       rendered.label.setPosition(
-        pickup.position.x - rendered.label.width / 2,
-        pickup.position.y - 20,
+        rendered.body.x - rendered.label.width / 2,
+        rendered.body.y - 20,
       );
     }
 
@@ -836,6 +908,39 @@ class MainScene extends Phaser.Scene {
       this.attackFlash.clear();
       this.attackFlashUntil = 0;
     }
+
+    for (const [, rendered] of this.renderedPlayers) {
+      const lerpFactor = rendered.isLocal ? LOCAL_PLAYER_LERP : REMOTE_PLAYER_LERP;
+      rendered.body.x = Phaser.Math.Linear(rendered.body.x, rendered.targetX, lerpFactor);
+      rendered.body.y = Phaser.Math.Linear(rendered.body.y, rendered.targetY, lerpFactor);
+      rendered.label.setPosition(
+        rendered.body.x - rendered.label.width / 2,
+        rendered.body.y - 32,
+      );
+      if (rendered.state === "respawning") {
+        const pulse = 0.28 + (Math.sin(this.time.now / 120) + 1) * 0.12;
+        rendered.body.setAlpha(pulse);
+      }
+    }
+
+    for (const [, rendered] of this.renderedWeaponPickups) {
+      rendered.body.x = Phaser.Math.Linear(rendered.body.x, rendered.targetX, PICKUP_LERP);
+      rendered.body.y = Phaser.Math.Linear(rendered.body.y, rendered.targetY, PICKUP_LERP);
+      rendered.label.setPosition(
+        rendered.body.x - rendered.label.width / 2,
+        rendered.body.y - 20,
+      );
+    }
+
+    for (const [, rendered] of this.renderedItemPickups) {
+      rendered.body.x = Phaser.Math.Linear(rendered.body.x, rendered.targetX, PICKUP_LERP);
+      rendered.body.y = Phaser.Math.Linear(rendered.body.y, rendered.targetY, PICKUP_LERP);
+      rendered.label.setPosition(
+        rendered.body.x - rendered.label.width / 2,
+        rendered.body.y - 20,
+      );
+    }
+
     this.statusText.setText(
       `Battle Hamsters  |  server tick ${this.latestTick}  |  room ${ROOM_ID}`,
     );

@@ -47,6 +47,8 @@
 - 월드 아이템 pickup을 간단한 다이아몬드 도형/라벨로 렌더링한다.
 - HUD 텍스트에 현재 장착 무기와 탄 수, HP, 최대 점프 수를 표시한다.
 - 발사 시 로컬 보조용 muzzle flash를 짧게 표시한다.
+- remote player와 world pickup은 클라이언트에서 1차 위치 보간을 적용해 시각적 튐을 줄이기 시작했다.
+- local player도 과도한 위치 차이가 아닐 때는 더 빠른 계수로 최소 보간을 적용한다.
 
 ### Portal
 
@@ -98,7 +100,7 @@
 - 디버그 오버레이로 바닥 충돌선, 원웨이 플랫폼 윗면, wall 선, instant kill hazard, spawn 위치를 확인할 수 있다.
 - `fall zone`은 현재 화면 밖 낙사 판정용이라 클라이언트에 블록으로 표시하지 않는다.
 - 플레이어 사각형에는 collider outline이 표시된다.
-- 보간/스무딩이 거의 없어 움직임이 거칠게 보일 수 있다.
+- remote player와 pickup은 1차 lerp 기반 보간을 적용해 이전보다 덜 거칠게 보인다.
 - 서버와 클라이언트는 같은 테스트 맵 JSON 원본을 공유한다.
 - item pickup은 `spawnStyle`에 따라 색이 달라지고, `airdrop` item은 실제로 아래로 떨어져 착지한다.
 - random candidate group으로 묶인 무기/아이템은 그룹당 하나만 활성화된다.
@@ -116,10 +118,9 @@
 
 ## 다음 구현 우선순위
 
-1. 클라이언트 보간 및 시각 품질 개선
-2. placeholder 사각형 → 실제 햄스터 렌더링
-3. hazard 진입 피드백 / 사망 원인 표현 정리
-4. `visualBounds` 기반 카메라 clamp 및 follow 카메라 감쇠 이동 구현
+1. placeholder 사각형 → 실제 햄스터 렌더링
+2. hazard 진입 피드백 / 사망 원인 표현 정리
+3. `visualBounds` 기반 카메라 clamp 및 follow 카메라 감쇠 이동 구현
 
 ## 참고
 
