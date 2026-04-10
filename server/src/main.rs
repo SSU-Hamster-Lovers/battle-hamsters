@@ -73,6 +73,7 @@ async fn hello(query: web::Query<UserQuery>) -> impl Responder {
 struct PickupKinematics {
     velocity_y: f64,
     grounded: bool,
+    affected_by_gravity: bool,
 }
 
 #[derive(Clone)]
@@ -344,13 +345,13 @@ struct WorldItemPickup {
     source: ItemSource,
     spawned_at: u64,
     despawn_at: Option<u64>,
+    spawn_style: SpawnStyle,
     #[serde(skip_serializing)]
     spawn_id: Option<String>,
     #[serde(skip_serializing)]
     respawn_ms: Option<u64>,
     #[serde(skip_serializing)]
-    #[allow(dead_code)]
-    spawn_style: SpawnStyle,
+    kinematics: PickupKinematics,
 }
 
 #[derive(Serialize, Clone)]
@@ -729,6 +730,65 @@ mod tests {
 
         let player_after = room.players.get("player").expect("player should exist");
         assert_eq!(player_after.snapshot.hp, MAX_HP);
+    }
+
+    #[test]
+    fn fade_in_item_stays_floating() {
+        let mut room = RoomState::new();
+        let jump_item_id = room
+            .item_pickups
+            .iter()
+            .find(|(_, pickup)| pickup.item_id == "jump_boost_small")
+            .map(|(pickup_id, _)| pickup_id.clone())
+            .expect("jump item should exist");
+
+        let starting_y = room
+            .item_pickups
+            .get(&jump_item_id)
+            .expect("jump item should exist")
+            .position
+            .y;
+
+        room.step_item_pickups();
+
+        let after_y = room
+            .item_pickups
+            .get(&jump_item_id)
+            .expect("jump item should exist")
+            .position
+            .y;
+
+        assert_eq!(starting_y, after_y);
+    }
+
+    #[test]
+    fn airdrop_item_falls_until_grounded() {
+        let mut room = RoomState::new();
+        let heal_item_id = room
+            .item_pickups
+            .iter()
+            .find(|(_, pickup)| pickup.item_id == "health_pack_small")
+            .map(|(pickup_id, _)| pickup_id.clone())
+            .expect("heal item should exist");
+
+        let starting_y = room
+            .item_pickups
+            .get(&heal_item_id)
+            .expect("heal item should exist")
+            .position
+            .y;
+
+        for _ in 0..40 {
+            room.step_item_pickups();
+        }
+
+        let pickup = room
+            .item_pickups
+            .get(&heal_item_id)
+            .expect("heal item should exist");
+
+        assert!(pickup.position.y > starting_y);
+        assert!(pickup.kinematics.grounded);
     }
 
     #[test]

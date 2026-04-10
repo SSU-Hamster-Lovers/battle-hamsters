@@ -699,13 +699,17 @@ class MainScene extends Phaser.Scene {
       const itemName = itemDefinitionById[pickup.itemId]?.name ?? pickup.itemId;
 
       if (!rendered) {
+        const fillColor =
+          pickup.spawnStyle === "airdrop" ? 0xf59e0b : 0x4ade80;
+        const strokeColor =
+          pickup.spawnStyle === "airdrop" ? 0x7c2d12 : 0x14532d;
         rendered = {
           body: this.add.rectangle(
             pickup.position.x,
             pickup.position.y,
             14,
             14,
-            0x4ade80,
+            fillColor,
             0.95,
           ),
           label: this.add.text(
@@ -718,11 +722,20 @@ class MainScene extends Phaser.Scene {
             },
           ),
         };
-        rendered.body.setStrokeStyle(2, 0x14532d, 0.95);
+        rendered.body.setStrokeStyle(2, strokeColor, 0.95);
         rendered.body.setAngle(45);
         this.renderedItemPickups.set(pickup.id, rendered);
       }
 
+      rendered.body.setFillStyle(
+        pickup.spawnStyle === "airdrop" ? 0xf59e0b : 0x4ade80,
+        0.95,
+      );
+      rendered.body.setStrokeStyle(
+        2,
+        pickup.spawnStyle === "airdrop" ? 0x7c2d12 : 0x14532d,
+        0.95,
+      );
       rendered.body.setPosition(pickup.position.x, pickup.position.y);
       rendered.label.setText(itemName);
       rendered.label.setPosition(

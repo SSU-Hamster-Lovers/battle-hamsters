@@ -16,6 +16,7 @@ impl RoomState {
         self.refresh_weapon_spawns(now_ms);
         self.refresh_item_spawns(now_ms);
         self.step_weapon_pickups();
+        self.step_item_pickups();
 
         let player_ids = self.players.keys().cloned().collect::<Vec<_>>();
         let mut deaths = Vec::new();
