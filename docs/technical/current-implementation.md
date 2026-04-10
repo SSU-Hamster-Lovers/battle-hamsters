@@ -117,6 +117,6 @@
 
 - 맵 경계/카메라 확장 아이디어는 `docs/technical/mini-spec-map-boundaries-camera.md`에 별도 정리한다.
 - `boundaryPolicy`, `cameraPolicy`, `visualBounds`, `gameplayBounds`, `deathBounds`는 shared 타입/JSON 예시에 반영됐지만 카메라 런타임에서는 아직 사용하지 않는다.
-- 이번 브랜치 작업 미니 스펙은 `docs/technical/mini-spec-item-runtime-v1.md`에 정리한다.
+- 이번 브랜치 작업 미니 스펙은 `docs/technical/mini-spec-server-runtime-refactor-v1.md`에 정리한다.
 - 점프 아이템 세부 규칙 후속은 `docs/technical/mini-spec-jump-item-integration-v1.md`에 정리한다.
 - 구현을 바꿀 때는 이 문서도 같이 갱신한다.

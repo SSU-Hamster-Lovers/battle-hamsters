@@ -21,9 +21,6 @@
 
 ## 작업용 미니 스펙
 
-- [공통 맵 JSON 런타임 이관](technical/mini-spec-shared-map-json.md)
-- [무기 시스템 1차](technical/mini-spec-weapon-runtime-v1.md)
-- [아이템 시스템 1차](technical/mini-spec-item-runtime-v1.md)
 - [점프 아이템 연동 1차](technical/mini-spec-jump-item-integration-v1.md)
 - [룸별 게임플레이 설정 1차](technical/mini-spec-room-gameplay-config-v1.md)
 - [스폰 동작 구분 1차](technical/mini-spec-spawn-behavior-v1.md)
@@ -40,6 +37,9 @@
 
 - [완료된 미니 스펙 아카이브 안내](archive/mini-specs/README.md)
 - [충돌 primitive 확장 및 테스트 맵 개선 (archived)](archive/mini-specs/mini-spec-collision-primitives.md)
+- [공통 맵 JSON 런타임 이관 (archived)](archive/mini-specs/mini-spec-shared-map-json.md)
+- [무기 시스템 1차 (archived)](archive/mini-specs/mini-spec-weapon-runtime-v1.md)
+- [아이템 시스템 1차 (archived)](archive/mini-specs/mini-spec-item-runtime-v1.md)
 
 ## 팀
 

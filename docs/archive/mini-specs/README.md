@@ -11,7 +11,7 @@
 ## 운영 규칙
 
 1. **진행 중 / 다음 작업용 미니 스펙**은 `docs/technical/mini-spec-*.md`에 둔다.
-2. 작업이 끝나면 미니 스펙을 바로 삭제하지 말고 **`docs/archive/mini-specs/`로 이동**한다.
+2. 작업이 끝나면 미니 스펙을 바로 삭제하지 말고 **develop에 merge된 뒤** `docs/archive/mini-specs/`로 이동한다.
 3. 아카이브로 이동하기 전에 핵심 내용은 아래 문서에 반영해야 한다.
    - `docs/technical/current-implementation.md`
    - 관련 설계 문서 (`docs/game-design/*`, `docs/technical/*`)
