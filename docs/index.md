@@ -23,7 +23,14 @@
 
 - [공통 맵 JSON 런타임 이관](technical/mini-spec-shared-map-json.md)
 - [무기 시스템 1차](technical/mini-spec-weapon-runtime-v1.md)
+- [아이템 시스템 1차](technical/mini-spec-item-runtime-v1.md)
+- [점프 아이템 연동 1차](technical/mini-spec-jump-item-integration-v1.md)
+- [클라이언트 보간 및 시각 품질 1차](technical/mini-spec-client-smoothing-v1.md)
+- [카메라 visual bounds 1차](technical/mini-spec-camera-visual-bounds-v1.md)
+- [hazard 피드백 1차](technical/mini-spec-hazard-feedback-v1.md)
 - [맵 경계 정책과 카메라 규칙](technical/mini-spec-map-boundaries-camera.md)
+- [로비 월드맵 기반 허브 (백로그)](technical/mini-spec-lobby-world-foundation.md)
+- [로비 채널 시스템 (백로그)](technical/mini-spec-lobby-channel-system.md)
 
 ## 아카이브
 
