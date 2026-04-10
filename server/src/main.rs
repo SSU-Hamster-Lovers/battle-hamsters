@@ -26,7 +26,10 @@ const MAX_FAST_FALL_SPEED: f64 = 28.0;
 const DROP_THROUGH_MS: u64 = 220;
 const RESPAWN_DELAY_MS: u64 = 3_000;
 const TEST_LIVES: u8 = 99;
-const MAX_JUMP_COUNT: u8 = 1;
+const MAX_JUMP_COUNT: u8 = 3;
+const PICKUP_HALF_HEIGHT: f64 = 7.0;
+const PICKUP_GRAVITY_PER_TICK: f64 = 1.0;
+const PICKUP_MAX_FALL_SPEED: f64 = 18.0;
 
 #[derive(Clone, Copy)]
 struct FloorSegment {
@@ -62,6 +65,12 @@ struct HazardRect {
     y: f64,
     width: f64,
     height: f64,
+}
+
+#[derive(Clone)]
+struct PickupKinematics {
+    velocity_y: f64,
+    grounded: bool,
 }
 
 struct RuntimeMapData {
@@ -413,6 +422,8 @@ struct PlayerRuntime {
     spawn_index: usize,
     external_velocity: Vector2,
     next_attack_at: u64,
+    attack_queued: bool,
+    attack_was_down: bool,
 }
 
 struct RoomState {
@@ -470,6 +481,10 @@ impl RoomState {
             despawn_at: Some(now_ms + spawn.despawn_after_ms),
             spawn_id: Some(spawn.id.clone()),
             respawn_ms: Some(spawn.respawn_ms),
+            kinematics: PickupKinematics {
+                velocity_y: 0.0,
+                grounded: false,
+            },
         };
         self.weapon_pickups.insert(pickup.id.clone(), pickup);
     }
@@ -494,6 +509,10 @@ impl RoomState {
             despawn_at: Some(now_ms + definition.world_despawn_ms),
             spawn_id: None,
             respawn_ms: None,
+            kinematics: PickupKinematics {
+                velocity_y: 0.0,
+                grounded: false,
+            },
         };
         self.weapon_pickups.insert(pickup.id.clone(), pickup);
     }
@@ -548,6 +567,49 @@ impl RoomState {
                 if let (Some(spawn_id), Some(respawn_ms)) = (pickup.spawn_id, pickup.respawn_ms) {
                     self.next_spawn_respawn_at
                         .insert(spawn_id, now_ms + respawn_ms);
+                }
+            }
+        }
+    }
+
+    fn step_weapon_pickups(&mut self) {
+        for pickup in self.weapon_pickups.values_mut() {
+            if pickup.kinematics.grounded {
+                continue;
+            }
+
+            let previous_bottom = pickup.position.y + PICKUP_HALF_HEIGHT;
+            pickup.kinematics.velocity_y =
+                (pickup.kinematics.velocity_y + PICKUP_GRAVITY_PER_TICK).min(PICKUP_MAX_FALL_SPEED);
+            pickup.position.y += pickup.kinematics.velocity_y;
+            let current_bottom = pickup.position.y + PICKUP_HALF_HEIGHT;
+
+            let mut landed = false;
+            for floor in &runtime_map_data().floor_segments {
+                if current_bottom >= floor.top_y
+                    && surface_contains_x(floor.left_x, floor.right_x, pickup.position.x)
+                {
+                    pickup.position.y = floor.top_y - PICKUP_HALF_HEIGHT;
+                    pickup.kinematics.velocity_y = 0.0;
+                    pickup.kinematics.grounded = true;
+                    landed = true;
+                    break;
+                }
+            }
+
+            if landed {
+                continue;
+            }
+
+            for platform in &runtime_map_data().one_way_platforms {
+                if previous_bottom <= platform.top_y
+                    && current_bottom >= platform.top_y
+                    && surface_contains_x(platform.left_x, platform.right_x, pickup.position.x)
+                {
+                    pickup.position.y = platform.top_y - PICKUP_HALF_HEIGHT;
+                    pickup.kinematics.velocity_y = 0.0;
+                    pickup.kinematics.grounded = true;
+                    break;
                 }
             }
         }
@@ -637,7 +699,7 @@ impl RoomState {
         let Some(shooter_view) = self.players.get(player_id) else {
             return;
         };
-        if !shooter_view.latest_input.attack {
+        if !shooter_view.attack_queued {
             return;
         }
         if now_ms < shooter_view.next_attack_at {
@@ -691,6 +753,7 @@ impl RoomState {
                 .get_mut(player_id)
                 .expect("shooter should exist");
             shooter.next_attack_at = now_ms + weapon.attack_interval_ms;
+            shooter.attack_queued = false;
             shooter.external_velocity.x += recoil_direction.x
                 * weapon.self_recoil_force
                 * if shooter_grounded {
@@ -802,6 +865,8 @@ impl RoomState {
                 spawn_index,
                 external_velocity: Vector2 { x: 0.0, y: 0.0 },
                 next_attack_at: 0,
+                attack_queued: false,
+                attack_was_down: false,
             },
         );
 
@@ -822,6 +887,10 @@ impl RoomState {
 
     fn apply_input(&mut self, player_id: &str, input: PlayerInputPayload) {
         if let Some(player) = self.players.get_mut(player_id) {
+            if input.attack && !player.attack_was_down {
+                player.attack_queued = true;
+            }
+            player.attack_was_down = input.attack;
             player.latest_input = input;
         }
     }
@@ -831,6 +900,7 @@ impl RoomState {
         self.time_remaining_ms = self.time_remaining_ms.saturating_sub(TICK_INTERVAL_MS);
         self.cleanup_expired_pickups(now_ms);
         self.refresh_weapon_spawns(now_ms);
+        self.step_weapon_pickups();
 
         let player_ids = self.players.keys().cloned().collect::<Vec<_>>();
         let mut deaths = Vec::new();
@@ -1488,6 +1558,8 @@ struct WorldWeaponPickup {
     spawn_id: Option<String>,
     #[serde(skip_serializing)]
     respawn_ms: Option<u64>,
+    #[serde(skip_serializing)]
+    kinematics: PickupKinematics,
 }
 
 #[derive(Serialize, Clone)]
@@ -1779,6 +1851,8 @@ mod tests {
             spawn_index: 0,
             external_velocity: Vector2 { x: 0.0, y: 0.0 },
             next_attack_at: 0,
+            attack_queued: false,
+            attack_was_down: false,
         }
     }
 
@@ -1921,6 +1995,8 @@ mod tests {
             spawn_index: 0,
             external_velocity: Vector2 { x: 0.0, y: 0.0 },
             next_attack_at: 0,
+            attack_queued: true,
+            attack_was_down: true,
         };
 
         let target = PlayerRuntime {
@@ -1947,6 +2023,8 @@ mod tests {
             spawn_index: 1,
             external_velocity: Vector2 { x: 0.0, y: 0.0 },
             next_attack_at: 0,
+            attack_queued: false,
+            attack_was_down: false,
         };
 
         room.players.insert("shooter".to_string(), shooter);

@@ -108,12 +108,16 @@ class MainScene extends Phaser.Scene {
   private statusText!: Phaser.GameObjects.Text;
   private infoText!: Phaser.GameObjects.Text;
   private connectionText!: Phaser.GameObjects.Text;
+  private attackFlash!: Phaser.GameObjects.Graphics;
+  private attackFlashUntil = 0;
   private renderedPlayers = new Map<string, RenderedPlayer>();
   private renderedWeaponPickups = new Map<string, RenderedWeaponPickup>();
   private playerName = getOrCreatePlayerName();
   private localPlayerId: string | null = null;
   private latestTick = 0;
   private sequence = 0;
+  private queuedClickAttack = false;
+  private attackWasDown = false;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private keys!: {
     w: Phaser.Input.Keyboard.Key;
@@ -153,6 +157,8 @@ class MainScene extends Phaser.Scene {
         lineSpacing: 6,
       })
       .setDepth(10);
+
+    this.attackFlash = this.add.graphics().setDepth(9);
 
     this.add.text(24, GAME_HEIGHT - 70, "Move: A / D or Arrow Left / Right", {
       fontSize: "14px",
@@ -200,6 +206,9 @@ class MainScene extends Phaser.Scene {
 
     this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => this.socket?.close());
     this.events.on(Phaser.Scenes.Events.DESTROY, () => this.socket?.close());
+    this.input.on("pointerdown", () => {
+      this.queuedClickAttack = true;
+    });
 
     this.connect();
   }
@@ -665,11 +674,17 @@ class MainScene extends Phaser.Scene {
     const aimX = pointer.worldX - originX;
     const aimY = pointer.worldY - originY;
     const aimLength = Math.hypot(aimX, aimY) || 1;
+    const aim = { x: aimX / aimLength, y: aimY / aimLength };
 
     const moveX =
       Number(this.cursors.right.isDown || this.keys.d.isDown) -
       Number(this.cursors.left.isDown || this.keys.a.isDown);
     const moveY = Number(this.cursors.down.isDown || this.keys.s.isDown);
+    const attackPressed = pointer.isDown || this.queuedClickAttack;
+    if (attackPressed && !this.attackWasDown) {
+      this.showAttackFlash(originX, originY, aim.x, aim.y);
+    }
+    this.attackWasDown = pointer.isDown;
 
     this.send({
       type: "player_input",
@@ -677,15 +692,35 @@ class MainScene extends Phaser.Scene {
       payload: {
         sequence: ++this.sequence,
         move: { x: moveX, y: moveY },
-        aim: { x: aimX / aimLength, y: aimY / aimLength },
+        aim,
         jump:
           Phaser.Input.Keyboard.JustDown(this.keys.space) ||
           Phaser.Input.Keyboard.JustDown(this.cursors.up) ||
           Phaser.Input.Keyboard.JustDown(this.keys.w),
-        attack: pointer.isDown,
+        attack: attackPressed,
         dropWeapon: Phaser.Input.Keyboard.JustDown(this.keys.q),
       },
     } satisfies PlayerInputMessage);
+    this.queuedClickAttack = false;
+  }
+
+  private showAttackFlash(
+    originX: number,
+    originY: number,
+    aimX: number,
+    aimY: number,
+  ) {
+    this.attackFlash.clear();
+    this.attackFlash.lineStyle(3, 0xfef08a, 0.95);
+    this.attackFlash.lineBetween(
+      originX,
+      originY,
+      originX + aimX * 46,
+      originY + aimY * 46,
+    );
+    this.attackFlash.fillStyle(0xfef08a, 0.9);
+    this.attackFlash.fillCircle(originX + aimX * 20, originY + aimY * 20, 3);
+    this.attackFlashUntil = this.time.now + 80;
   }
 
   private send(message: JoinRoomMessage | PlayerInputMessage) {
@@ -693,6 +728,10 @@ class MainScene extends Phaser.Scene {
   }
 
   update() {
+    if (this.attackFlashUntil !== 0 && this.time.now > this.attackFlashUntil) {
+      this.attackFlash.clear();
+      this.attackFlashUntil = 0;
+    }
     this.statusText.setText(
       `Battle Hamsters  |  server tick ${this.latestTick}  |  room ${ROOM_ID}`,
     );

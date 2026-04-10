@@ -92,7 +92,7 @@
     {
       "id": "weapon_mid",
       "weaponId": "acorn_blaster",
-      "x": 640,
+      "x": 560,
       "y": 320,
       "respawnMs": 10000,
       "despawnAfterMs": 10000,
