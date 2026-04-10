@@ -13,6 +13,7 @@
 - 플랫폼 이동 1차 구현
 - 충돌 primitive / hazard 계약 분리
 - 공통 테스트 맵 JSON을 서버/클라이언트가 함께 읽도록 통합
+- 무기 시스템 1차 (`Acorn Blaster` pickup / 발사 / 넉백 / 자기 반동)
 - Branch protection: main, develop
 
 ---
@@ -86,7 +87,7 @@
 
 ### 즉시 할 일 (Next Sprint)
 
-1. item / weapon pickup 실제 상태 반영
+1. item pickup 실제 상태 반영
 2. 클라이언트 보간 및 시각 품질 개선
 3. PostgreSQL 스키마 및 마이그레이션 구조 정의
 4. `visualBounds` 기반 카메라 clamp 및 follow 카메라 감쇠 이동 구현 준비
@@ -96,6 +97,7 @@
 1. Portal: 기본 UI 컴포넌트
 2. Game: 카메라 정책(`static / follow / dynamic`) 첫 구현
 3. 매칭/방 시스템 API
+4. 로비 월드맵 / 채널 전환 / 상점 같은 비전투 허브 시스템 검토
 
 ---
 

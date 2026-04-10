@@ -252,6 +252,11 @@
   "resourceModel": "magazine",
   "damage": 12,
   "knockback": 8,
+  "selfRecoilForce": 1,
+  "selfRecoilAngleDeg": 0,
+  "selfRecoilAngleJitterDeg": 0,
+  "selfRecoilGroundMultiplier": 1,
+  "selfRecoilAirMultiplier": 1.2,
   "attackIntervalMs": 220,
   "range": 620,
   "projectileSpeed": 0,
@@ -270,17 +275,23 @@
 
 ### 무기 정의 필드
 
-| 필드                | 설명                            |
-| ------------------- | ------------------------------- | -------- | ---------- | -------- |
-| `hitType`           | `melee                          | hitscan  | projectile | beam`    |
-| `fireMode`          | `single                         | burst    | auto       | channel` |
-| `resourceModel`     | `infinite                       | magazine | capacity`  |
-| `maxResource`       | 최대 탄/에너지                  |
-| `resourcePerShot`   | 발사당 소모량                   |
-| `resourcePerSecond` | 채널형 무기 초당 소모량         |
-| `discardOnEmpty`    | 자원 고갈 시 무기 제거 여부     |
-| `worldDespawnMs`    | 월드에 놓였을 때 자동 소멸 시간 |
-| `specialEffect`     | `grab                           | explode  | none` 등   |
+| 필드                         | 설명                            |
+| ---------------------------- | ------------------------------- | -------- | ---------- | -------- |
+| `hitType`                    | `melee                          | hitscan  | projectile | beam`    |
+| `fireMode`                   | `single                         | burst    | auto       | channel` |
+| `resourceModel`              | `infinite                       | magazine | capacity`  |
+| `knockback`                  | 상대에게 가는 넉백              |
+| `selfRecoilForce`            | 발사자에게 가는 기본 반동 세기  |
+| `selfRecoilAngleDeg`         | 에임 반대 방향 기준 각도 보정   |
+| `selfRecoilAngleJitterDeg`   | 발사마다 줄 수 있는 반동 오차   |
+| `selfRecoilGroundMultiplier` | 지상 반동 배수                  |
+| `selfRecoilAirMultiplier`    | 공중 반동 배수                  |
+| `maxResource`                | 최대 탄/에너지                  |
+| `resourcePerShot`            | 발사당 소모량                   |
+| `resourcePerSecond`          | 채널형 무기 초당 소모량         |
+| `discardOnEmpty`             | 자원 고갈 시 무기 제거 여부     |
+| `worldDespawnMs`             | 월드에 놓였을 때 자동 소멸 시간 |
+| `specialEffect`              | `grab                           | explode  | none` 등   |
 
 ### 예시: beam 무기
 
@@ -294,6 +305,11 @@
   "resourceModel": "capacity",
   "damage": 6,
   "knockback": 1,
+  "selfRecoilForce": 0,
+  "selfRecoilAngleDeg": 0,
+  "selfRecoilAngleJitterDeg": 0,
+  "selfRecoilGroundMultiplier": 1,
+  "selfRecoilAirMultiplier": 1,
   "attackIntervalMs": 100,
   "range": 520,
   "projectileSpeed": 0,
@@ -322,6 +338,11 @@
   "resourceModel": "magazine",
   "damage": 4,
   "knockback": 2,
+  "selfRecoilForce": 0.4,
+  "selfRecoilAngleDeg": 0,
+  "selfRecoilAngleJitterDeg": 0,
+  "selfRecoilGroundMultiplier": 1,
+  "selfRecoilAirMultiplier": 1,
   "attackIntervalMs": 900,
   "range": 80,
   "projectileSpeed": 0,

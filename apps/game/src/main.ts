@@ -1,5 +1,8 @@
 import Phaser from "phaser";
-import { trainingArenaMap } from "@battle-hamsters/shared";
+import {
+  trainingArenaMap,
+  weaponDefinitionById,
+} from "@battle-hamsters/shared";
 import type {
   CollisionPrimitive,
   HazardZone,
@@ -9,6 +12,7 @@ import type {
   SpawnPoint,
   RoomSnapshotMessage,
   ServerToClientMessage,
+  WorldWeaponPickup,
   WorldSnapshotMessage,
 } from "@battle-hamsters/shared";
 
@@ -64,6 +68,11 @@ type RenderedPlayer = {
   label: Phaser.GameObjects.Text;
 };
 
+type RenderedWeaponPickup = {
+  body: Phaser.GameObjects.Ellipse;
+  label: Phaser.GameObjects.Text;
+};
+
 function drawCross(
   graphics: Phaser.GameObjects.Graphics,
   x: number,
@@ -99,11 +108,18 @@ class MainScene extends Phaser.Scene {
   private statusText!: Phaser.GameObjects.Text;
   private infoText!: Phaser.GameObjects.Text;
   private connectionText!: Phaser.GameObjects.Text;
+  private attackFlash!: Phaser.GameObjects.Graphics;
+  private attackFlashUntil = 0;
   private renderedPlayers = new Map<string, RenderedPlayer>();
+  private renderedWeaponPickups = new Map<string, RenderedWeaponPickup>();
   private playerName = getOrCreatePlayerName();
   private localPlayerId: string | null = null;
   private latestTick = 0;
   private sequence = 0;
+  private queuedClickAttack = false;
+  private queuedPickupWeapon = false;
+  private queuedDropWeapon = false;
+  private attackWasDown = false;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private keys!: {
     w: Phaser.Input.Keyboard.Key;
@@ -111,6 +127,7 @@ class MainScene extends Phaser.Scene {
     s: Phaser.Input.Keyboard.Key;
     d: Phaser.Input.Keyboard.Key;
     q: Phaser.Input.Keyboard.Key;
+    e: Phaser.Input.Keyboard.Key;
     space: Phaser.Input.Keyboard.Key;
   };
 
@@ -144,6 +161,8 @@ class MainScene extends Phaser.Scene {
       })
       .setDepth(10);
 
+    this.attackFlash = this.add.graphics().setDepth(9);
+
     this.add.text(24, GAME_HEIGHT - 70, "Move: A / D or Arrow Left / Right", {
       fontSize: "14px",
       color: "#9ca3af",
@@ -160,7 +179,7 @@ class MainScene extends Phaser.Scene {
     this.add.text(
       24,
       GAME_HEIGHT - 22,
-      "Q: Drop Weapon  |  Mouse: Aim / Attack",
+      "E: Pick Up  |  Q: Drop Weapon  |  Mouse: Aim / Attack",
       {
         fontSize: "14px",
         color: "#9ca3af",
@@ -179,8 +198,15 @@ class MainScene extends Phaser.Scene {
       s: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S),
       d: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D),
       q: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Q),
+      e: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E),
       space: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
     };
+    this.keys.e.on("down", () => {
+      this.queuedPickupWeapon = true;
+    });
+    this.keys.q.on("down", () => {
+      this.queuedDropWeapon = true;
+    });
 
     this.time.addEvent({
       delay: INPUT_SEND_INTERVAL_MS,
@@ -190,6 +216,9 @@ class MainScene extends Phaser.Scene {
 
     this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => this.socket?.close());
     this.events.on(Phaser.Scenes.Events.DESTROY, () => this.socket?.close());
+    this.input.on("pointerdown", () => {
+      this.queuedClickAttack = true;
+    });
 
     this.connect();
   }
@@ -398,6 +427,7 @@ class MainScene extends Phaser.Scene {
       this.connectionText.setColor("#fca5a5");
       this.localPlayerId = null;
       this.clearRenderedPlayers();
+      this.clearRenderedWeaponPickups();
       this.time.delayedCall(2000, () => {
         if (!this.socket || this.socket.readyState === WebSocket.CLOSED) {
           this.connect();
@@ -454,6 +484,7 @@ class MainScene extends Phaser.Scene {
       this.localPlayerId = message.payload.selfPlayerId;
     }
     this.renderPlayers(message.payload.players);
+    this.renderWeaponPickups(message.payload.weaponPickups);
     this.captureLocalPlayer(message.payload.players);
     this.updateInfoText(message.payload.players, "waiting", null);
   }
@@ -461,6 +492,7 @@ class MainScene extends Phaser.Scene {
   private applyWorldSnapshot(message: WorldSnapshotMessage) {
     this.latestTick = message.payload.serverTick;
     this.renderPlayers(message.payload.players);
+    this.renderWeaponPickups(message.payload.weaponPickups);
     this.captureLocalPlayer(message.payload.players);
     this.updateInfoText(
       message.payload.players,
@@ -482,6 +514,8 @@ class MainScene extends Phaser.Scene {
       `players: ${players.length}`,
       `match: ${matchState}`,
       `self: ${this.localPlayerId ?? "unknown"}`,
+      `weapon: ${localPlayer ? (weaponDefinitionById[localPlayer.equippedWeaponId]?.name ?? localPlayer.equippedWeaponId) : "unknown"}`,
+      `ammo: ${localPlayer?.equippedWeaponResource ?? "∞"}`,
       `grounded: ${localPlayer?.grounded ?? false}`,
       `state: ${localPlayer?.state ?? "unknown"}`,
       `jumps used: ${localPlayer?.jumpCountUsed ?? 0}`,
@@ -576,6 +610,66 @@ class MainScene extends Phaser.Scene {
     }
   }
 
+  private clearRenderedWeaponPickups() {
+    for (const [pickupId, rendered] of this.renderedWeaponPickups) {
+      rendered.body.destroy();
+      rendered.label.destroy();
+      this.renderedWeaponPickups.delete(pickupId);
+    }
+  }
+
+  private renderWeaponPickups(weaponPickups: WorldWeaponPickup[]) {
+    const nextIds = new Set(weaponPickups.map((pickup) => pickup.id));
+
+    for (const pickup of weaponPickups) {
+      let rendered = this.renderedWeaponPickups.get(pickup.id);
+      const weaponName =
+        weaponDefinitionById[pickup.weaponId]?.name ?? pickup.weaponId;
+
+      if (!rendered) {
+        rendered = {
+          body: this.add.ellipse(
+            pickup.position.x,
+            pickup.position.y,
+            22,
+            14,
+            pickup.source === "spawn" ? 0x38bdf8 : 0xf97316,
+            0.95,
+          ),
+          label: this.add.text(
+            pickup.position.x,
+            pickup.position.y - 18,
+            weaponName,
+            {
+              fontSize: "11px",
+              color: "#f8fafc",
+            },
+          ),
+        };
+        this.renderedWeaponPickups.set(pickup.id, rendered);
+      }
+
+      rendered.body.setPosition(pickup.position.x, pickup.position.y);
+      rendered.body.setFillStyle(
+        pickup.source === "spawn" ? 0x38bdf8 : 0xf97316,
+        0.95,
+      );
+      rendered.label.setText(`${weaponName} (${pickup.resourceRemaining})`);
+      rendered.label.setPosition(
+        pickup.position.x - rendered.label.width / 2,
+        pickup.position.y - 20,
+      );
+    }
+
+    for (const [pickupId, rendered] of this.renderedWeaponPickups) {
+      if (!nextIds.has(pickupId)) {
+        rendered.body.destroy();
+        rendered.label.destroy();
+        this.renderedWeaponPickups.delete(pickupId);
+      }
+    }
+  }
+
   private sendLatestInput() {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
       return;
@@ -590,11 +684,23 @@ class MainScene extends Phaser.Scene {
     const aimX = pointer.worldX - originX;
     const aimY = pointer.worldY - originY;
     const aimLength = Math.hypot(aimX, aimY) || 1;
+    const aim = { x: aimX / aimLength, y: aimY / aimLength };
 
     const moveX =
       Number(this.cursors.right.isDown || this.keys.d.isDown) -
       Number(this.cursors.left.isDown || this.keys.a.isDown);
     const moveY = Number(this.cursors.down.isDown || this.keys.s.isDown);
+    const attackHeld = pointer.isDown;
+    const attackPressed =
+      this.queuedClickAttack || (attackHeld && !this.attackWasDown);
+    if (attackPressed) {
+      this.showAttackFlash(originX, originY, aim.x, aim.y);
+    }
+    this.attackWasDown = attackHeld;
+    const pickupWeaponPressed =
+      this.queuedPickupWeapon || Phaser.Input.Keyboard.JustDown(this.keys.e);
+    const dropWeaponPressed =
+      this.queuedDropWeapon || Phaser.Input.Keyboard.JustDown(this.keys.q);
 
     this.send({
       type: "player_input",
@@ -602,15 +708,40 @@ class MainScene extends Phaser.Scene {
       payload: {
         sequence: ++this.sequence,
         move: { x: moveX, y: moveY },
-        aim: { x: aimX / aimLength, y: aimY / aimLength },
+        aim,
         jump:
           Phaser.Input.Keyboard.JustDown(this.keys.space) ||
           Phaser.Input.Keyboard.JustDown(this.cursors.up) ||
           Phaser.Input.Keyboard.JustDown(this.keys.w),
-        attack: pointer.isDown,
-        dropWeapon: Phaser.Input.Keyboard.JustDown(this.keys.q),
+        attack: attackHeld,
+        attackPressed,
+        pickupWeaponPressed,
+        dropWeapon: dropWeaponPressed,
+        dropWeaponPressed,
       },
     } satisfies PlayerInputMessage);
+    this.queuedClickAttack = false;
+    this.queuedPickupWeapon = false;
+    this.queuedDropWeapon = false;
+  }
+
+  private showAttackFlash(
+    originX: number,
+    originY: number,
+    aimX: number,
+    aimY: number,
+  ) {
+    this.attackFlash.clear();
+    this.attackFlash.lineStyle(3, 0xfef08a, 0.95);
+    this.attackFlash.lineBetween(
+      originX,
+      originY,
+      originX + aimX * 46,
+      originY + aimY * 46,
+    );
+    this.attackFlash.fillStyle(0xfef08a, 0.9);
+    this.attackFlash.fillCircle(originX + aimX * 20, originY + aimY * 20, 3);
+    this.attackFlashUntil = this.time.now + 80;
   }
 
   private send(message: JoinRoomMessage | PlayerInputMessage) {
@@ -618,6 +749,10 @@ class MainScene extends Phaser.Scene {
   }
 
   update() {
+    if (this.attackFlashUntil !== 0 && this.time.now > this.attackFlashUntil) {
+      this.attackFlash.clear();
+      this.attackFlashUntil = 0;
+    }
     this.statusText.setText(
       `Battle Hamsters  |  server tick ${this.latestTick}  |  room ${ROOM_ID}`,
     );
