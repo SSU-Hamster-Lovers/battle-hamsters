@@ -485,12 +485,15 @@ impl RoomState {
                 velocity_y: 0.0,
                 grounded: false,
             },
+            pickup_blocked_until: None,
+            pickup_blocked_player_id: None,
         };
         self.weapon_pickups.insert(pickup.id.clone(), pickup);
     }
 
     fn create_dropped_pickup(
         &mut self,
+        player_id: &str,
         weapon_id: String,
         resource_remaining: u32,
         position: Vector2,
@@ -513,6 +516,8 @@ impl RoomState {
                 velocity_y: 0.0,
                 grounded: false,
             },
+            pickup_blocked_until: Some(now_ms + 250),
+            pickup_blocked_player_id: Some(player_id.to_string()),
         };
         self.weapon_pickups.insert(pickup.id.clone(), pickup);
     }
@@ -620,7 +625,7 @@ impl RoomState {
             return;
         };
 
-        if !player_view.latest_input.drop_weapon
+        if !player_view.latest_input.drop_weapon_pressed
             || player_view.snapshot.equipped_weapon_id == "paws"
         {
             return;
@@ -638,14 +643,35 @@ impl RoomState {
         }
 
         if drop_payload.1 > 0 {
-            self.create_dropped_pickup(drop_payload.0, drop_payload.1, drop_payload.2, now_ms);
+            self.create_dropped_pickup(
+                player_id,
+                drop_payload.0,
+                drop_payload.1,
+                drop_payload.2,
+                now_ms,
+            );
         }
     }
 
-    fn pickup_near_player(&self, player: &PlayerRuntime) -> Option<String> {
+    fn pickup_near_player(
+        &self,
+        player_id: &str,
+        player: &PlayerRuntime,
+        now_ms: u64,
+    ) -> Option<String> {
         self.weapon_pickups
             .iter()
             .filter_map(|(pickup_id, pickup)| {
+                if pickup
+                    .pickup_blocked_player_id
+                    .as_deref()
+                    .is_some_and(|blocked_player_id| blocked_player_id == player_id)
+                    && pickup
+                        .pickup_blocked_until
+                        .is_some_and(|blocked_until| now_ms < blocked_until)
+                {
+                    return None;
+                }
                 let dx = pickup.position.x - player.snapshot.position.x;
                 let dy = pickup.position.y - player.snapshot.position.y;
                 let distance_sq = dx * dx + dy * dy;
@@ -656,10 +682,18 @@ impl RoomState {
     }
 
     fn handle_weapon_pickup(&mut self, player_id: &str, now_ms: u64) {
+        let wants_pickup = self
+            .players
+            .get(player_id)
+            .is_some_and(|player| player.latest_input.pickup_weapon_pressed);
+        if !wants_pickup {
+            return;
+        }
+
         let Some(pickup_id) = self
             .players
             .get(player_id)
-            .and_then(|player| self.pickup_near_player(player))
+            .and_then(|player| self.pickup_near_player(player_id, player, now_ms))
         else {
             return;
         };
@@ -691,7 +725,7 @@ impl RoomState {
         player.snapshot.equipped_weapon_resource = Some(pickup.resource_remaining);
 
         if let Some((weapon_id, resource_remaining, position)) = current_weapon_to_drop {
-            self.create_dropped_pickup(weapon_id, resource_remaining, position, now_ms);
+            self.create_dropped_pickup(player_id, weapon_id, resource_remaining, position, now_ms);
         }
     }
 
@@ -708,6 +742,9 @@ impl RoomState {
 
         let weapon_id = shooter_view.snapshot.equipped_weapon_id.clone();
         if weapon_id == "paws" {
+            if let Some(shooter) = self.players.get_mut(player_id) {
+                shooter.attack_queued = false;
+            }
             return;
         }
 
@@ -719,9 +756,15 @@ impl RoomState {
         }
 
         let Some(current_resource) = shooter_view.snapshot.equipped_weapon_resource else {
+            if let Some(shooter) = self.players.get_mut(player_id) {
+                shooter.attack_queued = false;
+            }
             return;
         };
         if current_resource < weapon.resource_per_shot {
+            if let Some(shooter) = self.players.get_mut(player_id) {
+                shooter.attack_queued = false;
+            }
             return;
         }
 
@@ -887,7 +930,7 @@ impl RoomState {
 
     fn apply_input(&mut self, player_id: &str, input: PlayerInputPayload) {
         if let Some(player) = self.players.get_mut(player_id) {
-            if input.attack && !player.attack_was_down {
+            if input.attack_pressed {
                 player.attack_queued = true;
             }
             player.attack_was_down = input.attack;
@@ -1149,6 +1192,11 @@ fn trigger_respawn(player: &mut PlayerRuntime, now_ms: u64) {
     player.snapshot.grounded = false;
     player.snapshot.jump_count_used = 0;
     player.snapshot.drop_through_until = None;
+    player.snapshot.equipped_weapon_id = "paws".to_string();
+    player.snapshot.equipped_weapon_resource = None;
+    player.attack_queued = false;
+    player.attack_was_down = false;
+    player.next_attack_at = 0;
     player.snapshot.position.y = ground_top_y() + 80.0;
 }
 
@@ -1160,6 +1208,11 @@ fn respawn_player(player: &mut PlayerRuntime) {
     player.snapshot.grounded = false;
     player.snapshot.jump_count_used = 0;
     player.snapshot.drop_through_until = None;
+    player.snapshot.equipped_weapon_id = "paws".to_string();
+    player.snapshot.equipped_weapon_resource = None;
+    player.attack_queued = false;
+    player.attack_was_down = false;
+    player.next_attack_at = 0;
     player.snapshot.respawn_at = None;
     player.snapshot.state = PlayerState::Alive;
 }
@@ -1477,7 +1530,10 @@ struct PlayerInputPayload {
     aim: Vector2,
     jump: bool,
     attack: bool,
+    attack_pressed: bool,
+    pickup_weapon_pressed: bool,
     drop_weapon: bool,
+    drop_weapon_pressed: bool,
 }
 
 impl PlayerInputPayload {
@@ -1560,6 +1616,10 @@ struct WorldWeaponPickup {
     respawn_ms: Option<u64>,
     #[serde(skip_serializing)]
     kinematics: PickupKinematics,
+    #[serde(skip_serializing)]
+    pickup_blocked_until: Option<u64>,
+    #[serde(skip_serializing)]
+    pickup_blocked_player_id: Option<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -1990,7 +2050,10 @@ mod tests {
                 aim: Vector2 { x: 1.0, y: 0.0 },
                 jump: false,
                 attack: true,
+                attack_pressed: true,
+                pickup_weapon_pressed: false,
                 drop_weapon: false,
+                drop_weapon_pressed: false,
             },
             spawn_index: 0,
             external_velocity: Vector2 { x: 0.0, y: 0.0 },
@@ -2042,5 +2105,37 @@ mod tests {
         assert!(target_after.external_velocity.x > 0.0);
         assert_eq!(target_after.snapshot.hp, 88);
         assert!(deaths.is_empty());
+    }
+
+    #[test]
+    fn queued_attack_is_cleared_when_player_only_has_paws() {
+        let mut room = RoomState::new();
+        let mut player = test_player(140.0, 120.0);
+        player.attack_queued = true;
+        room.players.insert("player".to_string(), player);
+
+        let mut deaths = Vec::new();
+        room.handle_weapon_attack("player", 1000, &mut deaths);
+
+        let player_after = room.players.get("player").expect("player should exist");
+        assert!(!player_after.attack_queued);
+    }
+
+    #[test]
+    fn death_resets_weapon_to_paws() {
+        let mut player = test_player(140.0, 120.0);
+        player.snapshot.equipped_weapon_id = "acorn_blaster".to_string();
+        player.snapshot.equipped_weapon_resource = Some(3);
+        player.attack_queued = true;
+        player.attack_was_down = true;
+        player.next_attack_at = 1234;
+
+        trigger_respawn(&mut player, 1000);
+
+        assert_eq!(player.snapshot.equipped_weapon_id, "paws");
+        assert_eq!(player.snapshot.equipped_weapon_resource, None);
+        assert!(!player.attack_queued);
+        assert!(!player.attack_was_down);
+        assert_eq!(player.next_attack_at, 0);
     }
 }

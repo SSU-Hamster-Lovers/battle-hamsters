@@ -39,6 +39,7 @@
 - 테스트 맵용 바닥 / 플랫폼 / pit wall / hazard / spawn 위치를 `trainingArenaMap` 공통 데이터에서 읽어 렌더링한다.
 - 월드 무기 pickup을 간단한 도형/라벨로 렌더링한다.
 - HUD 텍스트에 현재 장착 무기와 탄 수를 표시한다.
+- 발사 시 로컬 보조용 muzzle flash를 짧게 표시한다.
 
 ### Portal
 
@@ -94,7 +95,9 @@
 ### 전투
 
 - `Acorn Blaster` 1종에 한해 실제 발사/피격/넉백/자기 반동/탄 소모/빈 무기 폐기를 처리한다.
-- 월드 무기 spawn pickup / 드롭 pickup / 자동 pickup / 드롭 입력(`Q`)을 1차 처리한다.
+- 월드 무기는 `E`로 명시적으로 획득하고 `Q`로 드롭한다.
+- 드롭한 무기는 즉시 재pickup되지 않도록 짧은 본인 pickup 차단 시간이 있다.
+- 사망 시 장착 무기는 초기화되어 맨손(`paws`)으로 리스폰한다.
 - beam/grab/throwable, item pickup, 다중 무기 밸런싱은 아직 미구현이다.
 
 ## 다음 구현 우선순위

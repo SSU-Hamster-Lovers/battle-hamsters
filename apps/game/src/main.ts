@@ -117,6 +117,8 @@ class MainScene extends Phaser.Scene {
   private latestTick = 0;
   private sequence = 0;
   private queuedClickAttack = false;
+  private queuedPickupWeapon = false;
+  private queuedDropWeapon = false;
   private attackWasDown = false;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private keys!: {
@@ -125,6 +127,7 @@ class MainScene extends Phaser.Scene {
     s: Phaser.Input.Keyboard.Key;
     d: Phaser.Input.Keyboard.Key;
     q: Phaser.Input.Keyboard.Key;
+    e: Phaser.Input.Keyboard.Key;
     space: Phaser.Input.Keyboard.Key;
   };
 
@@ -176,7 +179,7 @@ class MainScene extends Phaser.Scene {
     this.add.text(
       24,
       GAME_HEIGHT - 22,
-      "Q: Drop Weapon  |  Mouse: Aim / Attack",
+      "E: Pick Up  |  Q: Drop Weapon  |  Mouse: Aim / Attack",
       {
         fontSize: "14px",
         color: "#9ca3af",
@@ -195,8 +198,15 @@ class MainScene extends Phaser.Scene {
       s: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S),
       d: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D),
       q: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Q),
+      e: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E),
       space: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
     };
+    this.keys.e.on("down", () => {
+      this.queuedPickupWeapon = true;
+    });
+    this.keys.q.on("down", () => {
+      this.queuedDropWeapon = true;
+    });
 
     this.time.addEvent({
       delay: INPUT_SEND_INTERVAL_MS,
@@ -680,11 +690,17 @@ class MainScene extends Phaser.Scene {
       Number(this.cursors.right.isDown || this.keys.d.isDown) -
       Number(this.cursors.left.isDown || this.keys.a.isDown);
     const moveY = Number(this.cursors.down.isDown || this.keys.s.isDown);
-    const attackPressed = pointer.isDown || this.queuedClickAttack;
-    if (attackPressed && !this.attackWasDown) {
+    const attackHeld = pointer.isDown;
+    const attackPressed =
+      this.queuedClickAttack || (attackHeld && !this.attackWasDown);
+    if (attackPressed) {
       this.showAttackFlash(originX, originY, aim.x, aim.y);
     }
-    this.attackWasDown = pointer.isDown;
+    this.attackWasDown = attackHeld;
+    const pickupWeaponPressed =
+      this.queuedPickupWeapon || Phaser.Input.Keyboard.JustDown(this.keys.e);
+    const dropWeaponPressed =
+      this.queuedDropWeapon || Phaser.Input.Keyboard.JustDown(this.keys.q);
 
     this.send({
       type: "player_input",
@@ -697,11 +713,16 @@ class MainScene extends Phaser.Scene {
           Phaser.Input.Keyboard.JustDown(this.keys.space) ||
           Phaser.Input.Keyboard.JustDown(this.cursors.up) ||
           Phaser.Input.Keyboard.JustDown(this.keys.w),
-        attack: attackPressed,
-        dropWeapon: Phaser.Input.Keyboard.JustDown(this.keys.q),
+        attack: attackHeld,
+        attackPressed,
+        pickupWeaponPressed,
+        dropWeapon: dropWeaponPressed,
+        dropWeaponPressed,
       },
     } satisfies PlayerInputMessage);
     this.queuedClickAttack = false;
+    this.queuedPickupWeapon = false;
+    this.queuedDropWeapon = false;
   }
 
   private showAttackFlash(

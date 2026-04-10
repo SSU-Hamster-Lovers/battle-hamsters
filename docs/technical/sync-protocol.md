@@ -71,7 +71,10 @@
     "aim": { "x": 1, "y": 0 },
     "jump": false,
     "attack": true,
-    "dropWeapon": false
+    "attackPressed": false,
+    "pickupWeaponPressed": false,
+    "dropWeapon": false,
+    "dropWeaponPressed": false
   }
 }
 ```
@@ -79,6 +82,9 @@
 #### 해석 규칙
 
 - `attack: true`는 버튼이 눌린 상태를 의미한다.
+- `attackPressed: true`는 이번 입력 프레임에서 새 발사 요청이 생겼음을 의미한다.
+- `pickupWeaponPressed: true`는 이번 입력 프레임에서 무기 pickup 요청이 생겼음을 의미한다.
+- `dropWeaponPressed: true`는 이번 입력 프레임에서 무기 드롭 요청이 생겼음을 의미한다.
 - 단발 무기는 이 입력을 발사 트리거로 해석할 수 있다.
 - 채널형 무기는 `attack: true`가 유지되는 동안 발사 지속으로 해석할 수 있다.
 - 투척 무기와 grab 무기도 동일 공격 입력을 사용한다.
