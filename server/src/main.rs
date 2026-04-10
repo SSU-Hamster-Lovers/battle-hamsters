@@ -325,7 +325,7 @@ struct WorldWeaponPickup {
     spawned_at: u64,
     despawn_at: Option<u64>,
     #[serde(skip_serializing)]
-    spawn_id: Option<String>,
+    spawn_cycle_key: Option<String>,
     #[serde(skip_serializing)]
     respawn_ms: Option<u64>,
     #[serde(skip_serializing)]
@@ -347,7 +347,7 @@ struct WorldItemPickup {
     despawn_at: Option<u64>,
     spawn_style: SpawnStyle,
     #[serde(skip_serializing)]
-    spawn_id: Option<String>,
+    spawn_cycle_key: Option<String>,
     #[serde(skip_serializing)]
     respawn_ms: Option<u64>,
     #[serde(skip_serializing)]
@@ -661,6 +661,7 @@ mod tests {
             .expect("spawn pickup should exist");
         assert_eq!(pickup.weapon_id, "acorn_blaster");
         assert_eq!(pickup.resource_remaining, 8);
+        assert!(matches!(pickup.position.x, 520.0 | 620.0));
     }
 
     #[test]
@@ -675,6 +676,12 @@ mod tests {
 
         assert!(item_ids.contains(&"jump_boost_small"));
         assert!(item_ids.contains(&"health_pack_small"));
+        let heal_pickup = room
+            .item_pickups
+            .values()
+            .find(|pickup| pickup.item_id == "health_pack_small")
+            .expect("heal pickup should exist");
+        assert!(matches!(heal_pickup.position.x, 220.0 | 680.0));
     }
 
     #[test]
@@ -715,14 +722,14 @@ mod tests {
     #[test]
     fn item_pickup_heals_and_clamps_hp() {
         let mut room = RoomState::new();
-        let health_spawn = runtime_map_data()
-            .item_spawns
-            .iter()
-            .find(|spawn| spawn.item_id == "health_pack_small")
-            .expect("health spawn should exist")
-            .clone();
+        let health_pickup_position = room
+            .item_pickups
+            .values()
+            .find(|pickup| pickup.item_id == "health_pack_small")
+            .map(|pickup| pickup.position.clone())
+            .expect("health pickup should exist");
 
-        let mut player = test_player(health_spawn.position.x, health_spawn.position.y);
+        let mut player = test_player(health_pickup_position.x, health_pickup_position.y);
         player.snapshot.hp = 80;
         room.players.insert("player".to_string(), player);
 

@@ -44,6 +44,8 @@ export interface ItemSpawnPoint {
   y: number
   respawnMs: number
   spawnStyle: SpawnStyle
+  mode: 'fixed' | 'random_candidates'
+  spawnGroupId?: EntityId
 }
 
 export interface WorldItemPickup extends TimedWorldEntity {

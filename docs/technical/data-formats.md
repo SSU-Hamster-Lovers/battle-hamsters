@@ -154,6 +154,8 @@
 | `itemSpawns`     | 아이템 생성 위치와 연출                    |
 | `spawnStyle`     | `airdrop                                   | fade_in                        | triggered`                 |
 | `despawnStyle`   | `shrink_pop` 등 디스폰 연출                |
+| `mode`           | `fixed | random_candidates` |
+| `spawnGroupId`   | 후보 지점 랜덤 스폰 그룹 ID |
 
 ### 충돌 primitive 규칙
 
@@ -192,6 +194,15 @@
   - `y`
   - `width`
   - `height`
+
+### spawn 후보 그룹 규칙
+
+- `mode: "fixed"`
+  - 해당 위치에 고정 스폰
+- `mode: "random_candidates"`
+  - 같은 `spawnGroupId`를 공유하는 후보들 중 하나만 활성화
+- `spawnGroupId`
+  - 무기/아이템 후보 지점을 같은 순환 그룹으로 묶는 식별자
 
 ### 경계 / 카메라 정책 규칙
 
