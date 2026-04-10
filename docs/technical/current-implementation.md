@@ -89,10 +89,11 @@
 ### 전투
 
 - 실제 무기 판정, 아이템 획득, beam/grab/throwable 로직은 아직 미구현이다.
+- 자기 반동(`self recoil`) 시스템도 아직 미구현이다.
 
 ## 다음 구현 우선순위
 
-1. item / weapon pickup 실제 상태 반영
+1. 무기 시스템 1차 (`pickup / 장착 / 발사 / 넉백 / 자기 반동`)
 2. 클라이언트 보간 및 시각 품질 개선
 3. `maxJumpCount`를 아이템과 실제로 연동
 4. placeholder 사각형 → 실제 햄스터 렌더링
@@ -104,4 +105,5 @@
 - 맵 경계/카메라 확장 아이디어는 `docs/technical/mini-spec-map-boundaries-camera.md`에 별도 정리한다.
 - `boundaryPolicy`, `cameraPolicy`, `visualBounds`, `gameplayBounds`, `deathBounds`는 shared 타입/JSON 예시에 반영됐지만 카메라 런타임에서는 아직 사용하지 않는다.
 - 이번 브랜치 작업 미니 스펙은 `docs/technical/mini-spec-shared-map-json.md`에 정리한다.
+- 다음 전투 작업 미니 스펙은 `docs/technical/mini-spec-weapon-runtime-v1.md`에 정리한다.
 - 구현을 바꿀 때는 이 문서도 같이 갱신한다.

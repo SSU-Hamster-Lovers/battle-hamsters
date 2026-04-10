@@ -22,6 +22,7 @@
 ## 작업용 미니 스펙
 
 - [공통 맵 JSON 런타임 이관](technical/mini-spec-shared-map-json.md)
+- [무기 시스템 1차](technical/mini-spec-weapon-runtime-v1.md)
 - [맵 경계 정책과 카메라 규칙](technical/mini-spec-map-boundaries-camera.md)
 
 ## 아카이브
