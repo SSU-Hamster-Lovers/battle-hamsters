@@ -25,7 +25,7 @@ jobs:
       OCI_HOST: ${{ vars.OCI_HOST }}
       OCI_USER: ${{ vars.OCI_USER }}
       OCI_SSH_PORT: ${{ vars.OCI_SSH_PORT || '22' }}
-      OCI_DEPLOY_PATH: ${{ vars.OCI_DEPLOY_PATH }}
+      OCI_DEPLOY_PATH: ${{ vars.OCI_DEPLOY_PATH || '/opt/battle-hamsters' }}
       API_PORT: ${{ vars.API_PORT || '8081' }}
       RUST_LOG: ${{ vars.RUST_LOG || 'info' }}
       POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
@@ -64,22 +64,91 @@ jobs:
         run: |
           scp -P "${OCI_SSH_PORT}" release.tar.gz oracle.env "${OCI_USER}@${OCI_HOST}:/tmp/"
 
+      - name: Validate deploy configuration
+        run: |
+          test -n "${OCI_HOST}"
+          test -n "${OCI_USER}"
+          test -n "${OCI_DEPLOY_PATH}"
+
       - name: Deploy on Oracle Cloud instance
         run: |
-          ssh -p "${OCI_SSH_PORT}" "${OCI_USER}@${OCI_HOST}" bash -s <<EOF
+          ssh -p "${OCI_SSH_PORT}" "${OCI_USER}@${OCI_HOST}" bash -s -- "${OCI_DEPLOY_PATH}" "${GITHUB_SHA}" <<'EOF'
           set -euo pipefail
 
-          DEPLOY_ROOT="${OCI_DEPLOY_PATH}"
-          RELEASE_DIR="${OCI_DEPLOY_PATH}/releases/${GITHUB_SHA}"
+          DEPLOY_ROOT="$1"
+          RELEASE_SHA="$2"
+          RELEASE_DIR="${DEPLOY_ROOT}/releases/${RELEASE_SHA}"
           ARCHIVE_PATH="/tmp/release.tar.gz"
           ENV_PATH="/tmp/oracle.env"
 
-          mkdir -p "${DEPLOY_ROOT}/releases" "${RELEASE_DIR}"
+          ensure_deploy_root() {
+            if mkdir -p "${DEPLOY_ROOT}/releases" "${RELEASE_DIR}" 2>/dev/null; then
+              return 0
+            fi
+
+            if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+              sudo mkdir -p "${DEPLOY_ROOT}/releases" "${RELEASE_DIR}"
+              sudo chown -R "$(id -un)":"$(id -gn)" "${DEPLOY_ROOT}"
+              return 0
+            fi
+
+            echo "Cannot create deploy directory: ${DEPLOY_ROOT}" >&2
+            echo "Ensure OCI_DEPLOY_PATH is writable by $(id -un) or allow passwordless sudo." >&2
+            return 1
+          }
+
+          ensure_deploy_root
           tar -xzf "${ARCHIVE_PATH}" -C "${RELEASE_DIR}"
           mv "${ENV_PATH}" "${RELEASE_DIR}/deploy/oracle/.env"
 
           cd "${RELEASE_DIR}/deploy/oracle"
-          docker compose -p battle-hamsters --env-file .env up -d --build
+          API_PORT_VALUE="$(awk -F= '$1 == "API_PORT" { print $2 }' .env | tail -n 1)"
+          if [ -z "${API_PORT_VALUE}" ]; then
+            API_PORT_VALUE="8081"
+          fi
+
+          if docker compose version >/dev/null 2>&1; then
+            COMPOSE_CMD=(docker compose -p battle-hamsters --env-file .env)
+          elif command -v docker-compose >/dev/null 2>&1; then
+            COMPOSE_CMD=(docker-compose -p battle-hamsters --env-file .env)
+          else
+            echo "Neither 'docker compose' nor 'docker-compose' is available on the target host." >&2
+            exit 1
+          fi
+
+          "${COMPOSE_CMD[@]}" up -d --build
+
+          if ! python3 - "${API_PORT_VALUE}" <<'PY'
+          import json
+          import sys
+          import time
+          from urllib.error import URLError
+          from urllib.request import urlopen
+
+          port = sys.argv[1]
+          url = f"http://127.0.0.1:{port}/health"
+          deadline = time.time() + 30
+
+          while time.time() < deadline:
+              try:
+                  with urlopen(url, timeout=3) as response:
+                      if response.status != 200:
+                          raise RuntimeError(f"Unexpected status: {response.status}")
+                      payload = json.loads(response.read().decode("utf-8"))
+                      if payload.get("status") != "ok":
+                          raise RuntimeError(f"Unexpected payload: {payload}")
+                      sys.exit(0)
+              except (OSError, URLError, RuntimeError, ValueError):
+                  time.sleep(3)
+
+          sys.exit(1)
+          PY
+          then
+            "${COMPOSE_CMD[@]}" ps || true
+            "${COMPOSE_CMD[@]}" logs db --tail=200 || true
+            "${COMPOSE_CMD[@]}" logs api --tail=200 || true
+            exit 1
+          fi
 
           ln -sfn "${RELEASE_DIR}" "${DEPLOY_ROOT}/current"
 
