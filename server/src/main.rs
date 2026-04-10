@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const SERVER_VERSION: &str = "0.1.0";
@@ -16,13 +16,6 @@ const TICK_INTERVAL_MS: u64 = 1000 / TICK_RATE;
 const HEARTBEAT_INTERVAL_SECS: u64 = 5;
 const CLIENT_TIMEOUT_SECS: u64 = 10;
 
-const WORLD_WIDTH: f64 = 800.0;
-const WORLD_HEIGHT: f64 = 600.0;
-const GROUND_TOP_Y: f64 = 540.0;
-const FALL_ZONE_START_Y: f64 = WORLD_HEIGHT + 100.0;
-const FALL_ZONE_HEIGHT: f64 = 220.0;
-const PIT_LEFT_X: f64 = 330.0;
-const PIT_RIGHT_X: f64 = 470.0;
 const PLAYER_HALF_SIZE: f64 = 14.0;
 const RUN_SPEED_PER_TICK: f64 = 8.0;
 const GRAVITY_PER_TICK: f64 = 1.4;
@@ -62,7 +55,7 @@ enum HazardKind {
     InstantKillHazard,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct HazardRect {
     kind: HazardKind,
     x: f64,
@@ -71,54 +64,18 @@ struct HazardRect {
     height: f64,
 }
 
-const FLOOR_SEGMENTS: [FloorSegment; 2] = [
-    FloorSegment {
-        left_x: 0.0,
-        right_x: PIT_LEFT_X,
-        top_y: GROUND_TOP_Y,
-    },
-    FloorSegment {
-        left_x: PIT_RIGHT_X,
-        right_x: WORLD_WIDTH,
-        top_y: GROUND_TOP_Y,
-    },
-];
+struct RuntimeMapData {
+    room_id: String,
+    width: f64,
+    height: f64,
+    spawn_points: Vec<Vector2>,
+    floor_segments: Vec<FloorSegment>,
+    one_way_platforms: Vec<OneWayPlatformSegment>,
+    solid_walls: Vec<SolidWall>,
+    hazards: Vec<HazardRect>,
+}
 
-const ONE_WAY_PLATFORMS: [OneWayPlatformSegment; 1] = [OneWayPlatformSegment {
-    left_x: 250.0,
-    right_x: 550.0,
-    top_y: 380.0,
-}];
-
-const SOLID_WALLS: [SolidWall; 2] = [
-    SolidWall {
-        x: PIT_LEFT_X,
-        top_y: GROUND_TOP_Y,
-        bottom_y: FALL_ZONE_START_Y,
-    },
-    SolidWall {
-        x: PIT_RIGHT_X,
-        top_y: GROUND_TOP_Y,
-        bottom_y: FALL_ZONE_START_Y,
-    },
-];
-
-const HAZARDS: [HazardRect; 2] = [
-    HazardRect {
-        kind: HazardKind::FallZone,
-        x: PIT_LEFT_X,
-        y: FALL_ZONE_START_Y,
-        width: PIT_RIGHT_X - PIT_LEFT_X,
-        height: FALL_ZONE_HEIGHT,
-    },
-    HazardRect {
-        kind: HazardKind::InstantKillHazard,
-        x: 620.0,
-        y: GROUND_TOP_Y - 18.0,
-        width: 110.0,
-        height: 18.0,
-    },
-];
+static RUNTIME_MAP_DATA: OnceLock<RuntimeMapData> = OnceLock::new();
 
 #[derive(Serialize)]
 struct HealthResponse {
@@ -145,6 +102,196 @@ async fn hello(query: web::Query<UserQuery>) -> impl Responder {
     }))
 }
 
+#[derive(Deserialize)]
+struct MapSize {
+    width: f64,
+    height: f64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MapSpawnPoint {
+    x: f64,
+    y: f64,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum MapCollisionPrimitive {
+    Floor {
+        #[serde(rename = "leftX")]
+        left_x: f64,
+        #[serde(rename = "rightX")]
+        right_x: f64,
+        #[serde(rename = "topY")]
+        top_y: f64,
+    },
+    OneWayPlatform {
+        #[serde(rename = "leftX")]
+        left_x: f64,
+        #[serde(rename = "rightX")]
+        right_x: f64,
+        #[serde(rename = "topY")]
+        top_y: f64,
+    },
+    SolidWall {
+        x: f64,
+        #[serde(rename = "topY")]
+        top_y: f64,
+        #[serde(rename = "bottomY")]
+        bottom_y: f64,
+    },
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum MapHazard {
+    FallZone {
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    },
+    InstantKillHazard {
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    },
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeMapDefinition {
+    size: MapSize,
+    spawn_points: Vec<MapSpawnPoint>,
+    collision: Vec<MapCollisionPrimitive>,
+    hazards: Vec<MapHazard>,
+}
+
+fn runtime_map_data() -> &'static RuntimeMapData {
+    RUNTIME_MAP_DATA.get_or_init(|| {
+        let raw = include_str!("../../packages/shared/maps/training-arena.json");
+        let map_definition: RuntimeMapDefinition =
+            serde_json::from_str(raw).expect("training arena JSON should deserialize");
+
+        let mut floor_segments = Vec::new();
+        let mut one_way_platforms = Vec::new();
+        let mut solid_walls = Vec::new();
+
+        for primitive in map_definition.collision {
+            match primitive {
+                MapCollisionPrimitive::Floor {
+                    left_x,
+                    right_x,
+                    top_y,
+                } => floor_segments.push(FloorSegment {
+                    left_x,
+                    right_x,
+                    top_y,
+                }),
+                MapCollisionPrimitive::OneWayPlatform {
+                    left_x,
+                    right_x,
+                    top_y,
+                } => one_way_platforms.push(OneWayPlatformSegment {
+                    left_x,
+                    right_x,
+                    top_y,
+                }),
+                MapCollisionPrimitive::SolidWall { x, top_y, bottom_y } => {
+                    solid_walls.push(SolidWall { x, top_y, bottom_y })
+                }
+            }
+        }
+
+        let hazards = map_definition
+            .hazards
+            .into_iter()
+            .map(|hazard| match hazard {
+                MapHazard::FallZone {
+                    x,
+                    y,
+                    width,
+                    height,
+                } => HazardRect {
+                    kind: HazardKind::FallZone,
+                    x,
+                    y,
+                    width,
+                    height,
+                },
+                MapHazard::InstantKillHazard {
+                    x,
+                    y,
+                    width,
+                    height,
+                } => HazardRect {
+                    kind: HazardKind::InstantKillHazard,
+                    x,
+                    y,
+                    width,
+                    height,
+                },
+            })
+            .collect::<Vec<_>>();
+
+        RuntimeMapData {
+            room_id: ROOM_ID.to_string(),
+            width: map_definition.size.width,
+            height: map_definition.size.height,
+            spawn_points: map_definition
+                .spawn_points
+                .into_iter()
+                .map(|spawn| Vector2 {
+                    x: spawn.x,
+                    y: spawn.y,
+                })
+                .collect(),
+            floor_segments,
+            one_way_platforms,
+            solid_walls,
+            hazards,
+        }
+    })
+}
+
+fn world_width() -> f64 {
+    runtime_map_data().width
+}
+
+fn world_height() -> f64 {
+    runtime_map_data().height
+}
+
+fn room_id() -> &'static str {
+    runtime_map_data().room_id.as_str()
+}
+
+fn ground_top_y() -> f64 {
+    runtime_map_data()
+        .floor_segments
+        .iter()
+        .map(|segment| segment.top_y)
+        .fold(f64::NEG_INFINITY, f64::max)
+}
+
+fn primary_fall_zone() -> &'static HazardRect {
+    runtime_map_data()
+        .hazards
+        .iter()
+        .find(|hazard| hazard.kind == HazardKind::FallZone)
+        .expect("training arena should define a fall zone")
+}
+
+fn pit_left_x() -> f64 {
+    primary_fall_zone().x
+}
+
+fn pit_right_x() -> f64 {
+    primary_fall_zone().x + primary_fall_zone().width
+}
+
 #[derive(Clone)]
 struct PlayerRuntime {
     snapshot: PlayerSnapshot,
@@ -163,7 +310,7 @@ struct RoomState {
 impl RoomState {
     fn new() -> Self {
         Self {
-            room_id: ROOM_ID.to_string(),
+            room_id: room_id().to_string(),
             server_tick: 0,
             time_remaining_ms: DEFAULT_TIME_LIMIT_MS,
             players: HashMap::new(),
@@ -286,11 +433,8 @@ impl RoomState {
 }
 
 fn spawn_position(spawn_index: usize) -> Vector2 {
-    let positions = [140.0, 660.0, 320.0, 480.0];
-    Vector2 {
-        x: positions[spawn_index % positions.len()],
-        y: 80.0,
-    }
+    let spawn_points = &runtime_map_data().spawn_points;
+    spawn_points[spawn_index % spawn_points.len()].clone()
 }
 
 fn step_player(player: &mut PlayerRuntime, now_ms: u64) {
@@ -353,7 +497,7 @@ fn step_player(player: &mut PlayerRuntime, now_ms: u64) {
         .snapshot
         .position
         .x
-        .clamp(PLAYER_HALF_SIZE, WORLD_WIDTH - PLAYER_HALF_SIZE);
+        .clamp(PLAYER_HALF_SIZE, world_width() - PLAYER_HALF_SIZE);
 
     player.snapshot.position.y += player.snapshot.velocity.y;
 
@@ -364,7 +508,7 @@ fn step_player(player: &mut PlayerRuntime, now_ms: u64) {
     let previous_bottom = previous_position.y + PLAYER_HALF_SIZE;
     let current_bottom = player.snapshot.position.y + PLAYER_HALF_SIZE;
 
-    for floor in FLOOR_SEGMENTS {
+    for floor in &runtime_map_data().floor_segments {
         if current_bottom >= floor.top_y
             && surface_contains_x(floor.left_x, floor.right_x, player.snapshot.position.x)
         {
@@ -374,7 +518,7 @@ fn step_player(player: &mut PlayerRuntime, now_ms: u64) {
     }
 
     if player.snapshot.velocity.y >= 0.0 && !drop_active {
-        for platform in ONE_WAY_PLATFORMS {
+        for platform in &runtime_map_data().one_way_platforms {
             if previous_bottom <= platform.top_y
                 && current_bottom >= platform.top_y
                 && surface_contains_x(
@@ -392,7 +536,7 @@ fn step_player(player: &mut PlayerRuntime, now_ms: u64) {
 
 fn is_on_one_way_platform(player: &PlayerSnapshot) -> bool {
     player.grounded
-        && ONE_WAY_PLATFORMS.iter().any(|platform| {
+        && runtime_map_data().one_way_platforms.iter().any(|platform| {
             (player.position.y + PLAYER_HALF_SIZE - platform.top_y).abs() < 1.0
                 && surface_contains_x(platform.left_x, platform.right_x, player.position.x)
         })
@@ -413,7 +557,7 @@ fn resolve_wall_collisions(player: &mut PlayerSnapshot, previous_position: &Vect
     let current_top = player.position.y - PLAYER_HALF_SIZE;
     let current_bottom = player.position.y + PLAYER_HALF_SIZE;
 
-    for wall in SOLID_WALLS {
+    for wall in &runtime_map_data().solid_walls {
         if current_bottom <= wall.top_y || current_top >= wall.bottom_y {
             continue;
         }
@@ -439,7 +583,7 @@ fn intersecting_hazard(player: &PlayerSnapshot) -> Option<HazardKind> {
     let player_top = player.position.y - PLAYER_HALF_SIZE;
     let player_bottom = player.position.y + PLAYER_HALF_SIZE;
 
-    HAZARDS.iter().find_map(|hazard| {
+    runtime_map_data().hazards.iter().find_map(|hazard| {
         let hazard_right = hazard.x + hazard.width;
         let hazard_bottom = hazard.y + hazard.height;
         let overlaps = player_right > hazard.x
@@ -463,7 +607,7 @@ fn trigger_respawn(player: &mut PlayerRuntime, now_ms: u64) {
     player.snapshot.grounded = false;
     player.snapshot.jump_count_used = 0;
     player.snapshot.drop_through_until = None;
-    player.snapshot.position.y = GROUND_TOP_Y + 80.0;
+    player.snapshot.position.y = ground_top_y() + 80.0;
 }
 
 fn respawn_player(player: &mut PlayerRuntime) {
@@ -538,7 +682,7 @@ impl WsSession {
     }
 
     fn handle_join_room(&mut self, payload: JoinRoomPayload, ctx: &mut ws::WebsocketContext<Self>) {
-        if payload.room_id != ROOM_ID {
+        if payload.room_id != room_id() {
             self.send_json(
                 ctx,
                 "error",
@@ -1095,28 +1239,31 @@ mod tests {
 
     #[test]
     fn player_lands_on_floor_outside_pit() {
-        let mut player = test_player(180.0, GROUND_TOP_Y - PLAYER_HALF_SIZE - 2.0);
+        let mut player = test_player(180.0, ground_top_y() - PLAYER_HALF_SIZE - 2.0);
         player.snapshot.velocity.y = 8.0;
 
         step_player(&mut player, 0);
 
         assert!(player.snapshot.grounded);
-        assert_eq!(player.snapshot.position.y, GROUND_TOP_Y - PLAYER_HALF_SIZE);
+        assert_eq!(
+            player.snapshot.position.y,
+            ground_top_y() - PLAYER_HALF_SIZE
+        );
         assert_eq!(player.snapshot.velocity.y, 0.0);
     }
 
     #[test]
     fn player_does_not_land_inside_fall_zone_gap() {
         let mut player = test_player(
-            (PIT_LEFT_X + PIT_RIGHT_X) / 2.0,
-            GROUND_TOP_Y - PLAYER_HALF_SIZE - 2.0,
+            (pit_left_x() + pit_right_x()) / 2.0,
+            ground_top_y() - PLAYER_HALF_SIZE - 2.0,
         );
         player.snapshot.velocity.y = 8.0;
 
         step_player(&mut player, 0);
 
         assert!(!player.snapshot.grounded);
-        assert!(player.snapshot.position.y > GROUND_TOP_Y - PLAYER_HALF_SIZE);
+        assert!(player.snapshot.position.y > ground_top_y() - PLAYER_HALF_SIZE);
         assert_eq!(intersecting_hazard(&player.snapshot), None);
 
         for _ in 0..24 {
@@ -1134,32 +1281,32 @@ mod tests {
 
     #[test]
     fn player_collides_with_pit_wall_from_inside() {
-        let mut player = test_player(PIT_LEFT_X + PLAYER_HALF_SIZE + 2.0, GROUND_TOP_Y + 20.0);
+        let mut player = test_player(pit_left_x() + PLAYER_HALF_SIZE + 2.0, ground_top_y() + 20.0);
         player.latest_input.movement = Vector2 { x: -1.0, y: 0.0 };
 
         step_player(&mut player, 0);
 
-        assert_eq!(player.snapshot.position.x, PIT_LEFT_X + PLAYER_HALF_SIZE);
+        assert_eq!(player.snapshot.position.x, pit_left_x() + PLAYER_HALF_SIZE);
         assert_eq!(player.snapshot.velocity.x, 0.0);
     }
 
     #[test]
     fn player_still_collides_with_extended_pit_wall_below_screen() {
-        let mut player = test_player(PIT_LEFT_X + PLAYER_HALF_SIZE + 2.0, WORLD_HEIGHT + 40.0);
+        let mut player = test_player(pit_left_x() + PLAYER_HALF_SIZE + 2.0, world_height() + 40.0);
         player.latest_input.movement = Vector2 { x: -1.0, y: 0.0 };
 
         step_player(&mut player, 0);
 
-        assert_eq!(player.snapshot.position.x, PIT_LEFT_X + PLAYER_HALF_SIZE);
+        assert_eq!(player.snapshot.position.x, pit_left_x() + PLAYER_HALF_SIZE);
         assert_eq!(player.snapshot.velocity.x, 0.0);
     }
 
     #[test]
     fn instant_kill_hazard_is_separate_from_fall_zone() {
-        let player_on_spikes = test_player(660.0, GROUND_TOP_Y - PLAYER_HALF_SIZE);
+        let player_on_spikes = test_player(660.0, ground_top_y() - PLAYER_HALF_SIZE);
         let player_in_pit = test_player(
-            (PIT_LEFT_X + PIT_RIGHT_X) / 2.0,
-            FALL_ZONE_START_Y + PLAYER_HALF_SIZE + 1.0,
+            (pit_left_x() + pit_right_x()) / 2.0,
+            primary_fall_zone().y + PLAYER_HALF_SIZE + 1.0,
         );
 
         assert_eq!(
