@@ -24,6 +24,11 @@
 - [공통 맵 JSON 런타임 이관](technical/mini-spec-shared-map-json.md)
 - [맵 경계 정책과 카메라 규칙](technical/mini-spec-map-boundaries-camera.md)
 
+## 아카이브
+
+- [완료된 미니 스펙 아카이브 안내](archive/mini-specs/README.md)
+- [충돌 primitive 확장 및 테스트 맵 개선 (archived)](archive/mini-specs/mini-spec-collision-primitives.md)
+
 ## 팀
 
 - [역할 분담](team/roles.md)
