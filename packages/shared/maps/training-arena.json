@@ -101,6 +101,23 @@
       "mode": "fixed"
     }
   ],
-  "itemSpawns": [],
+  "itemSpawns": [
+    {
+      "id": "item_jump_mid",
+      "itemId": "jump_boost_small",
+      "x": 400,
+      "y": 352,
+      "respawnMs": 12000,
+      "spawnStyle": "fade_in"
+    },
+    {
+      "id": "item_heal_left",
+      "itemId": "health_pack_small",
+      "x": 220,
+      "y": 512,
+      "respawnMs": 15000,
+      "spawnStyle": "fade_in"
+    }
+  ],
   "decorations": []
 }

@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import {
+  itemDefinitionById,
   trainingArenaMap,
   weaponDefinitionById,
 } from "@battle-hamsters/shared";
@@ -12,6 +13,7 @@ import type {
   SpawnPoint,
   RoomSnapshotMessage,
   ServerToClientMessage,
+  WorldItemPickup,
   WorldWeaponPickup,
   WorldSnapshotMessage,
 } from "@battle-hamsters/shared";
@@ -73,6 +75,11 @@ type RenderedWeaponPickup = {
   label: Phaser.GameObjects.Text;
 };
 
+type RenderedItemPickup = {
+  body: Phaser.GameObjects.Rectangle;
+  label: Phaser.GameObjects.Text;
+};
+
 function drawCross(
   graphics: Phaser.GameObjects.Graphics,
   x: number,
@@ -112,6 +119,7 @@ class MainScene extends Phaser.Scene {
   private attackFlashUntil = 0;
   private renderedPlayers = new Map<string, RenderedPlayer>();
   private renderedWeaponPickups = new Map<string, RenderedWeaponPickup>();
+  private renderedItemPickups = new Map<string, RenderedItemPickup>();
   private playerName = getOrCreatePlayerName();
   private localPlayerId: string | null = null;
   private latestTick = 0;
@@ -428,6 +436,7 @@ class MainScene extends Phaser.Scene {
       this.localPlayerId = null;
       this.clearRenderedPlayers();
       this.clearRenderedWeaponPickups();
+      this.clearRenderedItemPickups();
       this.time.delayedCall(2000, () => {
         if (!this.socket || this.socket.readyState === WebSocket.CLOSED) {
           this.connect();
@@ -485,6 +494,7 @@ class MainScene extends Phaser.Scene {
     }
     this.renderPlayers(message.payload.players);
     this.renderWeaponPickups(message.payload.weaponPickups);
+    this.renderItemPickups(message.payload.itemPickups);
     this.captureLocalPlayer(message.payload.players);
     this.updateInfoText(message.payload.players, "waiting", null);
   }
@@ -493,6 +503,7 @@ class MainScene extends Phaser.Scene {
     this.latestTick = message.payload.serverTick;
     this.renderPlayers(message.payload.players);
     this.renderWeaponPickups(message.payload.weaponPickups);
+    this.renderItemPickups(message.payload.itemPickups);
     this.captureLocalPlayer(message.payload.players);
     this.updateInfoText(
       message.payload.players,
@@ -514,8 +525,10 @@ class MainScene extends Phaser.Scene {
       `players: ${players.length}`,
       `match: ${matchState}`,
       `self: ${this.localPlayerId ?? "unknown"}`,
+      `hp: ${localPlayer?.hp ?? 0}`,
       `weapon: ${localPlayer ? (weaponDefinitionById[localPlayer.equippedWeaponId]?.name ?? localPlayer.equippedWeaponId) : "unknown"}`,
       `ammo: ${localPlayer?.equippedWeaponResource ?? "∞"}`,
+      `max jumps: ${localPlayer?.maxJumpCount ?? 0}`,
       `grounded: ${localPlayer?.grounded ?? false}`,
       `state: ${localPlayer?.state ?? "unknown"}`,
       `jumps used: ${localPlayer?.jumpCountUsed ?? 0}`,
@@ -618,6 +631,14 @@ class MainScene extends Phaser.Scene {
     }
   }
 
+  private clearRenderedItemPickups() {
+    for (const [pickupId, rendered] of this.renderedItemPickups) {
+      rendered.body.destroy();
+      rendered.label.destroy();
+      this.renderedItemPickups.delete(pickupId);
+    }
+  }
+
   private renderWeaponPickups(weaponPickups: WorldWeaponPickup[]) {
     const nextIds = new Set(weaponPickups.map((pickup) => pickup.id));
 
@@ -666,6 +687,55 @@ class MainScene extends Phaser.Scene {
         rendered.body.destroy();
         rendered.label.destroy();
         this.renderedWeaponPickups.delete(pickupId);
+      }
+    }
+  }
+
+  private renderItemPickups(itemPickups: WorldItemPickup[]) {
+    const nextIds = new Set(itemPickups.map((pickup) => pickup.id));
+
+    for (const pickup of itemPickups) {
+      let rendered = this.renderedItemPickups.get(pickup.id);
+      const itemName = itemDefinitionById[pickup.itemId]?.name ?? pickup.itemId;
+
+      if (!rendered) {
+        rendered = {
+          body: this.add.rectangle(
+            pickup.position.x,
+            pickup.position.y,
+            14,
+            14,
+            0x4ade80,
+            0.95,
+          ),
+          label: this.add.text(
+            pickup.position.x,
+            pickup.position.y - 18,
+            itemName,
+            {
+              fontSize: "11px",
+              color: "#dcfce7",
+            },
+          ),
+        };
+        rendered.body.setStrokeStyle(2, 0x14532d, 0.95);
+        rendered.body.setAngle(45);
+        this.renderedItemPickups.set(pickup.id, rendered);
+      }
+
+      rendered.body.setPosition(pickup.position.x, pickup.position.y);
+      rendered.label.setText(itemName);
+      rendered.label.setPosition(
+        pickup.position.x - rendered.label.width / 2,
+        pickup.position.y - 20,
+      );
+    }
+
+    for (const [pickupId, rendered] of this.renderedItemPickups) {
+      if (!nextIds.has(pickupId)) {
+        rendered.body.destroy();
+        rendered.label.destroy();
+        this.renderedItemPickups.delete(pickupId);
       }
     }
   }

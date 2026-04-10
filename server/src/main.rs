@@ -26,10 +26,12 @@ const MAX_FAST_FALL_SPEED: f64 = 28.0;
 const DROP_THROUGH_MS: u64 = 220;
 const RESPAWN_DELAY_MS: u64 = 3_000;
 const TEST_LIVES: u8 = 99;
-const MAX_JUMP_COUNT: u8 = 3;
+const BASE_MAX_JUMP_COUNT: u8 = 1;
 const PICKUP_HALF_HEIGHT: f64 = 7.0;
 const PICKUP_GRAVITY_PER_TICK: f64 = 1.0;
 const PICKUP_MAX_FALL_SPEED: f64 = 18.0;
+const ITEM_PICKUP_RADIUS: f64 = 30.0;
+const MAX_HP: u16 = 100;
 
 #[derive(Clone, Copy)]
 struct FloorSegment {
@@ -79,6 +81,7 @@ struct RuntimeMapData {
     height: f64,
     spawn_points: Vec<Vector2>,
     weapon_spawns: Vec<RuntimeWeaponSpawnPoint>,
+    item_spawns: Vec<RuntimeItemSpawnPoint>,
     floor_segments: Vec<FloorSegment>,
     one_way_platforms: Vec<OneWayPlatformSegment>,
     solid_walls: Vec<SolidWall>,
@@ -88,6 +91,7 @@ struct RuntimeMapData {
 static RUNTIME_MAP_DATA: OnceLock<RuntimeMapData> = OnceLock::new();
 static RUNTIME_WEAPON_DEFINITIONS: OnceLock<HashMap<String, RuntimeWeaponDefinition>> =
     OnceLock::new();
+static RUNTIME_ITEM_DEFINITIONS: OnceLock<HashMap<String, RuntimeItemDefinition>> = OnceLock::new();
 
 #[derive(Serialize)]
 struct HealthResponse {
@@ -138,6 +142,17 @@ struct MapWeaponSpawnPoint {
     despawn_after_ms: u64,
     spawn_style: SpawnStyle,
     despawn_style: DespawnStyle,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MapItemSpawnPoint {
+    id: String,
+    item_id: String,
+    x: f64,
+    y: f64,
+    respawn_ms: u64,
+    spawn_style: SpawnStyle,
 }
 
 #[derive(Deserialize)]
@@ -193,6 +208,7 @@ struct RuntimeMapDefinition {
     collision: Vec<MapCollisionPrimitive>,
     hazards: Vec<MapHazard>,
     weapon_spawns: Vec<MapWeaponSpawnPoint>,
+    item_spawns: Vec<MapItemSpawnPoint>,
 }
 
 #[derive(Clone)]
@@ -204,6 +220,44 @@ struct RuntimeWeaponSpawnPoint {
     despawn_after_ms: u64,
     spawn_style: SpawnStyle,
     despawn_style: DespawnStyle,
+}
+
+#[derive(Clone)]
+struct RuntimeItemSpawnPoint {
+    id: String,
+    item_id: String,
+    position: Vector2,
+    respawn_ms: u64,
+    spawn_style: SpawnStyle,
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeItemDefinition {
+    id: String,
+    name: String,
+    item_type: ItemType,
+    max_stack: u32,
+    effect: RuntimeItemEffect,
+}
+
+#[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+enum ItemType {
+    SpeedRankUp,
+    ExtraLife,
+    HealthRecover,
+    JumpBoost,
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeItemEffect {
+    jump_count_delta: Option<i8>,
+    speed_rank_delta: Option<i8>,
+    extra_lives: Option<u8>,
+    heal_amount: Option<u16>,
 }
 
 #[allow(dead_code)]
@@ -338,6 +392,21 @@ fn runtime_map_data() -> &'static RuntimeMapData {
             })
             .collect::<Vec<_>>();
 
+        let item_spawns = map_definition
+            .item_spawns
+            .into_iter()
+            .map(|spawn| RuntimeItemSpawnPoint {
+                id: spawn.id,
+                item_id: spawn.item_id,
+                position: Vector2 {
+                    x: spawn.x,
+                    y: spawn.y,
+                },
+                respawn_ms: spawn.respawn_ms,
+                spawn_style: spawn.spawn_style,
+            })
+            .collect::<Vec<_>>();
+
         RuntimeMapData {
             room_id: ROOM_ID.to_string(),
             width: map_definition.size.width,
@@ -351,6 +420,7 @@ fn runtime_map_data() -> &'static RuntimeMapData {
                 })
                 .collect(),
             weapon_spawns,
+            item_spawns,
             floor_segments,
             one_way_platforms,
             solid_walls,
@@ -373,10 +443,33 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
     })
 }
 
+fn runtime_item_definitions() -> &'static HashMap<String, RuntimeItemDefinition> {
+    RUNTIME_ITEM_DEFINITIONS.get_or_init(|| {
+        let jump_boost_raw = include_str!("../../packages/shared/items/jump-boost-small.json");
+        let health_pack_raw = include_str!("../../packages/shared/items/health-pack-small.json");
+
+        let jump_boost: RuntimeItemDefinition =
+            serde_json::from_str(jump_boost_raw).expect("jump boost JSON should deserialize");
+        let health_pack: RuntimeItemDefinition =
+            serde_json::from_str(health_pack_raw).expect("health pack JSON should deserialize");
+
+        HashMap::from([
+            (jump_boost.id.clone(), jump_boost),
+            (health_pack.id.clone(), health_pack),
+        ])
+    })
+}
+
 fn weapon_definition(weapon_id: &str) -> &'static RuntimeWeaponDefinition {
     runtime_weapon_definitions()
         .get(weapon_id)
         .unwrap_or_else(|| panic!("missing weapon definition: {weapon_id}"))
+}
+
+fn item_definition(item_id: &str) -> &'static RuntimeItemDefinition {
+    runtime_item_definitions()
+        .get(item_id)
+        .unwrap_or_else(|| panic!("missing item definition: {item_id}"))
 }
 
 fn world_width() -> f64 {
@@ -432,8 +525,11 @@ struct RoomState {
     time_remaining_ms: u64,
     players: HashMap<String, PlayerRuntime>,
     weapon_pickups: HashMap<String, WorldWeaponPickup>,
+    item_pickups: HashMap<String, WorldItemPickup>,
     next_weapon_pickup_id: u64,
+    next_item_pickup_id: u64,
     next_spawn_respawn_at: HashMap<String, u64>,
+    next_item_spawn_respawn_at: HashMap<String, u64>,
     sessions: HashMap<String, Recipient<WsText>>,
 }
 
@@ -446,11 +542,15 @@ impl RoomState {
             time_remaining_ms: DEFAULT_TIME_LIMIT_MS,
             players: HashMap::new(),
             weapon_pickups: HashMap::new(),
+            item_pickups: HashMap::new(),
             next_weapon_pickup_id: 1,
+            next_item_pickup_id: 1,
             next_spawn_respawn_at: HashMap::new(),
+            next_item_spawn_respawn_at: HashMap::new(),
             sessions: HashMap::new(),
         };
         room.spawn_initial_weapons(now);
+        room.spawn_initial_items(now);
         room
     }
 
@@ -461,9 +561,22 @@ impl RoomState {
         }
     }
 
+    fn spawn_initial_items(&mut self, now_ms: u64) {
+        let spawns = runtime_map_data().item_spawns.clone();
+        for spawn in spawns {
+            self.spawn_item_from_spawn(&spawn, now_ms);
+        }
+    }
+
     fn next_world_pickup_id(&mut self) -> String {
         let id = format!("weapon_pickup_{}", self.next_weapon_pickup_id);
         self.next_weapon_pickup_id += 1;
+        id
+    }
+
+    fn next_world_item_pickup_id(&mut self) -> String {
+        let id = format!("item_pickup_{}", self.next_item_pickup_id);
+        self.next_item_pickup_id += 1;
         id
     }
 
@@ -522,6 +635,21 @@ impl RoomState {
         self.weapon_pickups.insert(pickup.id.clone(), pickup);
     }
 
+    fn spawn_item_from_spawn(&mut self, spawn: &RuntimeItemSpawnPoint, now_ms: u64) {
+        let pickup = WorldItemPickup {
+            id: self.next_world_item_pickup_id(),
+            item_id: spawn.item_id.clone(),
+            position: spawn.position.clone(),
+            source: ItemSource::Spawn,
+            spawned_at: now_ms,
+            despawn_at: None,
+            spawn_id: Some(spawn.id.clone()),
+            respawn_ms: Some(spawn.respawn_ms),
+            spawn_style: spawn.spawn_style,
+        };
+        self.item_pickups.insert(pickup.id.clone(), pickup);
+    }
+
     fn player_snapshots(&self) -> Vec<PlayerSnapshot> {
         self.players
             .values()
@@ -531,6 +659,10 @@ impl RoomState {
 
     fn weapon_pickup_snapshots(&self) -> Vec<WorldWeaponPickup> {
         self.weapon_pickups.values().cloned().collect()
+    }
+
+    fn item_pickup_snapshots(&self) -> Vec<WorldItemPickup> {
+        self.item_pickups.values().cloned().collect()
     }
 
     fn refresh_weapon_spawns(&mut self, now_ms: u64) {
@@ -551,6 +683,28 @@ impl RoomState {
             if ready {
                 self.next_spawn_respawn_at.remove(&spawn.id);
                 self.spawn_weapon_from_spawn(&spawn, now_ms);
+            }
+        }
+    }
+
+    fn refresh_item_spawns(&mut self, now_ms: u64) {
+        let spawns = runtime_map_data().item_spawns.clone();
+        for spawn in spawns {
+            let active = self
+                .item_pickups
+                .values()
+                .any(|pickup| pickup.spawn_id.as_deref() == Some(spawn.id.as_str()));
+            if active {
+                continue;
+            }
+
+            let ready = self
+                .next_item_spawn_respawn_at
+                .get(&spawn.id)
+                .is_none_or(|respawn_at| now_ms >= *respawn_at);
+            if ready {
+                self.next_item_spawn_respawn_at.remove(&spawn.id);
+                self.spawn_item_from_spawn(&spawn, now_ms);
             }
         }
     }
@@ -681,6 +835,20 @@ impl RoomState {
             .map(|(pickup_id, _)| pickup_id)
     }
 
+    fn item_pickup_near_player(&self, player: &PlayerRuntime) -> Option<String> {
+        self.item_pickups
+            .iter()
+            .filter_map(|(pickup_id, pickup)| {
+                let dx = pickup.position.x - player.snapshot.position.x;
+                let dy = pickup.position.y - player.snapshot.position.y;
+                let distance_sq = dx * dx + dy * dy;
+                (distance_sq <= ITEM_PICKUP_RADIUS * ITEM_PICKUP_RADIUS)
+                    .then_some((pickup_id.clone(), distance_sq))
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(pickup_id, _)| pickup_id)
+    }
+
     fn handle_weapon_pickup(&mut self, player_id: &str, now_ms: u64) {
         let wants_pickup = self
             .players
@@ -726,6 +894,58 @@ impl RoomState {
 
         if let Some((weapon_id, resource_remaining, position)) = current_weapon_to_drop {
             self.create_dropped_pickup(player_id, weapon_id, resource_remaining, position, now_ms);
+        }
+    }
+
+    fn handle_item_pickup(&mut self, player_id: &str, now_ms: u64) {
+        let Some(pickup_id) = self
+            .players
+            .get(player_id)
+            .and_then(|player| self.item_pickup_near_player(player))
+        else {
+            return;
+        };
+
+        let Some(pickup) = self.item_pickups.remove(&pickup_id) else {
+            return;
+        };
+
+        if let (Some(spawn_id), Some(respawn_ms)) = (pickup.spawn_id.clone(), pickup.respawn_ms) {
+            self.next_item_spawn_respawn_at
+                .insert(spawn_id, now_ms + respawn_ms);
+        }
+
+        let item = item_definition(&pickup.item_id).clone();
+        let Some(player) = self.players.get_mut(player_id) else {
+            return;
+        };
+
+        match item.item_type {
+            ItemType::JumpBoost => {
+                if let Some(jump_count_delta) = item.effect.jump_count_delta {
+                    let next_jump_count = (player.snapshot.max_jump_count as i16
+                        + jump_count_delta as i16)
+                        .clamp(1, 3) as u8;
+                    player.snapshot.max_jump_count = next_jump_count;
+                }
+            }
+            ItemType::HealthRecover => {
+                if let Some(heal_amount) = item.effect.heal_amount {
+                    player.snapshot.hp = player.snapshot.hp.saturating_add(heal_amount).min(MAX_HP);
+                }
+            }
+            ItemType::ExtraLife => {
+                if let Some(extra_lives) = item.effect.extra_lives {
+                    player.snapshot.lives = player.snapshot.lives.saturating_add(extra_lives);
+                }
+            }
+            ItemType::SpeedRankUp => {
+                if let Some(speed_rank_delta) = item.effect.speed_rank_delta {
+                    player.snapshot.move_speed_rank = (player.snapshot.move_speed_rank as i16
+                        + speed_rank_delta as i16)
+                        .clamp(-7, 7) as i8;
+                }
+            }
         }
     }
 
@@ -888,7 +1108,7 @@ impl RoomState {
             hp: 100,
             lives: TEST_LIVES,
             move_speed_rank: 0,
-            max_jump_count: MAX_JUMP_COUNT,
+            max_jump_count: BASE_MAX_JUMP_COUNT,
             jump_count_used: 0,
             grounded: false,
             drop_through_until: None,
@@ -918,7 +1138,7 @@ impl RoomState {
             self_player_id: Some(player_id),
             players: self.player_snapshots(),
             weapon_pickups: self.weapon_pickup_snapshots(),
-            item_pickups: vec![],
+            item_pickups: self.item_pickup_snapshots(),
             match_state: MatchState::Waiting,
         }
     }
@@ -943,6 +1163,7 @@ impl RoomState {
         self.time_remaining_ms = self.time_remaining_ms.saturating_sub(TICK_INTERVAL_MS);
         self.cleanup_expired_pickups(now_ms);
         self.refresh_weapon_spawns(now_ms);
+        self.refresh_item_spawns(now_ms);
         self.step_weapon_pickups();
 
         let player_ids = self.players.keys().cloned().collect::<Vec<_>>();
@@ -977,6 +1198,7 @@ impl RoomState {
             if !is_alive {
                 continue;
             }
+            self.handle_item_pickup(player_id, now_ms);
             self.drop_equipped_weapon_if_needed(player_id, now_ms);
             self.handle_weapon_pickup(player_id, now_ms);
             self.handle_weapon_attack(player_id, now_ms, &mut deaths);
@@ -996,7 +1218,7 @@ impl RoomState {
             players: self.player_snapshots(),
             projectiles: vec![],
             weapon_pickups: self.weapon_pickup_snapshots(),
-            item_pickups: vec![],
+            item_pickups: self.item_pickup_snapshots(),
             time_remaining_ms: self.time_remaining_ms,
         }
     }
@@ -1631,6 +1853,13 @@ struct WorldItemPickup {
     source: ItemSource,
     spawned_at: u64,
     despawn_at: Option<u64>,
+    #[serde(skip_serializing)]
+    spawn_id: Option<String>,
+    #[serde(skip_serializing)]
+    respawn_ms: Option<u64>,
+    #[serde(skip_serializing)]
+    #[allow(dead_code)]
+    spawn_style: SpawnStyle,
 }
 
 #[derive(Serialize, Clone)]
@@ -1897,7 +2126,7 @@ mod tests {
                 hp: 100,
                 lives: TEST_LIVES,
                 move_speed_rank: 0,
-                max_jump_count: MAX_JUMP_COUNT,
+                max_jump_count: BASE_MAX_JUMP_COUNT,
                 jump_count_used: 0,
                 grounded: false,
                 drop_through_until: None,
@@ -2021,6 +2250,75 @@ mod tests {
     }
 
     #[test]
+    fn room_starts_with_spawned_item_pickups() {
+        let room = RoomState::new();
+        assert_eq!(room.item_pickups.len(), 2);
+        let item_ids = room
+            .item_pickups
+            .values()
+            .map(|pickup| pickup.item_id.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(item_ids.contains(&"jump_boost_small"));
+        assert!(item_ids.contains(&"health_pack_small"));
+    }
+
+    #[test]
+    fn item_pickup_applies_jump_boost_and_respawns() {
+        let mut room = RoomState::new();
+        let jump_spawn = runtime_map_data()
+            .item_spawns
+            .iter()
+            .find(|spawn| spawn.item_id == "jump_boost_small")
+            .expect("jump spawn should exist")
+            .clone();
+
+        let mut player = test_player(jump_spawn.position.x, jump_spawn.position.y);
+        player.snapshot.max_jump_count = BASE_MAX_JUMP_COUNT;
+        room.players.insert("player".to_string(), player);
+
+        room.handle_item_pickup("player", 1000);
+
+        let player_after = room.players.get("player").expect("player should exist");
+        assert_eq!(player_after.snapshot.max_jump_count, 2);
+        assert!(room
+            .item_pickups
+            .values()
+            .all(|pickup| pickup.item_id != "jump_boost_small"));
+        assert_eq!(
+            room.next_item_spawn_respawn_at.get(&jump_spawn.id),
+            Some(&(1000 + jump_spawn.respawn_ms))
+        );
+
+        room.refresh_item_spawns(1000 + jump_spawn.respawn_ms);
+
+        assert!(room
+            .item_pickups
+            .values()
+            .any(|pickup| pickup.item_id == "jump_boost_small"));
+    }
+
+    #[test]
+    fn item_pickup_heals_and_clamps_hp() {
+        let mut room = RoomState::new();
+        let health_spawn = runtime_map_data()
+            .item_spawns
+            .iter()
+            .find(|spawn| spawn.item_id == "health_pack_small")
+            .expect("health spawn should exist")
+            .clone();
+
+        let mut player = test_player(health_spawn.position.x, health_spawn.position.y);
+        player.snapshot.hp = 80;
+        room.players.insert("player".to_string(), player);
+
+        room.handle_item_pickup("player", 1000);
+
+        let player_after = room.players.get("player").expect("player should exist");
+        assert_eq!(player_after.snapshot.hp, MAX_HP);
+    }
+
+    #[test]
     fn hitscan_attack_consumes_weapon_and_applies_recoil() {
         let mut room = RoomState::new();
 
@@ -2034,7 +2332,7 @@ mod tests {
                 hp: 100,
                 lives: TEST_LIVES,
                 move_speed_rank: 0,
-                max_jump_count: MAX_JUMP_COUNT,
+                max_jump_count: BASE_MAX_JUMP_COUNT,
                 jump_count_used: 0,
                 grounded: true,
                 drop_through_until: None,
@@ -2072,7 +2370,7 @@ mod tests {
                 hp: 100,
                 lives: TEST_LIVES,
                 move_speed_rank: 0,
-                max_jump_count: MAX_JUMP_COUNT,
+                max_jump_count: BASE_MAX_JUMP_COUNT,
                 jump_count_used: 0,
                 grounded: true,
                 drop_through_until: None,

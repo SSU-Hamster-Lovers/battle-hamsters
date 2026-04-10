@@ -1,5 +1,6 @@
 export * from "./common";
 export * from "./constants";
+export * from "./item-data";
 export * from "./items";
 export * from "./map-data";
 export * from "./protocol";
