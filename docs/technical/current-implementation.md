@@ -29,6 +29,11 @@
 - 플레이어를 사각형 placeholder로 렌더링 가능
 - 키 입력을 `player_input`으로 전송 가능
 
+### 배포
+- Portal은 Cloudflare Pages direct upload 경로를 통해 실제 배포 성공을 확인했다.
+- Server는 Oracle Cloud 자동 배포 경로를 준비했고, SSH 접속 / 디렉터리 생성 / compose 실행 / production 이미지 빌드까지는 확인했다.
+- 다만 최신 Oracle 배포는 `api` 컨테이너가 unhealthy 상태로 끝나 아직 `/health` 외부 응답까지는 확인하지 못했다.
+
 ## 이번 브랜치 목표
 
 ### 플랫폼 이동 1차 구현
@@ -78,4 +83,5 @@
 
 - 맵 경계/카메라 확장 아이디어는 `docs/technical/mini-spec-map-boundaries-camera.md`에 별도 정리한다.
 - `boundaryPolicy`, `cameraPolicy`, `gameplayBounds`, `deathBounds`는 현재 문서 스펙 초안이며 아직 런타임 구현은 아니다.
+- Oracle 배포 후속 디버깅은 `docker-compose logs db`, `docker-compose logs api`, `/opt/battle-hamsters/current/deploy/oracle/.env` 확인부터 이어가면 된다.
 - 구현을 바꿀 때는 이 문서도 같이 갱신한다.

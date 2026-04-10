@@ -5,6 +5,34 @@
 - 프론트엔드(Portal): **Cloudflare Pages**
 - 백엔드(Server): **Oracle Cloud 인스턴스**
 
+## 현재 상태 요약 (2026-04-10)
+
+### Portal
+- Cloudflare Pages direct upload 배포는 성공했다.
+- 현재 방식은 GitHub Actions가 `apps/portal/out`을 `wrangler pages deploy`로 직접 업로드한다.
+
+### Server
+- Oracle Cloud 자동 배포는 다음 단계까지 확인됐다.
+  1. GitHub Actions → Oracle SSH 접속
+  2. 배포 디렉터리 생성
+  3. compose 실행
+  4. production Docker 이미지 빌드
+  5. DB 컨테이너 기동
+- 최신 실패 지점은 아래다.
+  - `api` 컨테이너가 unhealthy 상태
+  - 외부 `http://<OCI_HOST>:8082/health` 응답은 아직 실패
+
+### 다음 디버깅 시작점
+Oracle 인스턴스에서 아래 순서로 확인하면 된다.
+
+```bash
+cd /opt/battle-hamsters/current/deploy/oracle
+docker-compose ps || docker compose ps
+docker-compose logs db --tail=200 || docker compose logs db --tail=200
+docker-compose logs api --tail=200 || docker compose logs api --tail=200
+cat .env
+```
+
 ## 배포 전략
 
 ### Portal
