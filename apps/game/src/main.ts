@@ -39,6 +39,7 @@ const PICKUP_LERP = 0.24;
 const PLAYER_SNAP_DISTANCE = 96;
 const PICKUP_SNAP_DISTANCE = 72;
 const KILL_FEED_TTL_MS = 3_000;
+const KILL_FEED_DISMISSED_RETENTION_MS = 5_000;
 const KILL_FEED_LINE_HEIGHT = 18;
 const KILL_FEED_MARGIN_X = 24;
 const KILL_FEED_MARGIN_Y = 24;
@@ -223,6 +224,7 @@ class MainScene extends Phaser.Scene {
       slideInTween: Phaser.Tweens.Tween | null;
     }
   >();
+  private dismissedKillFeedIds = new Map<string, number>();
   private playerName = getOrCreatePlayerName();
   private localPlayerId: string | null = null;
   private latestTick = 0;
@@ -624,6 +626,9 @@ class MainScene extends Phaser.Scene {
       if (this.renderedKillFeed.has(entry.id)) {
         continue;
       }
+      if (this.dismissedKillFeedIds.has(entry.id)) {
+        continue;
+      }
       const text = this.add
         .text(0, 0, formatKillFeedEntry(entry, players), {
           fontSize: "13px",
@@ -650,7 +655,13 @@ class MainScene extends Phaser.Scene {
       if (now - rendered.receivedAt >= KILL_FEED_TTL_MS) {
         this.startKillFeedExitAnimation(rendered);
         this.renderedKillFeed.delete(id);
+        this.dismissedKillFeedIds.set(id, now);
         removed = true;
+      }
+    }
+    for (const [id, dismissedAt] of this.dismissedKillFeedIds) {
+      if (now - dismissedAt >= KILL_FEED_DISMISSED_RETENTION_MS) {
+        this.dismissedKillFeedIds.delete(id);
       }
     }
     if (removed) {
