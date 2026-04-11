@@ -1,6 +1,8 @@
 use crate::game_data::{ground_top_y, runtime_map_data, world_width, HazardKind};
 use crate::room_combat::{respawn_player, trigger_respawn};
-use crate::{PlayerRuntime, PlayerSnapshot, PlayerState, RoomState, Vector2, PLAYER_HALF_SIZE};
+use crate::{
+    DeathCause, PlayerRuntime, PlayerSnapshot, PlayerState, RoomState, Vector2, PLAYER_HALF_SIZE,
+};
 use crate::{
     WorldSnapshotPayload, DROP_THROUGH_MS, FAST_FALL_GRAVITY_PER_TICK, GRAVITY_PER_TICK,
     JUMP_VELOCITY, MAX_FALL_SPEED, MAX_FAST_FALL_SPEED, RUN_SPEED_PER_TICK,
@@ -12,6 +14,7 @@ impl RoomState {
         self.time_remaining_ms = self
             .time_remaining_ms
             .saturating_sub(crate::TICK_INTERVAL_MS);
+        self.cleanup_kill_feed(now_ms);
         self.cleanup_expired_pickups(now_ms);
         self.refresh_weapon_spawns(now_ms);
         self.refresh_item_spawns(now_ms);
@@ -19,7 +22,7 @@ impl RoomState {
         self.step_item_pickups();
 
         let player_ids = self.players.keys().cloned().collect::<Vec<_>>();
-        let mut deaths = Vec::new();
+        let mut deaths: Vec<(String, DeathCause)> = Vec::new();
 
         for player_id in &player_ids {
             let Some(player) = self.players.get_mut(player_id) else {
@@ -41,8 +44,12 @@ impl RoomState {
 
             step_player(player, now_ms);
 
-            if intersecting_hazard(&player.snapshot).is_some() {
-                deaths.push(player_id.clone());
+            if let Some(kind) = intersecting_hazard(&player.snapshot) {
+                let cause = match kind {
+                    HazardKind::FallZone => DeathCause::FallZone,
+                    HazardKind::InstantKillHazard => DeathCause::InstantKillHazard,
+                };
+                deaths.push((player_id.clone(), cause));
             }
         }
 
@@ -60,7 +67,8 @@ impl RoomState {
             self.handle_weapon_attack(player_id, now_ms, &mut deaths);
         }
 
-        for player_id in deaths {
+        for (player_id, cause) in deaths {
+            self.push_kill_feed(player_id.clone(), cause, now_ms);
             if let Some(player) = self.players.get_mut(&player_id) {
                 trigger_respawn(player, now_ms, ground_top_y(), &self.gameplay_config);
             }
@@ -76,6 +84,7 @@ impl RoomState {
             weapon_pickups: self.weapon_pickup_snapshots(),
             item_pickups: self.item_pickup_snapshots(),
             time_remaining_ms: self.time_remaining_ms,
+            kill_feed: self.kill_feed_snapshot(),
         }
     }
 }

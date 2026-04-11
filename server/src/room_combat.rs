@@ -1,5 +1,5 @@
 use crate::{
-    room_config::RoomGameplayConfig, weapon_definition, Direction, FireMode, HitType,
+    room_config::RoomGameplayConfig, weapon_definition, DeathCause, Direction, FireMode, HitType,
     PlayerRuntime, PlayerState, RoomState, Vector2, PLAYER_HALF_SIZE, RESPAWN_DELAY_MS,
 };
 
@@ -8,7 +8,7 @@ impl RoomState {
         &mut self,
         player_id: &str,
         now_ms: u64,
-        deaths: &mut Vec<String>,
+        deaths: &mut Vec<(String, DeathCause)>,
     ) {
         let Some(shooter_view) = self.players.get(player_id) else {
             return;
@@ -110,7 +110,13 @@ impl RoomState {
             target.external_velocity.y += aim_direction.y * weapon.knockback;
             target.snapshot.hp = target.snapshot.hp.saturating_sub(weapon.damage);
             if target.snapshot.hp == 0 {
-                deaths.push(target_id);
+                deaths.push((
+                    target_id,
+                    DeathCause::Weapon {
+                        killer_id: player_id.to_string(),
+                        weapon_id: weapon_id.clone(),
+                    },
+                ));
             }
         }
     }

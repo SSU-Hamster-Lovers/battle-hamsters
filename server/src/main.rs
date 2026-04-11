@@ -15,7 +15,7 @@ use room_config::RoomGameplayConfig;
 use room_runtime::{intersecting_hazard, spawn_position, step_player, surface_contains_x};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::time::{SystemTime, UNIX_EPOCH};
 use ws_runtime::{start_room_loop, ws_handler, AppState, WsText};
 
@@ -43,6 +43,8 @@ const PICKUP_GRAVITY_PER_TICK: f64 = 1.0;
 const PICKUP_MAX_FALL_SPEED: f64 = 18.0;
 const ITEM_PICKUP_RADIUS: f64 = 30.0;
 const MAX_HP: u16 = 100;
+const KILL_FEED_TTL_MS: u64 = 3_500;
+const KILL_FEED_MAX_ENTRIES: usize = 16;
 
 #[derive(Serialize)]
 struct HealthResponse {
@@ -100,6 +102,8 @@ struct RoomState {
     next_spawn_respawn_at: HashMap<String, u64>,
     next_item_spawn_respawn_at: HashMap<String, u64>,
     sessions: HashMap<String, Recipient<WsText>>,
+    kill_feed: VecDeque<KillFeedEntry>,
+    next_kill_feed_seq: u64,
 }
 
 impl RoomState {
@@ -122,6 +126,8 @@ impl RoomState {
             next_spawn_respawn_at: HashMap::new(),
             next_item_spawn_respawn_at: HashMap::new(),
             sessions: HashMap::new(),
+            kill_feed: VecDeque::new(),
+            next_kill_feed_seq: 0,
         };
         room.spawn_initial_weapons(now);
         room.spawn_initial_items(now);
@@ -133,6 +139,39 @@ impl RoomState {
             .values()
             .map(|player| player.snapshot.clone())
             .collect()
+    }
+
+    pub(crate) fn push_kill_feed(
+        &mut self,
+        victim_id: String,
+        cause: DeathCause,
+        now_ms: u64,
+    ) {
+        self.next_kill_feed_seq += 1;
+        let entry = KillFeedEntry {
+            id: format!("kf_{}_{}", self.server_tick, self.next_kill_feed_seq),
+            occurred_at: now_ms,
+            victim_id,
+            cause,
+        };
+        self.kill_feed.push_back(entry);
+        while self.kill_feed.len() > KILL_FEED_MAX_ENTRIES {
+            self.kill_feed.pop_front();
+        }
+    }
+
+    pub(crate) fn cleanup_kill_feed(&mut self, now_ms: u64) {
+        while let Some(front) = self.kill_feed.front() {
+            if now_ms.saturating_sub(front.occurred_at) > KILL_FEED_TTL_MS {
+                self.kill_feed.pop_front();
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn kill_feed_snapshot(&self) -> Vec<KillFeedEntry> {
+        self.kill_feed.iter().cloned().collect()
     }
 
     fn build_player_snapshot(
@@ -193,6 +232,7 @@ impl RoomState {
             weapon_pickups: self.weapon_pickup_snapshots(),
             item_pickups: self.item_pickup_snapshots(),
             match_state: MatchState::Waiting,
+            kill_feed: self.kill_feed_snapshot(),
         }
     }
 
@@ -277,6 +317,7 @@ struct RoomSnapshotPayload {
     weapon_pickups: Vec<WorldWeaponPickup>,
     item_pickups: Vec<WorldItemPickup>,
     match_state: MatchState,
+    kill_feed: Vec<KillFeedEntry>,
 }
 
 #[derive(Serialize)]
@@ -291,6 +332,36 @@ struct WorldSnapshotPayload {
     weapon_pickups: Vec<WorldWeaponPickup>,
     item_pickups: Vec<WorldItemPickup>,
     time_remaining_ms: u64,
+    kill_feed: Vec<KillFeedEntry>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct KillFeedEntry {
+    id: String,
+    occurred_at: u64,
+    victim_id: String,
+    cause: DeathCause,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum DeathCause {
+    FallZone,
+    InstantKillHazard,
+    #[serde(rename_all = "camelCase")]
+    Weapon {
+        killer_id: String,
+        weapon_id: String,
+    },
+    // `self` variant is reserved for self-inflicted damage (e.g. self-recoil kill).
+    // Not emitted yet in v1 hazard feedback, but kept in the contract so the
+    // shared TS DeathCause remains in sync with the server.
+    #[allow(dead_code)]
+    #[serde(rename = "self", rename_all = "camelCase")]
+    SelfInflicted {
+        weapon_id: String,
+    },
 }
 
 #[derive(Serialize)]
@@ -967,6 +1038,103 @@ mod tests {
         assert_eq!(player.snapshot.equipped_weapon_id, "paws");
         assert_eq!(player.snapshot.equipped_weapon_resource, None);
         assert_eq!(player.snapshot.hp, MAX_HP);
+    }
+
+    #[test]
+    fn hazard_death_pushes_fall_zone_kill_feed_entry() {
+        let mut room = RoomState::new();
+        let pit_center_x = (pit_left_x() + pit_right_x()) / 2.0;
+        let mut player = test_player(pit_center_x, primary_fall_zone().y + PLAYER_HALF_SIZE + 2.0);
+        player.snapshot.id = "player_falls".to_string();
+        room.players.insert("player_falls".to_string(), player);
+
+        let snapshot = room.tick(2_000);
+
+        assert_eq!(snapshot.kill_feed.len(), 1);
+        let entry = &snapshot.kill_feed[0];
+        assert_eq!(entry.victim_id, "player_falls");
+        assert!(matches!(entry.cause, DeathCause::FallZone));
+
+        let player_after = room
+            .players
+            .get("player_falls")
+            .expect("player should still exist");
+        assert_eq!(player_after.snapshot.state, PlayerState::Respawning);
+    }
+
+    #[test]
+    fn instant_kill_hazard_pushes_kill_feed_entry() {
+        let mut room = RoomState::new();
+        let mut player = test_player(660.0, ground_top_y() - PLAYER_HALF_SIZE);
+        player.snapshot.id = "player_spikes".to_string();
+        room.players.insert("player_spikes".to_string(), player);
+
+        let snapshot = room.tick(2_000);
+
+        assert_eq!(snapshot.kill_feed.len(), 1);
+        assert!(matches!(
+            snapshot.kill_feed[0].cause,
+            DeathCause::InstantKillHazard
+        ));
+    }
+
+    #[test]
+    fn weapon_kill_records_weapon_cause_with_killer_and_weapon_id() {
+        let mut room = RoomState::new();
+        let mut shooter = test_player(140.0, 120.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.equipped_weapon_id = "acorn_blaster".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(8);
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+
+        let mut target = test_player(220.0, 120.0);
+        target.snapshot.id = "target".to_string();
+        target.snapshot.hp = 1;
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths: Vec<(String, DeathCause)> = Vec::new();
+        room.handle_weapon_attack("shooter", 1_000, &mut deaths);
+
+        assert_eq!(deaths.len(), 1);
+        let (victim, cause) = &deaths[0];
+        assert_eq!(victim, "target");
+        match cause {
+            DeathCause::Weapon {
+                killer_id,
+                weapon_id,
+            } => {
+                assert_eq!(killer_id, "shooter");
+                assert_eq!(weapon_id, "acorn_blaster");
+            }
+            _ => panic!("expected Weapon cause"),
+        }
+    }
+
+    #[test]
+    fn kill_feed_cleanup_drops_expired_entries() {
+        let mut room = RoomState::new();
+        room.push_kill_feed("victim_old".to_string(), DeathCause::FallZone, 1_000);
+        room.push_kill_feed("victim_new".to_string(), DeathCause::FallZone, 4_000);
+
+        room.cleanup_kill_feed(5_000);
+
+        assert_eq!(room.kill_feed.len(), 1);
+        assert_eq!(room.kill_feed.front().unwrap().victim_id, "victim_new");
+    }
+
+    #[test]
+    fn kill_feed_is_capped_at_max_entries() {
+        let mut room = RoomState::new();
+        for i in 0..(KILL_FEED_MAX_ENTRIES as u64 + 4) {
+            room.push_kill_feed(format!("victim_{}", i), DeathCause::FallZone, 1_000 + i);
+        }
+
+        assert_eq!(room.kill_feed.len(), KILL_FEED_MAX_ENTRIES);
+        // oldest entries (victim_0..victim_3) should have been dropped
+        assert_eq!(room.kill_feed.front().unwrap().victim_id, "victim_4");
     }
 
     #[test]
