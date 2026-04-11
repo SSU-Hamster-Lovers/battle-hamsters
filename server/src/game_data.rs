@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use crate::{
-    DespawnStyle, FireMode, HitType, ResourceModel, SpawnStyle, Vector2, WeaponRarity, ROOM_ID,
+    DespawnStyle, FireMode, HitType, ResourceModel, SpawnStyle, Vector2, WeaponRarity,
 };
 
 #[derive(Clone, Copy)]
@@ -149,6 +149,7 @@ enum MapHazard {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RuntimeMapDefinition {
+    id: String,
     size: MapSize,
     spawn_points: Vec<MapSpawnPoint>,
     collision: Vec<MapCollisionPrimitive>,
@@ -369,7 +370,7 @@ pub(crate) fn runtime_map_data() -> &'static RuntimeMapData {
             .collect::<Vec<_>>();
 
         RuntimeMapData {
-            room_id: ROOM_ID.to_string(),
+            room_id: map_definition.id,
             width: map_definition.size.width,
             height: map_definition.size.height,
             spawn_points: map_definition

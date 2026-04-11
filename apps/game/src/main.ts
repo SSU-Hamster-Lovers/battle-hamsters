@@ -26,11 +26,20 @@ import type {
 const MAP_DEFINITION = trainingArenaMap;
 const GAME_WIDTH = MAP_DEFINITION.size.width;
 const GAME_HEIGHT = MAP_DEFINITION.size.height;
-const ROOM_ID = "room_alpha";
 const WS_URL =
   import.meta.env.VITE_SERVER_WS_URL ??
   `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.hostname}:8081/ws`;
 const PLAYER_NAME_STORAGE_KEY = "battle-hamsters-player-name";
+const PLAYER_ID_STORAGE_KEY = "battle-hamsters-player-id";
+const FREE_PLAY_ROOM_ID = "free_play";
+
+function getUrlParam(key: string): string | null {
+  return new URLSearchParams(window.location.search).get(key);
+}
+
+// URL ?room=xxxx 이 있으면 그 값, 없으면 자유맵
+const ROOM_ID =
+  getUrlParam("room") ?? getUrlParam("roomId") ?? FREE_PLAY_ROOM_ID;
 const INPUT_SEND_INTERVAL_MS = 50;
 const PLAYER_SIZE = 28;
 const REMOTE_PLAYER_LERP = 0.22;
@@ -148,14 +157,36 @@ function isRectHazard(hazard: HazardZone): hazard is HazardZone & {
 }
 
 function getOrCreatePlayerName(): string {
-  const existing = window.sessionStorage.getItem(PLAYER_NAME_STORAGE_KEY);
+  // URL 파라미터 우선 (Portal 에서 전달)
+  const fromUrl = getUrlParam("name");
+  if (fromUrl) {
+    return fromUrl;
+  }
+  const existing = window.localStorage.getItem(PLAYER_NAME_STORAGE_KEY);
   if (existing) {
     return existing;
   }
-
   const generated = `hammy-${Math.random().toString(36).slice(2, 6)}`;
-  window.sessionStorage.setItem(PLAYER_NAME_STORAGE_KEY, generated);
+  window.localStorage.setItem(PLAYER_NAME_STORAGE_KEY, generated);
   return generated;
+}
+
+function getOrCreatePlayerId(): string {
+  const fromUrl = getUrlParam("pid");
+  if (fromUrl) {
+    return fromUrl;
+  }
+  const existing = window.localStorage.getItem(PLAYER_ID_STORAGE_KEY);
+  if (existing) {
+    return existing;
+  }
+  // UUID v4 lite (crypto.randomUUID 미지원 브라우저 fallback)
+  const id =
+    typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  window.localStorage.setItem(PLAYER_ID_STORAGE_KEY, id);
+  return id;
 }
 
 function resolvePlayerName(playerId: string, players: PlayerSnapshot[]): string {
@@ -233,6 +264,8 @@ class MainScene extends Phaser.Scene {
   >();
   private dismissedKillFeedIds = new Map<string, number>();
   private playerName = getOrCreatePlayerName();
+  // 미래 계정 연동용 — 현재는 로컬 저장만 하고 서버에 아직 전달하지 않음
+  private readonly _playerId = getOrCreatePlayerId();
   private localPlayerId: string | null = null;
   private latestTick = 0;
   private sequence = 0;
@@ -528,7 +561,9 @@ class MainScene extends Phaser.Scene {
     this.socket = new WebSocket(WS_URL);
 
     this.socket.addEventListener("open", () => {
-      this.connectionText.setText(`Connected as ${this.playerName}`);
+      this.connectionText.setText(
+        `Connected as ${this.playerName} [${this._playerId.slice(0, 8)}]`,
+      );
       this.connectionText.setColor("#86efac");
       this.send({
         type: "join_room",
