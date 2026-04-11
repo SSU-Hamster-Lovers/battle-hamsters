@@ -49,6 +49,7 @@
 - 발사 시 로컬 보조용 muzzle flash를 짧게 표시한다.
 - remote player와 world pickup은 클라이언트에서 1차 위치 보간을 적용해 시각적 튐을 줄이기 시작했다.
 - local player도 과도한 위치 차이가 아닐 때는 더 빠른 계수로 최소 보간을 적용한다.
+- 플레이어는 이제 코드 기반 임시 텍스처로 만든 캐주얼 햄스터 silhouette로 렌더링되며, idle / run / jump / fall / respawning 상태를 기본 구분한다.
 
 ### Portal
 
@@ -118,14 +119,14 @@
 
 ## 다음 구현 우선순위
 
-1. placeholder 사각형 → 실제 햄스터 렌더링
-2. hazard 진입 피드백 / 사망 원인 표현 정리
-3. `visualBounds` 기반 카메라 clamp 및 follow 카메라 감쇠 이동 구현
+1. hazard 진입 피드백 / 사망 원인 표현 정리
+2. `visualBounds` 기반 카메라 clamp 및 follow 카메라 감쇠 이동 구현
+3. 실제 아트 atlas/spritesheet 기반 햄스터/무기/아이템 교체
 
 ## 참고
 
 - 맵 경계/카메라 확장 아이디어는 `docs/technical/mini-spec-map-boundaries-camera.md`에 별도 정리한다.
 - `boundaryPolicy`, `cameraPolicy`, `visualBounds`, `gameplayBounds`, `deathBounds`는 shared 타입/JSON 예시에 반영됐지만 카메라 런타임에서는 아직 사용하지 않는다.
-- 이번 브랜치 작업 미니 스펙은 `docs/technical/mini-spec-random-spawn-candidates-v1.md`에 정리한다.
+- 이번 브랜치 작업 미니 스펙은 `docs/technical/mini-spec-hamster-rendering-v1.md`에 정리한다.
 - 점프 아이템 세부 규칙 후속은 `docs/technical/mini-spec-jump-item-integration-v1.md`에 정리한다.
 - 구현을 바꿀 때는 이 문서도 같이 갱신한다.
