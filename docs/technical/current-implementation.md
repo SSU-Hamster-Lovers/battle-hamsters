@@ -50,6 +50,8 @@
 - remote player와 world pickup은 클라이언트에서 1차 위치 보간을 적용해 시각적 튐을 줄이기 시작했다.
 - local player도 과도한 위치 차이가 아닐 때는 더 빠른 계수로 최소 보간을 적용한다.
 - 플레이어는 이제 코드 기반 임시 텍스처로 만든 캐주얼 햄스터 silhouette로 렌더링되며, idle / run / jump / fall / respawning 상태를 기본 구분한다.
+- 우상단에 킬로그 스택을 렌더링한다. 서버에서 `world_snapshot.killFeed` / `room_snapshot.killFeed` 로 내려오는 엔트리를 수신해 `{killer} → {무기} → {victim}` / `{victim} → 낙사` / `{victim} → 함정` / `{victim} → 자살` 형식으로 표시하며, 수신 3초 후 로컬에서 제거한다. 재접속/늦합류 클라이언트는 첫 `room_snapshot` 으로 현재 버퍼를 복원한다.
+- 리스폰 중인 플레이어 라벨에 남은 카운트다운(초) 을 함께 표시한다.
 
 ### Portal
 
@@ -119,7 +121,7 @@
 
 ## 다음 구현 우선순위
 
-1. hazard 진입 피드백 / 사망 원인 표현 정리
+1. 하단 플레이어 상태 HUD 실제 배치 (v1 미니 스펙에서는 구조 정의만 남겨 둠)
 2. `visualBounds` 기반 카메라 clamp 및 follow 카메라 감쇠 이동 구현
 3. 실제 아트 atlas/spritesheet 기반 햄스터/무기/아이템 교체
 

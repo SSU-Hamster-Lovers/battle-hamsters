@@ -3,6 +3,7 @@ import type {
   EntityId,
   MatchState,
   PlayerState,
+  TimestampMs,
   Vector2,
 } from "./common";
 import type { ItemSpawnPoint, WorldItemPickup } from "./items";
@@ -144,4 +145,25 @@ export interface MatchSnapshot {
   weaponPickups: WorldWeaponPickup[];
   itemPickups: WorldItemPickup[];
   timeRemainingMs: number;
+  killFeed: KillFeedEntry[];
+}
+
+/**
+ * 사망 원인. killer/weapon 정보는 이 `cause` 내부에 포함된다.
+ * - `fall_zone`: 낙사 구역에 떨어져 사망
+ * - `instant_kill_hazard`: 즉사 함정 진입으로 사망
+ * - `weapon`: 다른 플레이어의 무기에 의해 사망
+ * - `self`: 자기 반동/자폭 등 스스로의 피해로 사망
+ */
+export type DeathCause =
+  | { kind: "fall_zone" }
+  | { kind: "instant_kill_hazard" }
+  | { kind: "weapon"; killerId: EntityId; weaponId: EntityId }
+  | { kind: "self"; weaponId: EntityId };
+
+export interface KillFeedEntry {
+  id: EntityId;
+  occurredAt: TimestampMs;
+  victimId: EntityId;
+  cause: DeathCause;
 }

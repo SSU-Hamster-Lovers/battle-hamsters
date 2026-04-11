@@ -1,8 +1,10 @@
-use crate::game_data::{item_definition, runtime_map_data, weapon_definition, SpawnMode};
+use crate::game_data::{
+    item_definition, runtime_map_data, weapon_definition, world_height, SpawnMode,
+};
 use crate::{
     surface_contains_x, DespawnStyle, ItemSource, PickupKinematics, PickupSource, PlayerRuntime,
     RoomState, SpawnStyle, Vector2, WorldItemPickup, WorldWeaponPickup, ITEM_PICKUP_RADIUS, MAX_HP,
-    PICKUP_GRAVITY_PER_TICK, PICKUP_HALF_HEIGHT, PICKUP_MAX_FALL_SPEED,
+    PICKUP_CULL_MARGIN, PICKUP_GRAVITY_PER_TICK, PICKUP_HALF_HEIGHT, PICKUP_MAX_FALL_SPEED,
 };
 
 impl RoomState {
@@ -175,6 +177,46 @@ impl RoomState {
                 self.next_item_spawn_respawn_at.remove(&cycle_key);
                 let spawn = select_item_spawn_candidate(&candidates, now_ms);
                 self.spawn_item_from_spawn(&spawn, now_ms);
+            }
+        }
+    }
+
+    pub(crate) fn cull_out_of_world_pickups(&mut self, now_ms: u64) {
+        let weapon_ids: Vec<String> = self
+            .weapon_pickups
+            .iter()
+            .filter_map(|(id, pickup)| {
+                pickup_out_of_world(&pickup.position).then_some(id.clone())
+            })
+            .collect();
+
+        for pickup_id in weapon_ids {
+            if let Some(pickup) = self.weapon_pickups.remove(&pickup_id) {
+                if let (Some(spawn_cycle_key), Some(respawn_ms)) =
+                    (pickup.spawn_cycle_key, pickup.respawn_ms)
+                {
+                    self.next_spawn_respawn_at
+                        .insert(spawn_cycle_key, now_ms + respawn_ms);
+                }
+            }
+        }
+
+        let item_ids: Vec<String> = self
+            .item_pickups
+            .iter()
+            .filter_map(|(id, pickup)| {
+                pickup_out_of_world(&pickup.position).then_some(id.clone())
+            })
+            .collect();
+
+        for pickup_id in item_ids {
+            if let Some(pickup) = self.item_pickups.remove(&pickup_id) {
+                if let (Some(spawn_cycle_key), Some(respawn_ms)) =
+                    (pickup.spawn_cycle_key, pickup.respawn_ms)
+                {
+                    self.next_item_spawn_respawn_at
+                        .insert(spawn_cycle_key, now_ms + respawn_ms);
+                }
             }
         }
     }
@@ -544,4 +586,20 @@ fn select_candidate_index(candidate_len: usize, now_ms: u64) -> usize {
     }
 
     ((now_ms / 10) as usize) % candidate_len
+}
+
+fn pickup_out_of_world(position: &Vector2) -> bool {
+    if position.y > world_height() + PICKUP_CULL_MARGIN {
+        return true;
+    }
+
+    for hazard in &runtime_map_data().hazards {
+        let within_x = position.x >= hazard.x && position.x <= hazard.x + hazard.width;
+        let within_y = position.y >= hazard.y && position.y <= hazard.y + hazard.height;
+        if within_x && within_y {
+            return true;
+        }
+    }
+
+    false
 }

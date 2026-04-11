@@ -12,6 +12,7 @@ import type {
   CollisionPrimitive,
   HazardZone,
   JoinRoomMessage,
+  KillFeedEntry,
   PlayerInputMessage,
   PlayerSnapshot,
   SpawnPoint,
@@ -37,6 +38,15 @@ const LOCAL_PLAYER_LERP = 0.35;
 const PICKUP_LERP = 0.24;
 const PLAYER_SNAP_DISTANCE = 96;
 const PICKUP_SNAP_DISTANCE = 72;
+const KILL_FEED_TTL_MS = 3_000;
+const KILL_FEED_DISMISSED_RETENTION_MS = 5_000;
+const KILL_FEED_LINE_HEIGHT = 18;
+const KILL_FEED_MARGIN_X = 24;
+const KILL_FEED_MARGIN_Y = 24;
+const KILL_FEED_SLIDE_IN_DISTANCE = 96;
+const KILL_FEED_SLIDE_IN_MS = 200;
+const KILL_FEED_EXIT_RISE = 18;
+const KILL_FEED_EXIT_MS = 280;
 
 const COLLISION_PRIMITIVES: CollisionPrimitive[] = MAP_DEFINITION.collision;
 const HAZARDS: HazardZone[] = MAP_DEFINITION.hazards;
@@ -142,6 +152,59 @@ function getOrCreatePlayerName(): string {
   return generated;
 }
 
+function resolvePlayerName(playerId: string, players: PlayerSnapshot[]): string {
+  const match = players.find((player) => player.id === playerId);
+  return match ? match.name : playerId;
+}
+
+function resolveWeaponName(weaponId: string): string {
+  return weaponDefinitionById[weaponId]?.name ?? weaponId;
+}
+
+function formatKillFeedEntry(
+  entry: KillFeedEntry,
+  players: PlayerSnapshot[],
+): string {
+  const victim = resolvePlayerName(entry.victimId, players);
+  switch (entry.cause.kind) {
+    case "fall_zone":
+      return `${victim} → 낙사`;
+    case "instant_kill_hazard":
+      return `${victim} → 함정`;
+    case "weapon": {
+      const killer = resolvePlayerName(entry.cause.killerId, players);
+      const weapon = resolveWeaponName(entry.cause.weaponId);
+      return `${killer} → ${weapon} → ${victim}`;
+    }
+    case "self":
+      return `${victim} → 자살`;
+  }
+}
+
+function formatRespawnCountdown(respawnAt: number | null): string {
+  if (respawnAt === null) {
+    return "중";
+  }
+  const remainingMs = respawnAt - Date.now();
+  if (remainingMs <= 0) {
+    return "곧";
+  }
+  return `${Math.ceil(remainingMs / 1000)}s`;
+}
+
+function killFeedColorForCause(kind: KillFeedEntry["cause"]["kind"]): string {
+  switch (kind) {
+    case "fall_zone":
+      return "#fde68a";
+    case "instant_kill_hazard":
+      return "#f0abfc";
+    case "weapon":
+      return "#fecaca";
+    case "self":
+      return "#c4b5fd";
+  }
+}
+
 class MainScene extends Phaser.Scene {
   private socket: WebSocket | null = null;
   private statusText!: Phaser.GameObjects.Text;
@@ -152,6 +215,16 @@ class MainScene extends Phaser.Scene {
   private renderedPlayers = new Map<string, RenderedPlayer>();
   private renderedWeaponPickups = new Map<string, RenderedWeaponPickup>();
   private renderedItemPickups = new Map<string, RenderedItemPickup>();
+  private renderedKillFeed = new Map<
+    string,
+    {
+      text: Phaser.GameObjects.Text;
+      receivedAt: number;
+      justEntered: boolean;
+      slideInTween: Phaser.Tweens.Tween | null;
+    }
+  >();
+  private dismissedKillFeedIds = new Map<string, number>();
   private playerName = getOrCreatePlayerName();
   private localPlayerId: string | null = null;
   private latestTick = 0;
@@ -529,6 +602,7 @@ class MainScene extends Phaser.Scene {
     this.renderWeaponPickups(message.payload.weaponPickups);
     this.renderItemPickups(message.payload.itemPickups);
     this.captureLocalPlayer(message.payload.players);
+    this.applyKillFeed(message.payload.killFeed, message.payload.players);
     this.updateInfoText(message.payload.players, "waiting", null);
   }
 
@@ -538,11 +612,114 @@ class MainScene extends Phaser.Scene {
     this.renderWeaponPickups(message.payload.weaponPickups);
     this.renderItemPickups(message.payload.itemPickups);
     this.captureLocalPlayer(message.payload.players);
+    this.applyKillFeed(message.payload.killFeed, message.payload.players);
     this.updateInfoText(
       message.payload.players,
       message.payload.matchState,
       message.payload.timeRemainingMs,
     );
+  }
+
+  private applyKillFeed(entries: KillFeedEntry[], players: PlayerSnapshot[]) {
+    const now = this.time.now;
+    for (const entry of entries) {
+      if (this.renderedKillFeed.has(entry.id)) {
+        continue;
+      }
+      if (this.dismissedKillFeedIds.has(entry.id)) {
+        continue;
+      }
+      const text = this.add
+        .text(0, 0, formatKillFeedEntry(entry, players), {
+          fontSize: "13px",
+          color: killFeedColorForCause(entry.cause.kind),
+          backgroundColor: "#0b1220cc",
+          padding: { left: 8, right: 8, top: 4, bottom: 4 },
+        })
+        .setDepth(12)
+        .setScrollFactor(0)
+        .setAlpha(0);
+      this.renderedKillFeed.set(entry.id, {
+        text,
+        receivedAt: now,
+        justEntered: true,
+        slideInTween: null,
+      });
+    }
+    this.layoutKillFeed();
+  }
+
+  private pruneKillFeed(now: number) {
+    let removed = false;
+    for (const [id, rendered] of this.renderedKillFeed) {
+      if (now - rendered.receivedAt >= KILL_FEED_TTL_MS) {
+        this.startKillFeedExitAnimation(rendered);
+        this.renderedKillFeed.delete(id);
+        this.dismissedKillFeedIds.set(id, now);
+        removed = true;
+      }
+    }
+    for (const [id, dismissedAt] of this.dismissedKillFeedIds) {
+      if (now - dismissedAt >= KILL_FEED_DISMISSED_RETENTION_MS) {
+        this.dismissedKillFeedIds.delete(id);
+      }
+    }
+    if (removed) {
+      this.layoutKillFeed();
+    }
+  }
+
+  private startKillFeedExitAnimation(rendered: {
+    text: Phaser.GameObjects.Text;
+    slideInTween: Phaser.Tweens.Tween | null;
+  }) {
+    rendered.slideInTween?.stop();
+    rendered.slideInTween = null;
+    const { text } = rendered;
+    this.tweens.add({
+      targets: text,
+      y: text.y - KILL_FEED_EXIT_RISE,
+      alpha: 0,
+      duration: KILL_FEED_EXIT_MS,
+      ease: "Sine.easeOut",
+      onComplete: () => text.destroy(),
+    });
+  }
+
+  private layoutKillFeed() {
+    const ordered = [...this.renderedKillFeed.values()].sort(
+      (a, b) => a.receivedAt - b.receivedAt,
+    );
+    ordered.forEach((rendered, index) => {
+      const finalX = GAME_WIDTH - KILL_FEED_MARGIN_X - rendered.text.width;
+      const finalY = KILL_FEED_MARGIN_Y + index * KILL_FEED_LINE_HEIGHT;
+
+      if (rendered.justEntered) {
+        rendered.justEntered = false;
+        rendered.text.setPosition(
+          finalX - KILL_FEED_SLIDE_IN_DISTANCE,
+          finalY,
+        );
+        rendered.slideInTween = this.tweens.add({
+          targets: rendered.text,
+          x: finalX,
+          alpha: 1,
+          duration: KILL_FEED_SLIDE_IN_MS,
+          ease: "Sine.easeOut",
+          onComplete: () => {
+            rendered.slideInTween = null;
+          },
+        });
+        return;
+      }
+
+      rendered.text.y = finalY;
+      if (rendered.slideInTween && rendered.slideInTween.isPlaying()) {
+        rendered.slideInTween.updateTo("x", finalX, true);
+      } else {
+        rendered.text.x = finalX;
+      }
+    });
   }
 
   private updateInfoText(
@@ -647,7 +824,7 @@ class MainScene extends Phaser.Scene {
       }
       rendered.label.setText(
         player.state === "respawning"
-          ? `${player.name} (리스폰 중)`
+          ? `${player.name} (리스폰 ${formatRespawnCountdown(player.respawnAt)})`
           : player.name,
       );
       rendered.label.setPosition(
@@ -917,6 +1094,8 @@ class MainScene extends Phaser.Scene {
   }
 
   update() {
+    this.pruneKillFeed(this.time.now);
+
     if (this.attackFlashUntil !== 0 && this.time.now > this.attackFlashUntil) {
       this.attackFlash.clear();
       this.attackFlashUntil = 0;
