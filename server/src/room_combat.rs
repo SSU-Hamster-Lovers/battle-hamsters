@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::{
     room_config::RoomGameplayConfig, weapon_definition, DeathCause, Direction, FireMode, HitType,
-    PlayerRuntime, PlayerState, RoomState, Vector2, PLAYER_HALF_SIZE, RESPAWN_DELAY_MS,
+    LastHitInfo, PlayerRuntime, PlayerState, RoomState, Vector2, PLAYER_HALF_SIZE, RESPAWN_DELAY_MS,
 };
 
 impl RoomState {
@@ -117,6 +117,11 @@ impl RoomState {
             target.external_velocity.x += aim_direction.x * weapon.knockback;
             target.external_velocity.y += aim_direction.y * weapon.knockback;
             target.snapshot.hp = target.snapshot.hp.saturating_sub(weapon.damage);
+            target.last_hit_by = Some(LastHitInfo {
+                killer_id: player_id.to_string(),
+                weapon_id: weapon_id.clone(),
+                hit_at_ms: now_ms,
+            });
             if target.snapshot.hp == 0 && dying_this_tick.insert(target_id.clone()) {
                 deaths.push((
                     target_id,
@@ -185,6 +190,7 @@ pub(crate) fn reset_general_combat_state(
     player.attack_queued = false;
     player.attack_was_down = false;
     player.next_attack_at = 0;
+    player.last_hit_by = None;
 }
 
 pub(crate) fn trigger_respawn(
