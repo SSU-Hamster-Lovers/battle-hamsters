@@ -37,6 +37,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Bundle shared data into server context
+        # include_str!("../../packages/shared/...") 가 빌드 시 server/ 내부 경로를 기대하므로
+        # server/packages/shared 로 복사해 Docker 컨텍스트에 포함시킨다
+        run: |
+          mkdir -p server/packages
+          cp -r packages/shared server/packages/shared
+
       - name: Create release archive
         run: tar -czf release.tar.gz server deploy/oracle
 
