@@ -4,6 +4,10 @@ import {
   trainingArenaMap,
   weaponDefinitionById,
 } from "@battle-hamsters/shared";
+import {
+  ensureHamsterPlaceholderTextures,
+  hamsterTextureForSnapshot,
+} from "./hamster-visuals";
 import type {
   CollisionPrimitive,
   HazardZone,
@@ -71,12 +75,15 @@ const PIT_WALLS = COLLISION_PRIMITIVES.filter(
 );
 
 type RenderedPlayer = {
-  body: Phaser.GameObjects.Rectangle;
+  root: Phaser.GameObjects.Container;
+  shadow: Phaser.GameObjects.Ellipse;
+  sprite: Phaser.GameObjects.Image;
+  collider: Phaser.GameObjects.Rectangle;
   label: Phaser.GameObjects.Text;
   targetX: number;
   targetY: number;
   isLocal: boolean;
-  state: PlayerSnapshot["state"];
+  snapshot: PlayerSnapshot;
 };
 
 type RenderedWeaponPickup = {
@@ -170,6 +177,7 @@ class MainScene extends Phaser.Scene {
 
   create() {
     this.cameras.main.setBackgroundColor("#111827");
+    ensureHamsterPlaceholderTextures(this);
     this.drawStage();
 
     this.statusText = this.add
@@ -580,56 +588,62 @@ class MainScene extends Phaser.Scene {
     for (const player of players) {
       let rendered = this.renderedPlayers.get(player.id);
       if (!rendered) {
+        const root = this.add.container(player.position.x, player.position.y);
+        const shadow = this.add.ellipse(0, 12, 22, 8, 0x020617, 0.22);
+        const sprite = this.add.image(
+          0,
+          -2,
+          hamsterTextureForSnapshot(player, this.time.now),
+        );
+        const collider = this.add.rectangle(
+          0,
+          0,
+          PLAYER_SIZE,
+          PLAYER_SIZE,
+          0x000000,
+          0,
+        );
+        collider.setStrokeStyle(2, 0xffedd5, 0.95);
+        root.add([shadow, sprite, collider]);
         rendered = {
-          body: this.add.rectangle(
-            player.position.x,
-            player.position.y,
-            PLAYER_SIZE,
-            PLAYER_SIZE,
-            0xf59e0b,
-          ),
-          label: this.add.text(
-            player.position.x,
-            player.position.y - 28,
-            player.name,
-            {
-              fontSize: "12px",
-              color: "#f9fafb",
-            },
-          ),
+          root,
+          shadow,
+          sprite,
+          collider,
+          label: this.add.text(player.position.x, player.position.y - 28, player.name, {
+            fontSize: "12px",
+            color: "#f9fafb",
+          }),
           targetX: player.position.x,
           targetY: player.position.y,
           isLocal: false,
-          state: player.state,
+          snapshot: player,
         };
         this.renderedPlayers.set(player.id, rendered);
       }
 
       const isLocalPlayer = player.id === this.localPlayerId;
       rendered.isLocal = isLocalPlayer;
-      rendered.state = player.state;
-      const baseColor = isLocalPlayer ? 0x34d399 : 0xf59e0b;
-      const color = player.state === "respawning" ? 0x94a3b8 : baseColor;
-
-      rendered.body.setFillStyle(color);
-      rendered.body.setStrokeStyle(
+      rendered.snapshot = player;
+      rendered.collider.setStrokeStyle(
         2,
         isLocalPlayer ? 0xeafff7 : 0xffedd5,
         0.95,
       );
+      rendered.shadow.setFillStyle(isLocalPlayer ? 0x14532d : 0x020617, 0.24);
       rendered.targetX = player.position.x;
       rendered.targetY = player.position.y;
       if (
         player.state === "respawning" ||
         shouldSnapToTarget(
-          rendered.body.x,
-          rendered.body.y,
+          rendered.root.x,
+          rendered.root.y,
           rendered.targetX,
           rendered.targetY,
           PLAYER_SNAP_DISTANCE,
         )
       ) {
-        rendered.body.setPosition(rendered.targetX, rendered.targetY);
+        rendered.root.setPosition(rendered.targetX, rendered.targetY);
       }
       rendered.label.setText(
         player.state === "respawning"
@@ -637,10 +651,9 @@ class MainScene extends Phaser.Scene {
           : player.name,
       );
       rendered.label.setPosition(
-        rendered.body.x - rendered.label.width / 2,
-        rendered.body.y - 32,
+        rendered.root.x - rendered.label.width / 2,
+        rendered.root.y - 32,
       );
-      rendered.body.setAlpha(player.state === "alive" ? 1 : 0.35);
     }
 
     for (const [playerId] of this.renderedPlayers) {
@@ -656,7 +669,7 @@ class MainScene extends Phaser.Scene {
       return;
     }
 
-    rendered.body.destroy();
+    rendered.root.destroy();
     rendered.label.destroy();
     this.renderedPlayers.delete(playerId);
   }
@@ -834,8 +847,8 @@ class MainScene extends Phaser.Scene {
       ? this.renderedPlayers.get(this.localPlayerId)
       : null;
     const pointer = this.input.activePointer;
-    const originX = localPlayer?.body.x ?? GAME_WIDTH / 2;
-    const originY = localPlayer?.body.y ?? GAME_HEIGHT / 2;
+    const originX = localPlayer?.root.x ?? GAME_WIDTH / 2;
+    const originY = localPlayer?.root.y ?? GAME_HEIGHT / 2;
     const aimX = pointer.worldX - originX;
     const aimY = pointer.worldY - originY;
     const aimLength = Math.hypot(aimX, aimY) || 1;
@@ -911,15 +924,21 @@ class MainScene extends Phaser.Scene {
 
     for (const [, rendered] of this.renderedPlayers) {
       const lerpFactor = rendered.isLocal ? LOCAL_PLAYER_LERP : REMOTE_PLAYER_LERP;
-      rendered.body.x = Phaser.Math.Linear(rendered.body.x, rendered.targetX, lerpFactor);
-      rendered.body.y = Phaser.Math.Linear(rendered.body.y, rendered.targetY, lerpFactor);
-      rendered.label.setPosition(
-        rendered.body.x - rendered.label.width / 2,
-        rendered.body.y - 32,
+      rendered.root.x = Phaser.Math.Linear(rendered.root.x, rendered.targetX, lerpFactor);
+      rendered.root.y = Phaser.Math.Linear(rendered.root.y, rendered.targetY, lerpFactor);
+      rendered.sprite.setTexture(
+        hamsterTextureForSnapshot(rendered.snapshot, this.time.now),
       );
-      if (rendered.state === "respawning") {
+      rendered.sprite.setFlipX(rendered.snapshot.direction === "left");
+      rendered.label.setPosition(
+        rendered.root.x - rendered.label.width / 2,
+        rendered.root.y - 32,
+      );
+      if (rendered.snapshot.state === "respawning") {
         const pulse = 0.28 + (Math.sin(this.time.now / 120) + 1) * 0.12;
-        rendered.body.setAlpha(pulse);
+        rendered.root.setAlpha(pulse);
+      } else {
+        rendered.root.setAlpha(1);
       }
     }
 

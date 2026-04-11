@@ -23,6 +23,7 @@
 
 - [점프 아이템 연동 1차](technical/mini-spec-jump-item-integration-v1.md)
 - [후보 지점 랜덤 스폰 1차](technical/mini-spec-random-spawn-candidates-v1.md)
+- [캐주얼 placeholder 햄스터 렌더링 1차](technical/mini-spec-hamster-rendering-v1.md)
 - [클라이언트 보간 및 시각 품질 1차](technical/mini-spec-client-smoothing-v1.md)
 - [카메라 visual bounds 1차](technical/mini-spec-camera-visual-bounds-v1.md)
 - [hazard 피드백 1차](technical/mini-spec-hazard-feedback-v1.md)
