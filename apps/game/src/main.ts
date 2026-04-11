@@ -40,6 +40,10 @@ const PLAYER_SNAP_DISTANCE = 96;
 const PICKUP_SNAP_DISTANCE = 72;
 const CAMERA_FOLLOW_LERP_X = 0.1;
 const CAMERA_FOLLOW_LERP_Y = 0.1;
+// Fixed canvas (viewport) dimensions. Separate from MAP_DEFINITION.size which
+// is the full world/map size that the camera scrolls over.
+const VIEWPORT_WIDTH = 800;
+const VIEWPORT_HEIGHT = 600;
 const KILL_FEED_TTL_MS = 3_000;
 const KILL_FEED_DISMISSED_RETENTION_MS = 5_000;
 const KILL_FEED_LINE_HEIGHT = 18;
@@ -281,16 +285,16 @@ class MainScene extends Phaser.Scene {
       .setDepth(10)
       .setScrollFactor(0);
 
-    this.attackFlash = this.add.graphics().setDepth(9).setScrollFactor(0);
+    this.attackFlash = this.add.graphics().setDepth(9);
 
     this.add
-      .text(24, GAME_HEIGHT - 70, "Move: A / D or Arrow Left / Right", {
+      .text(24, VIEWPORT_HEIGHT - 70, "Move: A / D or Arrow Left / Right", {
         fontSize: "14px",
         color: "#9ca3af",
       })
       .setScrollFactor(0);
     this.add
-      .text(24, GAME_HEIGHT - 46, "Jump: W / Space / Up  |  Down: S / Down", {
+      .text(24, VIEWPORT_HEIGHT - 46, "Jump: W / Space / Up  |  Down: S / Down", {
         fontSize: "14px",
         color: "#9ca3af",
       })
@@ -298,7 +302,7 @@ class MainScene extends Phaser.Scene {
     this.add
       .text(
         24,
-        GAME_HEIGHT - 22,
+        VIEWPORT_HEIGHT - 22,
         "E: Pick Up  |  Q: Drop Weapon  |  Mouse: Aim / Attack",
         {
           fontSize: "14px",
@@ -730,7 +734,7 @@ class MainScene extends Phaser.Scene {
       (a, b) => a.receivedAt - b.receivedAt,
     );
     ordered.forEach((rendered, index) => {
-      const finalX = GAME_WIDTH - KILL_FEED_MARGIN_X - rendered.text.width;
+      const finalX = VIEWPORT_WIDTH - KILL_FEED_MARGIN_X - rendered.text.width;
       const finalY = KILL_FEED_MARGIN_Y + index * KILL_FEED_LINE_HEIGHT;
 
       if (rendered.justEntered) {
@@ -1186,8 +1190,8 @@ class MainScene extends Phaser.Scene {
 
 new Phaser.Game({
   type: Phaser.AUTO,
-  width: GAME_WIDTH,
-  height: GAME_HEIGHT,
+  width: VIEWPORT_WIDTH,
+  height: VIEWPORT_HEIGHT,
   backgroundColor: "#111827",
   scene: MainScene,
 });

@@ -469,3 +469,11 @@ pub(crate) fn pit_left_x() -> f64 {
 pub(crate) fn pit_right_x() -> f64 {
     primary_fall_zone().x + primary_fall_zone().width
 }
+
+pub(crate) fn primary_instant_kill_hazard() -> &'static HazardRect {
+    runtime_map_data()
+        .hazards
+        .iter()
+        .find(|hazard| hazard.kind == HazardKind::InstantKillHazard)
+        .expect("training arena should define an instant kill hazard")
+}

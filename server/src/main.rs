@@ -7,8 +7,8 @@ mod room_pickups;
 mod room_runtime;
 mod ws_runtime;
 use game_data::{
-    ground_top_y, pit_left_x, pit_right_x, primary_fall_zone, room_id, runtime_map_data,
-    weapon_definition, world_height, HazardKind,
+    ground_top_y, pit_left_x, pit_right_x, primary_fall_zone, primary_instant_kill_hazard,
+    room_id, runtime_map_data, weapon_definition, world_height, HazardKind,
 };
 use room_combat::{respawn_player, trigger_respawn};
 use room_config::RoomGameplayConfig;
@@ -706,7 +706,8 @@ mod tests {
 
     #[test]
     fn instant_kill_hazard_is_separate_from_fall_zone() {
-        let player_on_spikes = test_player(660.0, ground_top_y() - PLAYER_HALF_SIZE);
+        let ikh = primary_instant_kill_hazard();
+        let player_on_spikes = test_player(ikh.x + ikh.width / 2.0, ground_top_y() - PLAYER_HALF_SIZE);
         let player_in_pit = test_player(
             (pit_left_x() + pit_right_x()) / 2.0,
             primary_fall_zone().y + PLAYER_HALF_SIZE + 1.0,
@@ -733,7 +734,7 @@ mod tests {
             .expect("spawn pickup should exist");
         assert_eq!(pickup.weapon_id, "acorn_blaster");
         assert_eq!(pickup.resource_remaining, 8);
-        assert!(matches!(pickup.position.x, 520.0 | 620.0));
+        assert!(matches!(pickup.position.x, 320.0 | 1280.0));
     }
 
     #[test]
@@ -753,7 +754,7 @@ mod tests {
             .values()
             .find(|pickup| pickup.item_id == "health_pack_small")
             .expect("heal pickup should exist");
-        assert!(matches!(heal_pickup.position.x, 220.0 | 680.0));
+        assert!(matches!(heal_pickup.position.x, 220.0 | 1380.0));
     }
 
     #[test]
@@ -1068,7 +1069,8 @@ mod tests {
     #[test]
     fn instant_kill_hazard_pushes_kill_feed_entry() {
         let mut room = RoomState::new();
-        let mut player = test_player(660.0, ground_top_y() - PLAYER_HALF_SIZE);
+        let ikh = primary_instant_kill_hazard();
+        let mut player = test_player(ikh.x + ikh.width / 2.0, ground_top_y() - PLAYER_HALF_SIZE);
         player.snapshot.id = "player_spikes".to_string();
         room.players.insert("player_spikes".to_string(), player);
 
