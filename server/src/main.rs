@@ -1,5 +1,6 @@
 use actix::Recipient;
-use actix_web::{web, App, HttpResponse, HttpServer, Responder};
+use actix_cors::Cors;
+use actix_web::{http::header, web, App, HttpResponse, HttpServer, Responder};
 mod game_data;
 mod room_combat;
 mod room_config;
@@ -20,7 +21,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use ws_runtime::{start_room_loop, ws_handler, AppState, WsText};
 
 const SERVER_VERSION: &str = "0.1.0";
-const ROOM_ID: &str = "room_alpha";
 const DEFAULT_TIME_LIMIT_MS: u64 = 300_000;
 const TICK_RATE: u64 = 20;
 const TICK_INTERVAL_MS: u64 = 1000 / TICK_RATE;
@@ -47,6 +47,8 @@ const PICKUP_CULL_MARGIN: f64 = 64.0;
 const LAST_HIT_TTL_MS: u64 = 5_000;
 const KILL_FEED_TTL_MS: u64 = 3_500;
 const KILL_FEED_MAX_ENTRIES: usize = 16;
+const FREE_PLAY_ROOM_ID: &str = "free_play";
+const EMPTY_ROOM_TTL_MS: u64 = 600_000; // 10분, 빈 매치룸 자동 제거
 
 #[derive(Serialize)]
 struct HealthResponse {
@@ -71,6 +73,67 @@ async fn hello(query: web::Query<UserQuery>) -> impl Responder {
     HttpResponse::Ok().json(serde_json::json!({
         "message": format!("Hello, {}!", name)
     }))
+}
+
+// POST /rooms — 매치룸 생성 → { roomId, code }
+async fn create_room(app_state: web::Data<AppState>) -> impl Responder {
+    use rand::Rng;
+    let room_seq = app_state.next_room_seq();
+    let room_id_str = format!("match_{}", room_seq);
+
+    let code = {
+        let codes = app_state.room_codes.lock().expect("codes poisoned");
+        let mut rng = rand::thread_rng();
+        loop {
+            let candidate = format!("{:04}", rng.gen_range(0..10000u32));
+            if !codes.contains_key(&candidate) {
+                break candidate;
+            }
+        }
+    };
+
+    let room = RoomState::new_match(room_id_str.clone(), code.clone());
+    {
+        let mut rooms = app_state.rooms.lock().expect("rooms poisoned");
+        rooms.insert(room_id_str.clone(), room);
+    }
+    {
+        let mut codes = app_state.room_codes.lock().expect("codes poisoned");
+        codes.insert(code.clone(), room_id_str.clone());
+    }
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "roomId": room_id_str,
+        "code": code,
+    }))
+}
+
+// GET /rooms — 활성 룸 목록
+async fn list_rooms(app_state: web::Data<AppState>) -> impl Responder {
+    let rooms = app_state.rooms.lock().expect("rooms poisoned");
+    let list: Vec<serde_json::Value> = rooms
+        .values()
+        .map(|r| {
+            serde_json::json!({
+                "roomId": r.room_id,
+                "type": if r.room_type == RoomType::FreePlay { "free_play" } else { "match" },
+                "code": r.room_code,
+                "players": r.sessions.len(),
+                "matchState": "running",
+            })
+        })
+        .collect();
+    HttpResponse::Ok().json(list)
+}
+
+// GET /rooms/free — 자유맵 roomId 조회
+async fn free_room(app_state: web::Data<AppState>) -> impl Responder {
+    let rooms = app_state.rooms.lock().expect("rooms poisoned");
+    if let Some(r) = rooms.get(FREE_PLAY_ROOM_ID) {
+        HttpResponse::Ok().json(serde_json::json!({ "roomId": r.room_id }))
+    } else {
+        HttpResponse::InternalServerError().body("free play room not found")
+    }
 }
 
 #[derive(Clone)]
@@ -99,8 +162,17 @@ struct PlayerRuntime {
     last_hit_by: Option<LastHitInfo>,
 }
 
+#[derive(Clone, PartialEq, Eq)]
+enum RoomType {
+    FreePlay,
+    Match,
+}
+
 struct RoomState {
     room_id: String,
+    room_type: RoomType,
+    room_code: Option<String>,
+    empty_since_ms: Option<u64>,
     server_tick: u64,
     time_remaining_ms: u64,
     gameplay_config: RoomGameplayConfig,
@@ -117,14 +189,42 @@ struct RoomState {
 }
 
 impl RoomState {
+    /// 테스트 및 내부용 기본 생성자 (Match 타입, 기본 config)
     fn new() -> Self {
         Self::with_gameplay_config(RoomGameplayConfig::default())
     }
 
     fn with_gameplay_config(gameplay_config: RoomGameplayConfig) -> Self {
+        Self::create(room_id().to_string(), RoomType::Match, None, gameplay_config)
+    }
+
+    pub(crate) fn new_free_play() -> Self {
+        let config = RoomGameplayConfig {
+            start_hp: 100,
+            stock_lives: 255,          // 사실상 무제한
+            base_jump_count: 1,
+            max_jump_count_limit: 3,
+            time_limit_ms: u64::MAX,   // 시간 제한 없음
+        };
+        Self::create(FREE_PLAY_ROOM_ID.to_string(), RoomType::FreePlay, None, config)
+    }
+
+    pub(crate) fn new_match(room_id: String, code: String) -> Self {
+        Self::create(room_id, RoomType::Match, Some(code), RoomGameplayConfig::default())
+    }
+
+    fn create(
+        room_id: String,
+        room_type: RoomType,
+        room_code: Option<String>,
+        gameplay_config: RoomGameplayConfig,
+    ) -> Self {
         let now = now_ms();
         let mut room = Self {
-            room_id: room_id().to_string(),
+            room_id,
+            room_type,
+            room_code,
+            empty_since_ms: None,
             server_tick: 0,
             time_remaining_ms: gameplay_config.time_limit_ms,
             gameplay_config,
@@ -249,7 +349,11 @@ impl RoomState {
 
     fn remove_player(&mut self, player_id: &str) -> bool {
         self.sessions.remove(player_id);
-        self.players.remove(player_id).is_some()
+        let removed = self.players.remove(player_id).is_some();
+        if self.sessions.is_empty() && self.room_type == RoomType::Match {
+            self.empty_since_ms = Some(now_ms());
+        }
+        removed
     }
 
     fn apply_input(&mut self, player_id: &str, input: PlayerInputPayload) {
@@ -595,10 +699,20 @@ async fn main() -> std::io::Result<()> {
     log::info!("Starting Battle Hamsters Server on port {}", api_port);
 
     HttpServer::new(move || {
+        let cors = Cors::default()
+            .allow_any_origin()
+            .allowed_methods(vec!["GET", "POST", "OPTIONS"])
+            .allowed_headers(vec![header::CONTENT_TYPE, header::ACCEPT])
+            .max_age(3600);
+
         App::new()
+            .wrap(cors)
             .app_data(app_state.clone())
             .route("/health", web::get().to(health))
             .route("/hello", web::get().to(hello))
+            .route("/rooms", web::post().to(create_room))
+            .route("/rooms", web::get().to(list_rooms))
+            .route("/rooms/free", web::get().to(free_room))
             .route("/ws", web::get().to(ws_handler))
     })
     .bind(("0.0.0.0", api_port))?
