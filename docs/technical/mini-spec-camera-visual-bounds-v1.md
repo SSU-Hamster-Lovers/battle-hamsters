@@ -54,6 +54,27 @@
 - 단순 구현 통과보다 실제 게임 화면에서의 체감이 더 중요하다.
 - follow 지연, clamp 감각, 점프/낙사 직전 프레이밍은 수동 플레이 테스트로 조정한다.
 
+## 확정된 결정 (v1)
+
+### A. visualBounds 로 camera.setBounds 를 항상 건다
+- 맵 JSON 의 `visualBounds` 를 읽어 Phaser `camera.setBounds(left, top, width, height)` 적용.
+- `cameraPolicy` 에 관계없이 항상 적용해, 향후 어떤 정책이 와도 카메라가 시각 울타리 밖으로 나가지 않는다.
+
+### B. cameraPolicy === "follow" 일 때 local player 중심 follow 를 켠다
+- `camera.startFollow(localContainer, false, LERP_X, LERP_Y)` 로 감쇠 추적.
+- 초기 lerp 값은 0.10 (x/y 동일). 수동 플레이 테스트로 튜닝한다.
+- `cameraPolicy === "static"` 이면 setBounds 만 적용하고 follow 는 없다.
+- training-arena 의 cameraPolicy 를 `"follow"` 로 바꿔 코드 경로를 테스트한다. 맵이 800×600 = 캔버스와 동일 크기라 시각적 차이는 없지만, 인프라가 올바르게 동작하는지 확인할 수 있다.
+
+### C. HUD 요소에 setScrollFactor(0) 를 적용한다
+- `statusText`, `connectionText`, `infoText`, `attackFlash`, 하단 컨트롤 힌트 텍스트 전부.
+- world-space 엔티티(플레이어 컨테이너, 픽업 도형, 스테이지 그래픽)는 기본 scrollFactor(1) 유지.
+- kill feed text 는 이미 `setScrollFactor(0)` 적용되어 있음.
+
+### D. 카메라 초기화는 localPlayerId 가 처음 확정된 시점에 1회 실행한다
+- `applyRoomSnapshot` / `applyWorldSnapshot` 에서 `captureLocalPlayer` 직후 `maybeFinalizeCamera()` 호출.
+- 이미 초기화됐으면 skip.
+
 ## 완료 조건
 
 - 카메라가 pit 아래 논리 영역을 보여주지 않는다.

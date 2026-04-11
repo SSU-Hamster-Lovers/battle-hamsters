@@ -7,7 +7,7 @@
     "height": 600
   },
   "boundaryPolicy": "closed",
-  "cameraPolicy": "static",
+  "cameraPolicy": "follow",
   "visualBounds": {
     "left": 0,
     "right": 800,
