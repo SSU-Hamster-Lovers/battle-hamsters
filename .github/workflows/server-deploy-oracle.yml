@@ -37,15 +37,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Bundle shared data into server context
-        # include_str!("../../packages/shared/...") 가 빌드 시 server/ 내부 경로를 기대하므로
-        # server/packages/shared 로 복사해 Docker 컨텍스트에 포함시킨다
-        run: |
-          mkdir -p server/packages
-          cp -r packages/shared server/packages/shared
-
       - name: Create release archive
-        run: tar -czf release.tar.gz server deploy/oracle
+        # Docker 컨텍스트는 레포 루트(../..): server/ 와 packages/ 가 같은 레벨에 있어야
+        # include_str!("../../packages/shared/...") 가 /repo/packages/shared/... 로 올바르게 해석됨
+        run: tar -czf release.tar.gz server packages/shared deploy/oracle
 
       - name: Create production environment file
         run: |
