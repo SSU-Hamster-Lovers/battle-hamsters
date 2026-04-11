@@ -16,8 +16,8 @@ services:
 
   api:
     build:
-      context: ../../server
-      dockerfile: Dockerfile.prod
+      context: ../..
+      dockerfile: server/Dockerfile.prod
     restart: unless-stopped
     environment:
       API_PORT: ${API_PORT}
