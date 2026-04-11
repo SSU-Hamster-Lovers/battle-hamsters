@@ -43,6 +43,7 @@ const PICKUP_GRAVITY_PER_TICK: f64 = 1.0;
 const PICKUP_MAX_FALL_SPEED: f64 = 18.0;
 const ITEM_PICKUP_RADIUS: f64 = 30.0;
 const MAX_HP: u16 = 100;
+const PICKUP_CULL_MARGIN: f64 = 64.0;
 const KILL_FEED_TTL_MS: u64 = 3_500;
 const KILL_FEED_MAX_ENTRIES: usize = 16;
 
@@ -1182,6 +1183,110 @@ mod tests {
         assert_eq!(
             victim_entries, 1,
             "the same victim must not appear in the kill feed twice in a single tick",
+        );
+    }
+
+    #[test]
+    fn cull_removes_weapon_pickup_that_entered_fall_zone() {
+        let mut room = RoomState::new();
+        let pickup_id = room
+            .weapon_pickups
+            .keys()
+            .next()
+            .cloned()
+            .expect("initial weapon pickup should exist");
+        let fall_zone = primary_fall_zone();
+
+        {
+            let pickup = room
+                .weapon_pickups
+                .get_mut(&pickup_id)
+                .expect("pickup should exist");
+            pickup.position.x = fall_zone.x + fall_zone.width / 2.0;
+            pickup.position.y = fall_zone.y + fall_zone.height / 2.0;
+        }
+
+        room.cull_out_of_world_pickups(5_000);
+
+        assert!(
+            !room.weapon_pickups.contains_key(&pickup_id),
+            "pickup that entered fall_zone should be removed",
+        );
+    }
+
+    #[test]
+    fn cull_removes_weapon_pickup_that_fell_below_world() {
+        let mut room = RoomState::new();
+        let pickup_id = room
+            .weapon_pickups
+            .keys()
+            .next()
+            .cloned()
+            .expect("initial weapon pickup should exist");
+
+        {
+            let pickup = room
+                .weapon_pickups
+                .get_mut(&pickup_id)
+                .expect("pickup should exist");
+            pickup.position.y = world_height() + PICKUP_CULL_MARGIN + 1.0;
+        }
+
+        room.cull_out_of_world_pickups(5_000);
+
+        assert!(
+            !room.weapon_pickups.contains_key(&pickup_id),
+            "pickup below the world should be removed",
+        );
+    }
+
+    #[test]
+    fn cull_schedules_respawn_for_spawn_source_pickup() {
+        let mut room = RoomState::new();
+        let (pickup_id, spawn_cycle_key, respawn_ms) = {
+            let (id, pickup) = room
+                .weapon_pickups
+                .iter()
+                .next()
+                .expect("initial weapon pickup should exist");
+            (
+                id.clone(),
+                pickup.spawn_cycle_key.clone(),
+                pickup.respawn_ms,
+            )
+        };
+        let spawn_cycle_key = spawn_cycle_key.expect("spawn pickup should have a cycle key");
+        let respawn_ms = respawn_ms.expect("spawn pickup should have a respawn timer");
+
+        {
+            let pickup = room
+                .weapon_pickups
+                .get_mut(&pickup_id)
+                .expect("pickup should exist");
+            pickup.position.y = world_height() + PICKUP_CULL_MARGIN + 10.0;
+        }
+
+        room.cull_out_of_world_pickups(5_000);
+
+        assert!(!room.weapon_pickups.contains_key(&pickup_id));
+        assert_eq!(
+            room.next_spawn_respawn_at.get(&spawn_cycle_key),
+            Some(&(5_000 + respawn_ms)),
+            "culling a spawn-source pickup should schedule its respawn",
+        );
+    }
+
+    #[test]
+    fn cull_leaves_grounded_pickups_alone() {
+        let mut room = RoomState::new();
+        let pickup_count_before = room.weapon_pickups.len();
+
+        room.cull_out_of_world_pickups(5_000);
+
+        assert_eq!(
+            room.weapon_pickups.len(),
+            pickup_count_before,
+            "pickups resting on valid ground should not be culled",
         );
     }
 
