@@ -1,5 +1,5 @@
 import type { EntityId, TimestampMs, Vector2 } from "./common";
-import type { MatchSnapshot, PlayerSnapshot } from "./world";
+import type { KillFeedEntry, MatchSnapshot, PlayerSnapshot } from "./world";
 import type { WorldItemPickup } from "./items";
 import type { WorldWeaponPickup } from "./weapons";
 
@@ -42,6 +42,7 @@ export interface RoomSnapshotPayload {
   weaponPickups: WorldWeaponPickup[];
   itemPickups: WorldItemPickup[];
   matchState: "waiting" | "running" | "finished";
+  killFeed: KillFeedEntry[];
 }
 
 export interface WorldSnapshotPayload extends MatchSnapshot {}

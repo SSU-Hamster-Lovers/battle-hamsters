@@ -102,7 +102,8 @@
     "players": [],
     "weaponPickups": [],
     "itemPickups": [],
-    "matchState": "waiting"
+    "matchState": "waiting",
+    "killFeed": []
   }
 }
 ```
@@ -118,10 +119,32 @@
     "players": [],
     "projectiles": [],
     "weaponPickups": [],
-    "itemPickups": []
+    "itemPickups": [],
+    "killFeed": []
   }
 }
 ```
+
+#### 킬로그 (`killFeed`) 규칙
+
+- `room_snapshot` 과 `world_snapshot` 모두 현재 유효한 킬로그 엔트리 배열을 포함한다.
+- 재접속/지각 합류한 클라이언트가 첫 `room_snapshot` 만 받아도 현재 피드 상태를 복원할 수 있다.
+- 서버 버퍼 TTL 은 `3.5s` (클라 표시 3s + 네트워크 여유 0.5s), 버퍼 상한은 `16` 엔트리다.
+- 엔트리 타입:
+  ```ts
+  interface KillFeedEntry {
+    id: EntityId;            // 서버에서 발급 (중복 렌더 방지용)
+    occurredAt: TimestampMs;
+    victimId: EntityId;
+    cause: DeathCause;
+  }
+  type DeathCause =
+    | { kind: "fall_zone" }
+    | { kind: "instant_kill_hazard" }
+    | { kind: "weapon"; killerId: EntityId; weaponId: EntityId }
+    | { kind: "self"; weaponId: EntityId };
+  ```
+- 클라이언트는 `id` 로 중복 렌더를 막고, 수신 시각 기준 3초 후 로컬에서 제거한다.
 
 ## 판정 원칙
 

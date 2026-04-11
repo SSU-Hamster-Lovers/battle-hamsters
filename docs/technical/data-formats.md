@@ -510,7 +510,8 @@
   "projectiles": [],
   "weaponPickups": [],
   "itemPickups": [],
-  "timeRemainingMs": 284000
+  "timeRemainingMs": 284000,
+  "killFeed": []
 }
 ```
 
@@ -520,6 +521,46 @@
 - 최적화 전에는 delta-compression을 도입하지 않는다.
 - `serverTick`은 클라이언트 보간 기준점으로 사용한다.
 - 빔 무기도 동일 스냅샷 구조 안에서 처리하되, 필요 시 별도 이펙트 이벤트를 추가한다.
+
+## 킬로그 포맷
+
+`world_snapshot.killFeed` 와 `room_snapshot.killFeed` 는 동일 구조를 공유한다.
+
+```json
+[
+  {
+    "id": "kf_128_3",
+    "occurredAt": 1712600001150,
+    "victimId": "player_2",
+    "cause": {
+      "kind": "weapon",
+      "killerId": "player_1",
+      "weaponId": "acorn_blaster"
+    }
+  },
+  {
+    "id": "kf_130_1",
+    "occurredAt": 1712600002500,
+    "victimId": "player_3",
+    "cause": { "kind": "fall_zone" }
+  }
+]
+```
+
+### 사망 원인 (`DeathCause`)
+
+- `{ "kind": "fall_zone" }` — `fall_zone` hazard 진입으로 사망
+- `{ "kind": "instant_kill_hazard" }` — `instant_kill_hazard` 진입으로 사망
+- `{ "kind": "weapon", "killerId": ..., "weaponId": ... }` — 다른 플레이어 무기에 의한 사망
+- `{ "kind": "self", "weaponId": ... }` — 자기 반동/자폭 등 스스로의 피해로 사망
+
+### 킬로그 규칙
+
+- `id` 는 서버가 발급하며, 클라이언트는 중복 렌더 방지용으로 사용한다.
+- 서버는 `occurredAt` 기준 `3.5s` 동안 엔트리를 보존하고, 그 이후 tick cleanup 에서 제거한다.
+- 버퍼 상한은 `16` 엔트리이며, 초과 시 가장 오래된 엔트리부터 제거한다.
+- 클라이언트는 수신 시각 기준 `3s` 후 로컬에서 엔트리를 제거한다 (서버 TTL 과 독립).
+- 재접속 또는 지각 합류한 클라이언트는 첫 `room_snapshot` 의 `killFeed` 로 현재 상태를 복원한다.
 
 ## 입력 포맷
 
