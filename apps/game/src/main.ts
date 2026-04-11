@@ -42,6 +42,10 @@ const KILL_FEED_TTL_MS = 3_000;
 const KILL_FEED_LINE_HEIGHT = 18;
 const KILL_FEED_MARGIN_X = 24;
 const KILL_FEED_MARGIN_Y = 24;
+const KILL_FEED_SLIDE_IN_DISTANCE = 96;
+const KILL_FEED_SLIDE_IN_MS = 200;
+const KILL_FEED_EXIT_RISE = 18;
+const KILL_FEED_EXIT_MS = 280;
 
 const COLLISION_PRIMITIVES: CollisionPrimitive[] = MAP_DEFINITION.collision;
 const HAZARDS: HazardZone[] = MAP_DEFINITION.hazards;
@@ -212,7 +216,12 @@ class MainScene extends Phaser.Scene {
   private renderedItemPickups = new Map<string, RenderedItemPickup>();
   private renderedKillFeed = new Map<
     string,
-    { text: Phaser.GameObjects.Text; receivedAt: number }
+    {
+      text: Phaser.GameObjects.Text;
+      receivedAt: number;
+      justEntered: boolean;
+      slideInTween: Phaser.Tweens.Tween | null;
+    }
   >();
   private playerName = getOrCreatePlayerName();
   private localPlayerId: string | null = null;
@@ -623,8 +632,14 @@ class MainScene extends Phaser.Scene {
           padding: { left: 8, right: 8, top: 4, bottom: 4 },
         })
         .setDepth(12)
-        .setScrollFactor(0);
-      this.renderedKillFeed.set(entry.id, { text, receivedAt: now });
+        .setScrollFactor(0)
+        .setAlpha(0);
+      this.renderedKillFeed.set(entry.id, {
+        text,
+        receivedAt: now,
+        justEntered: true,
+        slideInTween: null,
+      });
     }
     this.layoutKillFeed();
   }
@@ -633,7 +648,7 @@ class MainScene extends Phaser.Scene {
     let removed = false;
     for (const [id, rendered] of this.renderedKillFeed) {
       if (now - rendered.receivedAt >= KILL_FEED_TTL_MS) {
-        rendered.text.destroy();
+        this.startKillFeedExitAnimation(rendered);
         this.renderedKillFeed.delete(id);
         removed = true;
       }
@@ -643,14 +658,56 @@ class MainScene extends Phaser.Scene {
     }
   }
 
+  private startKillFeedExitAnimation(rendered: {
+    text: Phaser.GameObjects.Text;
+    slideInTween: Phaser.Tweens.Tween | null;
+  }) {
+    rendered.slideInTween?.stop();
+    rendered.slideInTween = null;
+    const { text } = rendered;
+    this.tweens.add({
+      targets: text,
+      y: text.y - KILL_FEED_EXIT_RISE,
+      alpha: 0,
+      duration: KILL_FEED_EXIT_MS,
+      ease: "Sine.easeOut",
+      onComplete: () => text.destroy(),
+    });
+  }
+
   private layoutKillFeed() {
     const ordered = [...this.renderedKillFeed.values()].sort(
       (a, b) => a.receivedAt - b.receivedAt,
     );
     ordered.forEach((rendered, index) => {
-      const x = GAME_WIDTH - KILL_FEED_MARGIN_X - rendered.text.width;
-      const y = KILL_FEED_MARGIN_Y + index * KILL_FEED_LINE_HEIGHT;
-      rendered.text.setPosition(x, y);
+      const finalX = GAME_WIDTH - KILL_FEED_MARGIN_X - rendered.text.width;
+      const finalY = KILL_FEED_MARGIN_Y + index * KILL_FEED_LINE_HEIGHT;
+
+      if (rendered.justEntered) {
+        rendered.justEntered = false;
+        rendered.text.setPosition(
+          finalX - KILL_FEED_SLIDE_IN_DISTANCE,
+          finalY,
+        );
+        rendered.slideInTween = this.tweens.add({
+          targets: rendered.text,
+          x: finalX,
+          alpha: 1,
+          duration: KILL_FEED_SLIDE_IN_MS,
+          ease: "Sine.easeOut",
+          onComplete: () => {
+            rendered.slideInTween = null;
+          },
+        });
+        return;
+      }
+
+      rendered.text.y = finalY;
+      if (rendered.slideInTween && rendered.slideInTween.isPlaying()) {
+        rendered.slideInTween.updateTo("x", finalX, true);
+      } else {
+        rendered.text.x = finalX;
+      }
     });
   }
 
