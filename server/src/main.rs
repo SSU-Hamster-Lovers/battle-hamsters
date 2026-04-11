@@ -44,6 +44,7 @@ const PICKUP_MAX_FALL_SPEED: f64 = 18.0;
 const ITEM_PICKUP_RADIUS: f64 = 30.0;
 const MAX_HP: u16 = 100;
 const PICKUP_CULL_MARGIN: f64 = 64.0;
+const LAST_HIT_TTL_MS: u64 = 5_000;
 const KILL_FEED_TTL_MS: u64 = 3_500;
 const KILL_FEED_MAX_ENTRIES: usize = 16;
 
@@ -80,6 +81,13 @@ struct PickupKinematics {
 }
 
 #[derive(Clone)]
+struct LastHitInfo {
+    killer_id: String,
+    weapon_id: String,
+    hit_at_ms: u64,
+}
+
+#[derive(Clone)]
 struct PlayerRuntime {
     snapshot: PlayerSnapshot,
     latest_input: PlayerInputPayload,
@@ -88,6 +96,7 @@ struct PlayerRuntime {
     next_attack_at: u64,
     attack_queued: bool,
     attack_was_down: bool,
+    last_hit_by: Option<LastHitInfo>,
 }
 
 struct RoomState {
@@ -223,6 +232,7 @@ impl RoomState {
                 next_attack_at: 0,
                 attack_queued: false,
                 attack_was_down: false,
+                last_hit_by: None,
             },
         );
 
@@ -628,6 +638,7 @@ mod tests {
             next_attack_at: 0,
             attack_queued: false,
             attack_was_down: false,
+            last_hit_by: None,
         }
     }
 
@@ -844,12 +855,17 @@ mod tests {
     #[test]
     fn airdrop_item_falls_until_grounded() {
         let mut room = RoomState::new();
+        // Find specifically an airdrop-style item (affected_by_gravity = true).
+        // random_candidates may select either the airdrop or fade_in health pack
+        // variant, so filter by kinematics rather than item_id alone.
         let heal_item_id = room
             .item_pickups
             .iter()
-            .find(|(_, pickup)| pickup.item_id == "health_pack_small")
+            .find(|(_, pickup)| {
+                pickup.item_id == "health_pack_small" && pickup.kinematics.affected_by_gravity
+            })
             .map(|(pickup_id, _)| pickup_id.clone())
-            .expect("heal item should exist");
+            .expect("airdrop heal item should exist when the airdrop candidate is selected");
 
         let starting_y = room
             .item_pickups
@@ -929,6 +945,7 @@ mod tests {
             next_attack_at: 0,
             attack_queued: true,
             attack_was_down: true,
+            last_hit_by: None,
         };
 
         let target = PlayerRuntime {
@@ -957,6 +974,7 @@ mod tests {
             next_attack_at: 0,
             attack_queued: false,
             attack_was_down: false,
+            last_hit_by: None,
         };
 
         room.players.insert("shooter".to_string(), shooter);
@@ -1339,5 +1357,88 @@ mod tests {
             player.snapshot.max_jump_count,
             gameplay_config.base_jump_count
         );
+    }
+
+    #[test]
+    fn hazard_death_within_ttl_is_attributed_to_last_shooter() {
+        let mut room = RoomState::new();
+        let pit_center_x = (pit_left_x() + pit_right_x()) / 2.0;
+
+        // Place victim already in the fall zone with a recent last_hit_by.
+        let mut victim = test_player(
+            pit_center_x,
+            primary_fall_zone().y + PLAYER_HALF_SIZE + 2.0,
+        );
+        victim.snapshot.id = "victim".to_string();
+        victim.last_hit_by = Some(crate::LastHitInfo {
+            killer_id: "shooter".to_string(),
+            weapon_id: "acorn_blaster".to_string(),
+            hit_at_ms: 1_000, // 1s before tick time 2_000 → within 5s TTL
+        });
+        room.players.insert("victim".to_string(), victim);
+
+        let snapshot = room.tick(2_000);
+
+        assert_eq!(snapshot.kill_feed.len(), 1);
+        let entry = &snapshot.kill_feed[0];
+        assert_eq!(entry.victim_id, "victim");
+        match &entry.cause {
+            DeathCause::Weapon {
+                killer_id,
+                weapon_id,
+            } => {
+                assert_eq!(killer_id, "shooter");
+                assert_eq!(weapon_id, "acorn_blaster");
+            }
+            other => panic!(
+                "expected Weapon cause but got {:?}",
+                std::mem::discriminant(other)
+            ),
+        }
+    }
+
+    #[test]
+    fn hazard_death_after_ttl_falls_back_to_hazard_cause() {
+        let mut room = RoomState::new();
+        let pit_center_x = (pit_left_x() + pit_right_x()) / 2.0;
+
+        let mut victim = test_player(
+            pit_center_x,
+            primary_fall_zone().y + PLAYER_HALF_SIZE + 2.0,
+        );
+        victim.snapshot.id = "victim_stale".to_string();
+        victim.last_hit_by = Some(crate::LastHitInfo {
+            killer_id: "old_shooter".to_string(),
+            weapon_id: "acorn_blaster".to_string(),
+            hit_at_ms: 0, // 2s before tick time 2_000 — BUT 5s TTL → still within? No: 2000-0=2000 < 5000
+            // Let's use hit_at_ms that exceeds TTL: now_ms 2_000, hit 6_001ms ago → hit_at_ms = MAX or negative won't work
+            // Use a fresh tick time far in the future so TTL is exceeded
+        });
+        // Override with a hit_at_ms that guarantees expiry: tick at 10_000, hit at 0 → delta 10_000 > 5_000
+        room.players.insert("victim_stale".to_string(), victim);
+
+        // Tick at now_ms=10_000 so delta from hit_at_ms=0 is 10_000ms, exceeding LAST_HIT_TTL_MS=5_000
+        let snapshot = room.tick(10_000);
+
+        assert_eq!(snapshot.kill_feed.len(), 1);
+        assert!(matches!(
+            snapshot.kill_feed[0].cause,
+            DeathCause::FallZone
+        ));
+    }
+
+    #[test]
+    fn last_hit_by_cleared_on_respawn() {
+        let mut player = test_player(200.0, ground_top_y() - PLAYER_HALF_SIZE - 2.0);
+        player.last_hit_by = Some(crate::LastHitInfo {
+            killer_id: "some_player".to_string(),
+            weapon_id: "acorn_blaster".to_string(),
+            hit_at_ms: 1_000,
+        });
+
+        let gameplay_config = RoomGameplayConfig::default();
+        trigger_respawn(&mut player, 2_000, ground_top_y(), &gameplay_config);
+
+        assert!(player.last_hit_by.is_none(), "last_hit_by must be cleared on respawn");
     }
 }

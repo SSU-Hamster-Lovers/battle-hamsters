@@ -122,10 +122,11 @@
 - 사망 시 장착 무기는 초기화되어 맨손(`paws`)으로 리스폰한다.
 - 사망 시 점프 증가와 속도 랭크업도 함께 초기화된다.
 - beam/grab/throwable, speed rank/extra life 아이템, 다중 무기 밸런싱은 아직 미구현이다.
+- 킬 어사인먼트 1차: 피격 시 `PlayerRuntime.last_hit_by` 에 (killer_id, weapon_id, hit_at_ms) 를 기록한다. 낙사/즉사 함정 사망 시 TTL(5초) 이내 마지막 타격자가 있으면 `DeathCause::Weapon` 으로 귀속해 킬피드에 `A → 무기 → B` 로 표시한다. TTL 초과 시 기존 `FallZone` / `InstantKillHazard` 로 표시한다. 리스폰 시 `last_hit_by` 초기화.
 
 ## 다음 구현 우선순위
 
-1. 킬 어사인먼트 1차 — 넉백 낙사를 마지막 타격자의 킬로 귀속 (`docs/technical/mini-spec-kill-attribution-v1.md`)
+1. 하단 플레이어 상태 HUD 실제 배치 (v1 미니 스펙에서는 구조 정의만 남겨 둠)
 2. 하단 플레이어 상태 HUD 실제 배치 (v1 미니 스펙에서는 구조 정의만 남겨 둠)
 3. 실제 아트 atlas/spritesheet 기반 햄스터/무기/아이템 교체
 

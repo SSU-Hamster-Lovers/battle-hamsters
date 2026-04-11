@@ -3,7 +3,8 @@ use std::collections::HashSet;
 use crate::game_data::{ground_top_y, runtime_map_data, world_width, HazardKind};
 use crate::room_combat::{respawn_player, trigger_respawn};
 use crate::{
-    DeathCause, PlayerRuntime, PlayerSnapshot, PlayerState, RoomState, Vector2, PLAYER_HALF_SIZE,
+    DeathCause, PlayerRuntime, PlayerSnapshot, PlayerState, RoomState, Vector2, LAST_HIT_TTL_MS,
+    PLAYER_HALF_SIZE,
 };
 use crate::{
     WorldSnapshotPayload, DROP_THROUGH_MS, FAST_FALL_GRAVITY_PER_TICK, GRAVITY_PER_TICK,
@@ -50,10 +51,7 @@ impl RoomState {
 
             if let Some(kind) = intersecting_hazard(&player.snapshot) {
                 if dying_this_tick.insert(player_id.clone()) {
-                    let cause = match kind {
-                        HazardKind::FallZone => DeathCause::FallZone,
-                        HazardKind::InstantKillHazard => DeathCause::InstantKillHazard,
-                    };
+                    let cause = hazard_death_cause(player, kind, now_ms);
                     deaths.push((player_id.clone(), cause));
                 }
             }
@@ -92,6 +90,25 @@ impl RoomState {
             time_remaining_ms: self.time_remaining_ms,
             kill_feed: self.kill_feed_snapshot(),
         }
+    }
+}
+
+fn hazard_death_cause(
+    player: &PlayerRuntime,
+    kind: HazardKind,
+    now_ms: u64,
+) -> DeathCause {
+    if let Some(ref hit) = player.last_hit_by {
+        if now_ms.saturating_sub(hit.hit_at_ms) <= LAST_HIT_TTL_MS {
+            return DeathCause::Weapon {
+                killer_id: hit.killer_id.clone(),
+                weapon_id: hit.weapon_id.clone(),
+            };
+        }
+    }
+    match kind {
+        HazardKind::FallZone => DeathCause::FallZone,
+        HazardKind::InstantKillHazard => DeathCause::InstantKillHazard,
     }
 }
 

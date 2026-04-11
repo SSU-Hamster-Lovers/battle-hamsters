@@ -154,7 +154,7 @@
       "x": 1380,
       "y": 220,
       "respawnMs": 15000,
-      "spawnStyle": "fade_in",
+      "spawnStyle": "airdrop",
       "mode": "random_candidates",
       "spawnGroupId": "health_group"
     }
