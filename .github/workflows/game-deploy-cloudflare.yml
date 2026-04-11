@@ -1,20 +1,21 @@
-name: Portal Deploy (Cloudflare Pages)
+name: Game Deploy (Cloudflare Pages)
 
 on:
   push:
     branches: [main]
     paths:
-      - 'apps/portal/**'
-      - '.github/workflows/portal-deploy-cloudflare.yml'
+      - 'apps/game/**'
+      - 'packages/shared/**'
+      - '.github/workflows/game-deploy-cloudflare.yml'
   workflow_dispatch:
 
 concurrency:
-  group: portal-deploy-production
+  group: game-deploy-production
   cancel-in-progress: false
 
 jobs:
   deploy:
-    name: Deploy portal to Cloudflare Pages
+    name: Deploy game client to Cloudflare Pages
     runs-on: ubuntu-latest
     environment: production
     permissions:
@@ -37,26 +38,25 @@ jobs:
           cache: 'pnpm'
           cache-dependency-path: pnpm-lock.yaml
 
-      - name: Install portal dependencies
+      # Game Client 는 shared 패키지에 의존하므로 워크스페이스 루트에서 설치
+      - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
-        working-directory: apps/portal
 
-      - name: Build static portal
+      - name: Build game client
         env:
-          NEXT_PUBLIC_SERVER_API_URL: ${{ vars.NEXT_PUBLIC_SERVER_API_URL }}
-          NEXT_PUBLIC_GAME_URL: ${{ vars.NEXT_PUBLIC_GAME_URL }}
+          VITE_SERVER_WS_URL: ${{ vars.VITE_SERVER_WS_URL }}
         run: pnpm build
-        working-directory: apps/portal
+        working-directory: apps/game
 
       - name: Install Wrangler CLI
         run: npm install -g wrangler@3.90.0
 
-      - name: Deploy static export to Cloudflare Pages
+      - name: Deploy to Cloudflare Pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_PAGES_PROJECT_NAME: ${{ vars.CLOUDFLARE_PAGES_PROJECT_NAME }}
+          CLOUDFLARE_PAGES_PROJECT_NAME: ${{ vars.GAME_CLOUDFLARE_PAGES_PROJECT_NAME }}
         run: |
-          wrangler pages deploy apps/portal/out \
+          wrangler pages deploy apps/game/dist \
             --project-name="${CLOUDFLARE_PAGES_PROJECT_NAME}" \
             --branch=main
