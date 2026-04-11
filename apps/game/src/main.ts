@@ -38,6 +38,12 @@ const LOCAL_PLAYER_LERP = 0.35;
 const PICKUP_LERP = 0.24;
 const PLAYER_SNAP_DISTANCE = 96;
 const PICKUP_SNAP_DISTANCE = 72;
+const CAMERA_FOLLOW_LERP_X = 0.1;
+const CAMERA_FOLLOW_LERP_Y = 0.1;
+// Fixed canvas (viewport) dimensions. Separate from MAP_DEFINITION.size which
+// is the full world/map size that the camera scrolls over.
+const VIEWPORT_WIDTH = 800;
+const VIEWPORT_HEIGHT = 600;
 const KILL_FEED_TTL_MS = 3_000;
 const KILL_FEED_DISMISSED_RETENTION_MS = 5_000;
 const KILL_FEED_LINE_HEIGHT = 18;
@@ -212,6 +218,7 @@ class MainScene extends Phaser.Scene {
   private connectionText!: Phaser.GameObjects.Text;
   private attackFlash!: Phaser.GameObjects.Graphics;
   private attackFlashUntil = 0;
+  private cameraConfigured = false;
   private renderedPlayers = new Map<string, RenderedPlayer>();
   private renderedWeaponPickups = new Map<string, RenderedWeaponPickup>();
   private renderedItemPickups = new Map<string, RenderedItemPickup>();
@@ -258,14 +265,16 @@ class MainScene extends Phaser.Scene {
         fontSize: "28px",
         color: "#f9fafb",
       })
-      .setDepth(10);
+      .setDepth(10)
+      .setScrollFactor(0);
 
     this.connectionText = this.add
       .text(24, 58, `Connecting to ${WS_URL}`, {
         fontSize: "16px",
         color: "#93c5fd",
       })
-      .setDepth(10);
+      .setDepth(10)
+      .setScrollFactor(0);
 
     this.infoText = this.add
       .text(24, 88, "", {
@@ -273,32 +282,34 @@ class MainScene extends Phaser.Scene {
         color: "#d1d5db",
         lineSpacing: 6,
       })
-      .setDepth(10);
+      .setDepth(10)
+      .setScrollFactor(0);
 
     this.attackFlash = this.add.graphics().setDepth(9);
 
-    this.add.text(24, GAME_HEIGHT - 70, "Move: A / D or Arrow Left / Right", {
-      fontSize: "14px",
-      color: "#9ca3af",
-    });
-    this.add.text(
-      24,
-      GAME_HEIGHT - 46,
-      "Jump: W / Space / Up  |  Down: S / Down",
-      {
+    this.add
+      .text(24, VIEWPORT_HEIGHT - 70, "Move: A / D or Arrow Left / Right", {
         fontSize: "14px",
         color: "#9ca3af",
-      },
-    );
-    this.add.text(
-      24,
-      GAME_HEIGHT - 22,
-      "E: Pick Up  |  Q: Drop Weapon  |  Mouse: Aim / Attack",
-      {
+      })
+      .setScrollFactor(0);
+    this.add
+      .text(24, VIEWPORT_HEIGHT - 46, "Jump: W / Space / Up  |  Down: S / Down", {
         fontSize: "14px",
         color: "#9ca3af",
-      },
-    );
+      })
+      .setScrollFactor(0);
+    this.add
+      .text(
+        24,
+        VIEWPORT_HEIGHT - 22,
+        "E: Pick Up  |  Q: Drop Weapon  |  Mouse: Aim / Attack",
+        {
+          fontSize: "14px",
+          color: "#9ca3af",
+        },
+      )
+      .setScrollFactor(0);
 
     const keyboard = this.input.keyboard;
     if (!keyboard) {
@@ -602,6 +613,7 @@ class MainScene extends Phaser.Scene {
     this.renderWeaponPickups(message.payload.weaponPickups);
     this.renderItemPickups(message.payload.itemPickups);
     this.captureLocalPlayer(message.payload.players);
+    this.maybeFinalizeCamera();
     this.applyKillFeed(message.payload.killFeed, message.payload.players);
     this.updateInfoText(message.payload.players, "waiting", null);
   }
@@ -612,6 +624,7 @@ class MainScene extends Phaser.Scene {
     this.renderWeaponPickups(message.payload.weaponPickups);
     this.renderItemPickups(message.payload.itemPickups);
     this.captureLocalPlayer(message.payload.players);
+    this.maybeFinalizeCamera();
     this.applyKillFeed(message.payload.killFeed, message.payload.players);
     this.updateInfoText(
       message.payload.players,
@@ -686,12 +699,42 @@ class MainScene extends Phaser.Scene {
     });
   }
 
+  private configureCameraForMap(followTarget: Phaser.GameObjects.Container) {
+    const { visualBounds, cameraPolicy } = MAP_DEFINITION;
+    this.cameras.main.setBounds(
+      visualBounds.left,
+      visualBounds.top,
+      visualBounds.right - visualBounds.left,
+      visualBounds.bottom - visualBounds.top,
+    );
+    if (cameraPolicy === "follow") {
+      this.cameras.main.startFollow(
+        followTarget,
+        false,
+        CAMERA_FOLLOW_LERP_X,
+        CAMERA_FOLLOW_LERP_Y,
+      );
+    }
+  }
+
+  private maybeFinalizeCamera() {
+    if (this.cameraConfigured || !this.localPlayerId) {
+      return;
+    }
+    const rendered = this.renderedPlayers.get(this.localPlayerId);
+    if (!rendered) {
+      return;
+    }
+    this.configureCameraForMap(rendered.root);
+    this.cameraConfigured = true;
+  }
+
   private layoutKillFeed() {
     const ordered = [...this.renderedKillFeed.values()].sort(
       (a, b) => a.receivedAt - b.receivedAt,
     );
     ordered.forEach((rendered, index) => {
-      const finalX = GAME_WIDTH - KILL_FEED_MARGIN_X - rendered.text.width;
+      const finalX = VIEWPORT_WIDTH - KILL_FEED_MARGIN_X - rendered.text.width;
       const finalY = KILL_FEED_MARGIN_Y + index * KILL_FEED_LINE_HEIGHT;
 
       if (rendered.justEntered) {
@@ -1147,8 +1190,8 @@ class MainScene extends Phaser.Scene {
 
 new Phaser.Game({
   type: Phaser.AUTO,
-  width: GAME_WIDTH,
-  height: GAME_HEIGHT,
+  width: VIEWPORT_WIDTH,
+  height: VIEWPORT_HEIGHT,
   backgroundColor: "#111827",
   scene: MainScene,
 });

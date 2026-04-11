@@ -52,6 +52,10 @@
 - 플레이어는 이제 코드 기반 임시 텍스처로 만든 캐주얼 햄스터 silhouette로 렌더링되며, idle / run / jump / fall / respawning 상태를 기본 구분한다.
 - 우상단에 킬로그 스택을 렌더링한다. 서버에서 `world_snapshot.killFeed` / `room_snapshot.killFeed` 로 내려오는 엔트리를 수신해 `{killer} → {무기} → {victim}` / `{victim} → 낙사` / `{victim} → 함정` / `{victim} → 자살` 형식으로 표시하며, 수신 3초 후 로컬에서 제거한다. 재접속/늦합류 클라이언트는 첫 `room_snapshot` 으로 현재 버퍼를 복원한다.
 - 리스폰 중인 플레이어 라벨에 남은 카운트다운(초) 을 함께 표시한다.
+- `MAP_DEFINITION.visualBounds` 를 `camera.setBounds` 로 적용해 카메라가 시각 울타리 밖을 보여주지 않도록 했다.
+- `MAP_DEFINITION.cameraPolicy === "follow"` 일 때 로컬 플레이어를 중심으로 감쇠 추적(lerp 0.10) 하는 follow 카메라를 적용한다.
+- 캔버스(뷰포트) 크기는 `VIEWPORT_WIDTH = 800 / VIEWPORT_HEIGHT = 600` 으로 고정 분리하고, 맵 월드 크기(`MAP_DEFINITION.size`) 와 독립적으로 관리한다. HUD 요소는 `setScrollFactor(0)` 으로 화면에 고정된다.
+- 테스트 맵(`training-arena.json`)을 1600×900 으로 확장하고 `cameraPolicy: "follow"` 로 설정해 카메라가 실제로 스크롤되는 것을 검증했다. 바닥 3개 구간, 플랫폼 3개, 피트 벽(fall zone 끝까지 연장), 즉사 함정 구조를 유지한다.
 
 ### Portal
 
@@ -121,14 +125,14 @@
 
 ## 다음 구현 우선순위
 
-1. 하단 플레이어 상태 HUD 실제 배치 (v1 미니 스펙에서는 구조 정의만 남겨 둠)
-2. `visualBounds` 기반 카메라 clamp 및 follow 카메라 감쇠 이동 구현
+1. 킬 어사인먼트 1차 — 넉백 낙사를 마지막 타격자의 킬로 귀속 (`docs/technical/mini-spec-kill-attribution-v1.md`)
+2. 하단 플레이어 상태 HUD 실제 배치 (v1 미니 스펙에서는 구조 정의만 남겨 둠)
 3. 실제 아트 atlas/spritesheet 기반 햄스터/무기/아이템 교체
 
 ## 참고
 
-- 맵 경계/카메라 확장 아이디어는 `docs/technical/mini-spec-map-boundaries-camera.md`에 별도 정리한다.
-- `boundaryPolicy`, `cameraPolicy`, `visualBounds`, `gameplayBounds`, `deathBounds`는 shared 타입/JSON 예시에 반영됐지만 카메라 런타임에서는 아직 사용하지 않는다.
+- 맵 경계/카메라 정책 설계 배경은 `docs/technical/mini-spec-map-boundaries-camera.md` 참조.
+- 카메라 구현 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-camera-visual-bounds-v1.md`
 - 이번 브랜치 작업 미니 스펙은 `docs/technical/mini-spec-hamster-rendering-v1.md`에 정리한다.
 - 점프 아이템 세부 규칙 후속은 `docs/technical/mini-spec-jump-item-integration-v1.md`에 정리한다.
 - 구현을 바꿀 때는 이 문서도 같이 갱신한다.

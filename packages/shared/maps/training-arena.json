@@ -3,34 +3,34 @@
   "id": "training_arena",
   "name": "Training Arena",
   "size": {
-    "width": 800,
-    "height": 600
+    "width": 1600,
+    "height": 900
   },
   "boundaryPolicy": "closed",
-  "cameraPolicy": "static",
+  "cameraPolicy": "follow",
   "visualBounds": {
     "left": 0,
-    "right": 800,
+    "right": 1600,
     "top": 0,
-    "bottom": 600
+    "bottom": 780
   },
   "gameplayBounds": {
     "left": 0,
-    "right": 800,
+    "right": 1600,
     "top": 0,
-    "bottom": 920
+    "bottom": 980
   },
   "deathBounds": {
     "left": -80,
-    "right": 880,
+    "right": 1680,
     "top": -9999,
-    "bottom": 920
+    "bottom": 980
   },
   "spawnPoints": [
-    { "id": "spawn_a", "x": 140, "y": 80 },
-    { "id": "spawn_b", "x": 660, "y": 80 },
-    { "id": "spawn_c", "x": 320, "y": 80 },
-    { "id": "spawn_d", "x": 480, "y": 80 }
+    { "id": "spawn_a", "x": 160,  "y": 80 },
+    { "id": "spawn_b", "x": 440,  "y": 80 },
+    { "id": "spawn_c", "x": 1160, "y": 80 },
+    { "id": "spawn_d", "x": 1440, "y": 80 }
   ],
   "terrain": [],
   "collision": [
@@ -38,88 +38,102 @@
       "id": "floor_left",
       "type": "floor",
       "leftX": 0,
-      "rightX": 330,
-      "topY": 540
+      "rightX": 640,
+      "topY": 680
     },
     {
       "id": "floor_right",
       "type": "floor",
-      "leftX": 470,
-      "rightX": 800,
-      "topY": 540
+      "leftX": 960,
+      "rightX": 1600,
+      "topY": 680
     },
     {
-      "id": "platform_mid",
+      "id": "platform_left",
       "type": "one_way_platform",
-      "leftX": 250,
-      "rightX": 550,
-      "topY": 380
+      "leftX": 180,
+      "rightX": 560,
+      "topY": 480
+    },
+    {
+      "id": "platform_center",
+      "type": "one_way_platform",
+      "leftX": 680,
+      "rightX": 920,
+      "topY": 440
+    },
+    {
+      "id": "platform_right",
+      "type": "one_way_platform",
+      "leftX": 1040,
+      "rightX": 1420,
+      "topY": 480
     },
     {
       "id": "pit_wall_left",
       "type": "solid_wall",
-      "x": 330,
-      "topY": 540,
-      "bottomY": 700
+      "x": 640,
+      "topY": 680,
+      "bottomY": 980
     },
     {
       "id": "pit_wall_right",
       "type": "solid_wall",
-      "x": 470,
-      "topY": 540,
-      "bottomY": 700
+      "x": 960,
+      "topY": 680,
+      "bottomY": 980
     }
   ],
   "hazards": [
     {
       "id": "pit_fall_zone",
       "type": "fall_zone",
-      "x": 330,
-      "y": 700,
-      "width": 140,
-      "height": 220
+      "x": 640,
+      "y": 860,
+      "width": 320,
+      "height": 120
     },
     {
       "id": "spike_strip_right",
       "type": "instant_kill_hazard",
-      "x": 620,
-      "y": 522,
-      "width": 110,
+      "x": 1120,
+      "y": 662,
+      "width": 200,
       "height": 18
     }
   ],
   "weaponSpawns": [
     {
-      "id": "weapon_mid_left",
+      "id": "weapon_left_candidate",
       "weaponId": "acorn_blaster",
-      "x": 520,
-      "y": 320,
+      "x": 320,
+      "y": 420,
       "respawnMs": 10000,
       "despawnAfterMs": 10000,
       "spawnStyle": "airdrop",
       "despawnStyle": "shrink_pop",
       "mode": "random_candidates",
-      "spawnGroupId": "weapon_mid_group"
+      "spawnGroupId": "weapon_group"
     },
     {
-      "id": "weapon_mid_right",
+      "id": "weapon_right_candidate",
       "weaponId": "acorn_blaster",
-      "x": 620,
-      "y": 320,
+      "x": 1280,
+      "y": 420,
       "respawnMs": 10000,
       "despawnAfterMs": 10000,
       "spawnStyle": "airdrop",
       "despawnStyle": "shrink_pop",
       "mode": "random_candidates",
-      "spawnGroupId": "weapon_mid_group"
+      "spawnGroupId": "weapon_group"
     }
   ],
   "itemSpawns": [
     {
-      "id": "item_jump_mid",
+      "id": "item_jump_center",
       "itemId": "jump_boost_small",
-      "x": 400,
-      "y": 352,
+      "x": 800,
+      "y": 412,
       "respawnMs": 12000,
       "spawnStyle": "fade_in",
       "mode": "fixed"
@@ -132,17 +146,17 @@
       "respawnMs": 15000,
       "spawnStyle": "airdrop",
       "mode": "random_candidates",
-      "spawnGroupId": "health_pack_group"
+      "spawnGroupId": "health_group"
     },
     {
       "id": "item_heal_right_candidate",
       "itemId": "health_pack_small",
-      "x": 680,
+      "x": 1380,
       "y": 220,
       "respawnMs": 15000,
-      "spawnStyle": "airdrop",
+      "spawnStyle": "fade_in",
       "mode": "random_candidates",
-      "spawnGroupId": "health_pack_group"
+      "spawnGroupId": "health_group"
     }
   ],
   "decorations": []
