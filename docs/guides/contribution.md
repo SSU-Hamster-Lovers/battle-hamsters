@@ -16,6 +16,7 @@
 2. `docs/*` 브랜치에는 구현 코드를 섞지 않습니다.
 3. 큰 기능은 먼저 문서 또는 이슈로 쪼갠 뒤 작업합니다.
 4. shared 타입, 프로토콜, 시스템 경계 변경은 사전 합의를 권장합니다.
+5. 완료된 작업용 미니 스펙은 삭제보다 `docs/archive/mini-specs/` 이동을 우선합니다.
 
 ## Pull Request 규칙
 
@@ -41,3 +42,4 @@ chore: 빌드, CI 설정
 - [팀 역할 분담](../team/roles.md)
 - [협업 규칙](../team/collaboration-rules.md)
 - [스펙 주도 개발 워크플로](spec-driven-workflow.md)
+- [완료된 미니 스펙 아카이브](../archive/mini-specs/README.md)

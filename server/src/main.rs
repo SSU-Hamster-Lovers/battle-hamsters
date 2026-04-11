@@ -1,28 +1,32 @@
-use actix::{Actor, ActorContext, AsyncContext, Handler, Message, Recipient, StreamHandler};
-use actix_web::{web, App, Error, HttpRequest, HttpResponse, HttpServer, Responder};
-use actix_web_actors::ws;
+use actix::Recipient;
+use actix_cors::Cors;
+use actix_web::{http::header, web, App, HttpResponse, HttpServer, Responder};
+mod game_data;
+mod room_combat;
+mod room_config;
+mod room_pickups;
+mod room_runtime;
+mod ws_runtime;
+use game_data::{
+    ground_top_y, pit_left_x, pit_right_x, primary_fall_zone, primary_instant_kill_hazard,
+    room_id, runtime_map_data, weapon_definition, world_height, HazardKind,
+};
+use room_combat::{respawn_player, trigger_respawn};
+use room_config::RoomGameplayConfig;
+use room_runtime::{intersecting_hazard, spawn_position, step_player, surface_contains_x};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::collections::{HashMap, VecDeque};
+use std::time::{SystemTime, UNIX_EPOCH};
+use ws_runtime::{start_room_loop, ws_handler, AppState, WsText};
 
 const SERVER_VERSION: &str = "0.1.0";
-const ROOM_ID: &str = "room_alpha";
 const DEFAULT_TIME_LIMIT_MS: u64 = 300_000;
 const TICK_RATE: u64 = 20;
 const TICK_INTERVAL_MS: u64 = 1000 / TICK_RATE;
 const HEARTBEAT_INTERVAL_SECS: u64 = 5;
 const CLIENT_TIMEOUT_SECS: u64 = 10;
 
-const WORLD_WIDTH: f64 = 800.0;
-const WORLD_HEIGHT: f64 = 600.0;
-const GROUND_TOP_Y: f64 = 540.0;
-const FALL_ZONE_START_Y: f64 = WORLD_HEIGHT + 100.0;
-const FALL_ZONE_HEIGHT: f64 = 220.0;
-const PIT_LEFT_X: f64 = 330.0;
-const PIT_RIGHT_X: f64 = 470.0;
 const PLAYER_HALF_SIZE: f64 = 14.0;
 const RUN_SPEED_PER_TICK: f64 = 8.0;
 const GRAVITY_PER_TICK: f64 = 1.4;
@@ -33,92 +37,18 @@ const MAX_FAST_FALL_SPEED: f64 = 28.0;
 const DROP_THROUGH_MS: u64 = 220;
 const RESPAWN_DELAY_MS: u64 = 3_000;
 const TEST_LIVES: u8 = 99;
-const MAX_JUMP_COUNT: u8 = 1;
-
-#[derive(Clone, Copy)]
-struct FloorSegment {
-    left_x: f64,
-    right_x: f64,
-    top_y: f64,
-}
-
-#[derive(Clone, Copy)]
-struct OneWayPlatformSegment {
-    left_x: f64,
-    right_x: f64,
-    top_y: f64,
-}
-
-#[derive(Clone, Copy)]
-struct SolidWall {
-    x: f64,
-    top_y: f64,
-    bottom_y: f64,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum HazardKind {
-    FallZone,
-    InstantKillHazard,
-}
-
-#[derive(Clone, Copy)]
-struct HazardRect {
-    kind: HazardKind,
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
-}
-
-const FLOOR_SEGMENTS: [FloorSegment; 2] = [
-    FloorSegment {
-        left_x: 0.0,
-        right_x: PIT_LEFT_X,
-        top_y: GROUND_TOP_Y,
-    },
-    FloorSegment {
-        left_x: PIT_RIGHT_X,
-        right_x: WORLD_WIDTH,
-        top_y: GROUND_TOP_Y,
-    },
-];
-
-const ONE_WAY_PLATFORMS: [OneWayPlatformSegment; 1] = [OneWayPlatformSegment {
-    left_x: 250.0,
-    right_x: 550.0,
-    top_y: 380.0,
-}];
-
-const SOLID_WALLS: [SolidWall; 2] = [
-    SolidWall {
-        x: PIT_LEFT_X,
-        top_y: GROUND_TOP_Y,
-        bottom_y: FALL_ZONE_START_Y,
-    },
-    SolidWall {
-        x: PIT_RIGHT_X,
-        top_y: GROUND_TOP_Y,
-        bottom_y: FALL_ZONE_START_Y,
-    },
-];
-
-const HAZARDS: [HazardRect; 2] = [
-    HazardRect {
-        kind: HazardKind::FallZone,
-        x: PIT_LEFT_X,
-        y: FALL_ZONE_START_Y,
-        width: PIT_RIGHT_X - PIT_LEFT_X,
-        height: FALL_ZONE_HEIGHT,
-    },
-    HazardRect {
-        kind: HazardKind::InstantKillHazard,
-        x: 620.0,
-        y: GROUND_TOP_Y - 18.0,
-        width: 110.0,
-        height: 18.0,
-    },
-];
+const BASE_MAX_JUMP_COUNT: u8 = 1;
+const PICKUP_HALF_HEIGHT: f64 = 7.0;
+const PICKUP_GRAVITY_PER_TICK: f64 = 1.0;
+const PICKUP_MAX_FALL_SPEED: f64 = 18.0;
+const ITEM_PICKUP_RADIUS: f64 = 30.0;
+const MAX_HP: u16 = 100;
+const PICKUP_CULL_MARGIN: f64 = 64.0;
+const LAST_HIT_TTL_MS: u64 = 5_000;
+const KILL_FEED_TTL_MS: u64 = 3_500;
+const KILL_FEED_MAX_ENTRIES: usize = 16;
+const FREE_PLAY_ROOM_ID: &str = "free_play";
+const EMPTY_ROOM_TTL_MS: u64 = 600_000; // 10분, 빈 매치룸 자동 제거
 
 #[derive(Serialize)]
 struct HealthResponse {
@@ -145,30 +75,173 @@ async fn hello(query: web::Query<UserQuery>) -> impl Responder {
     }))
 }
 
+// POST /rooms — 매치룸 생성 → { roomId, code }
+async fn create_room(app_state: web::Data<AppState>) -> impl Responder {
+    use rand::Rng;
+    let room_seq = app_state.next_room_seq();
+    let room_id_str = format!("match_{}", room_seq);
+
+    let code = {
+        let codes = app_state.room_codes.lock().expect("codes poisoned");
+        let mut rng = rand::thread_rng();
+        loop {
+            let candidate = format!("{:04}", rng.gen_range(0..10000u32));
+            if !codes.contains_key(&candidate) {
+                break candidate;
+            }
+        }
+    };
+
+    let room = RoomState::new_match(room_id_str.clone(), code.clone());
+    {
+        let mut rooms = app_state.rooms.lock().expect("rooms poisoned");
+        rooms.insert(room_id_str.clone(), room);
+    }
+    {
+        let mut codes = app_state.room_codes.lock().expect("codes poisoned");
+        codes.insert(code.clone(), room_id_str.clone());
+    }
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "roomId": room_id_str,
+        "code": code,
+    }))
+}
+
+// GET /rooms — 활성 룸 목록
+async fn list_rooms(app_state: web::Data<AppState>) -> impl Responder {
+    let rooms = app_state.rooms.lock().expect("rooms poisoned");
+    let list: Vec<serde_json::Value> = rooms
+        .values()
+        .map(|r| {
+            serde_json::json!({
+                "roomId": r.room_id,
+                "type": if r.room_type == RoomType::FreePlay { "free_play" } else { "match" },
+                "code": r.room_code,
+                "players": r.sessions.len(),
+                "matchState": "running",
+            })
+        })
+        .collect();
+    HttpResponse::Ok().json(list)
+}
+
+// GET /rooms/free — 자유맵 roomId 조회
+async fn free_room(app_state: web::Data<AppState>) -> impl Responder {
+    let rooms = app_state.rooms.lock().expect("rooms poisoned");
+    if let Some(r) = rooms.get(FREE_PLAY_ROOM_ID) {
+        HttpResponse::Ok().json(serde_json::json!({ "roomId": r.room_id }))
+    } else {
+        HttpResponse::InternalServerError().body("free play room not found")
+    }
+}
+
+#[derive(Clone)]
+struct PickupKinematics {
+    velocity_y: f64,
+    grounded: bool,
+    affected_by_gravity: bool,
+}
+
+#[derive(Clone)]
+struct LastHitInfo {
+    killer_id: String,
+    weapon_id: String,
+    hit_at_ms: u64,
+}
+
 #[derive(Clone)]
 struct PlayerRuntime {
     snapshot: PlayerSnapshot,
     latest_input: PlayerInputPayload,
     spawn_index: usize,
+    external_velocity: Vector2,
+    next_attack_at: u64,
+    attack_queued: bool,
+    attack_was_down: bool,
+    last_hit_by: Option<LastHitInfo>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+enum RoomType {
+    FreePlay,
+    Match,
 }
 
 struct RoomState {
     room_id: String,
+    room_type: RoomType,
+    room_code: Option<String>,
+    empty_since_ms: Option<u64>,
     server_tick: u64,
     time_remaining_ms: u64,
+    gameplay_config: RoomGameplayConfig,
     players: HashMap<String, PlayerRuntime>,
+    weapon_pickups: HashMap<String, WorldWeaponPickup>,
+    item_pickups: HashMap<String, WorldItemPickup>,
+    next_weapon_pickup_id: u64,
+    next_item_pickup_id: u64,
+    next_spawn_respawn_at: HashMap<String, u64>,
+    next_item_spawn_respawn_at: HashMap<String, u64>,
     sessions: HashMap<String, Recipient<WsText>>,
+    kill_feed: VecDeque<KillFeedEntry>,
+    next_kill_feed_seq: u64,
 }
 
 impl RoomState {
+    /// 테스트 및 내부용 기본 생성자 (Match 타입, 기본 config)
     fn new() -> Self {
-        Self {
-            room_id: ROOM_ID.to_string(),
+        Self::with_gameplay_config(RoomGameplayConfig::default())
+    }
+
+    fn with_gameplay_config(gameplay_config: RoomGameplayConfig) -> Self {
+        Self::create(room_id().to_string(), RoomType::Match, None, gameplay_config)
+    }
+
+    pub(crate) fn new_free_play() -> Self {
+        let config = RoomGameplayConfig {
+            start_hp: 100,
+            stock_lives: 255,          // 사실상 무제한
+            base_jump_count: 1,
+            max_jump_count_limit: 3,
+            time_limit_ms: u64::MAX,   // 시간 제한 없음
+        };
+        Self::create(FREE_PLAY_ROOM_ID.to_string(), RoomType::FreePlay, None, config)
+    }
+
+    pub(crate) fn new_match(room_id: String, code: String) -> Self {
+        Self::create(room_id, RoomType::Match, Some(code), RoomGameplayConfig::default())
+    }
+
+    fn create(
+        room_id: String,
+        room_type: RoomType,
+        room_code: Option<String>,
+        gameplay_config: RoomGameplayConfig,
+    ) -> Self {
+        let now = now_ms();
+        let mut room = Self {
+            room_id,
+            room_type,
+            room_code,
+            empty_since_ms: None,
             server_tick: 0,
-            time_remaining_ms: DEFAULT_TIME_LIMIT_MS,
+            time_remaining_ms: gameplay_config.time_limit_ms,
+            gameplay_config,
             players: HashMap::new(),
+            weapon_pickups: HashMap::new(),
+            item_pickups: HashMap::new(),
+            next_weapon_pickup_id: 1,
+            next_item_pickup_id: 1,
+            next_spawn_respawn_at: HashMap::new(),
+            next_item_spawn_respawn_at: HashMap::new(),
             sessions: HashMap::new(),
-        }
+            kill_feed: VecDeque::new(),
+            next_kill_feed_seq: 0,
+        };
+        room.spawn_initial_weapons(now);
+        room.spawn_initial_items(now);
+        room
     }
 
     fn player_snapshots(&self) -> Vec<PlayerSnapshot> {
@@ -178,24 +251,56 @@ impl RoomState {
             .collect()
     }
 
-    fn add_player(
+    pub(crate) fn push_kill_feed(
         &mut self,
+        victim_id: String,
+        cause: DeathCause,
+        now_ms: u64,
+    ) {
+        self.next_kill_feed_seq += 1;
+        let entry = KillFeedEntry {
+            id: format!("kf_{}_{}", self.server_tick, self.next_kill_feed_seq),
+            occurred_at: now_ms,
+            victim_id,
+            cause,
+        };
+        self.kill_feed.push_back(entry);
+        while self.kill_feed.len() > KILL_FEED_MAX_ENTRIES {
+            self.kill_feed.pop_front();
+        }
+    }
+
+    pub(crate) fn cleanup_kill_feed(&mut self, now_ms: u64) {
+        while let Some(front) = self.kill_feed.front() {
+            if now_ms.saturating_sub(front.occurred_at) > KILL_FEED_TTL_MS {
+                self.kill_feed.pop_front();
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn kill_feed_snapshot(&self) -> Vec<KillFeedEntry> {
+        self.kill_feed.iter().cloned().collect()
+    }
+
+    fn build_player_snapshot(
+        &self,
         player_id: String,
         player_name: String,
-        recipient: Recipient<WsText>,
-    ) -> RoomSnapshotPayload {
-        let spawn_index = self.players.len();
+        spawn_index: usize,
+    ) -> PlayerSnapshot {
         let spawn = spawn_position(spawn_index);
-        let player = PlayerSnapshot {
-            id: player_id.clone(),
+        PlayerSnapshot {
+            id: player_id,
             name: player_name,
             position: spawn,
             velocity: Vector2 { x: 0.0, y: 0.0 },
             direction: Direction::Right,
-            hp: 100,
-            lives: TEST_LIVES,
+            hp: self.gameplay_config.start_hp,
+            lives: self.gameplay_config.stock_lives,
             move_speed_rank: 0,
-            max_jump_count: MAX_JUMP_COUNT,
+            max_jump_count: self.gameplay_config.base_jump_count,
             jump_count_used: 0,
             grounded: false,
             drop_through_until: None,
@@ -204,7 +309,17 @@ impl RoomState {
             equipped_weapon_resource: None,
             grab_state: None,
             state: PlayerState::Alive,
-        };
+        }
+    }
+
+    fn add_player(
+        &mut self,
+        player_id: String,
+        player_name: String,
+        recipient: Recipient<WsText>,
+    ) -> RoomSnapshotPayload {
+        let spawn_index = self.players.len();
+        let player = self.build_player_snapshot(player_id.clone(), player_name, spawn_index);
 
         self.sessions.insert(player_id.clone(), recipient);
         self.players.insert(
@@ -213,6 +328,11 @@ impl RoomState {
                 snapshot: player,
                 latest_input: PlayerInputPayload::default(),
                 spawn_index,
+                external_velocity: Vector2 { x: 0.0, y: 0.0 },
+                next_attack_at: 0,
+                attack_queued: false,
+                attack_was_down: false,
+                last_hit_by: None,
             },
         );
 
@@ -220,540 +340,29 @@ impl RoomState {
             room_id: self.room_id.clone(),
             self_player_id: Some(player_id),
             players: self.player_snapshots(),
-            weapon_pickups: vec![],
-            item_pickups: vec![],
+            weapon_pickups: self.weapon_pickup_snapshots(),
+            item_pickups: self.item_pickup_snapshots(),
             match_state: MatchState::Waiting,
+            kill_feed: self.kill_feed_snapshot(),
         }
     }
 
     fn remove_player(&mut self, player_id: &str) -> bool {
         self.sessions.remove(player_id);
-        self.players.remove(player_id).is_some()
+        let removed = self.players.remove(player_id).is_some();
+        if self.sessions.is_empty() && self.room_type == RoomType::Match {
+            self.empty_since_ms = Some(now_ms());
+        }
+        removed
     }
 
     fn apply_input(&mut self, player_id: &str, input: PlayerInputPayload) {
         if let Some(player) = self.players.get_mut(player_id) {
+            if input.attack_pressed {
+                player.attack_queued = true;
+            }
+            player.attack_was_down = input.attack;
             player.latest_input = input;
-        }
-    }
-
-    fn tick(&mut self, now_ms: u64) -> WorldSnapshotPayload {
-        self.server_tick += 1;
-        self.time_remaining_ms = self.time_remaining_ms.saturating_sub(TICK_INTERVAL_MS);
-
-        let player_ids = self.players.keys().cloned().collect::<Vec<_>>();
-        let mut deaths = Vec::new();
-
-        for player_id in player_ids {
-            let Some(player) = self.players.get_mut(&player_id) else {
-                continue;
-            };
-
-            if player.snapshot.state == PlayerState::Respawning {
-                if let Some(respawn_at) = player.snapshot.respawn_at {
-                    if now_ms >= respawn_at {
-                        respawn_player(player);
-                    }
-                }
-                continue;
-            }
-
-            step_player(player, now_ms);
-
-            if intersecting_hazard(&player.snapshot).is_some() {
-                deaths.push(player_id);
-            }
-        }
-
-        for player_id in deaths {
-            if let Some(player) = self.players.get_mut(&player_id) {
-                trigger_respawn(player, now_ms);
-            }
-        }
-
-        WorldSnapshotPayload {
-            version: 1,
-            room_id: self.room_id.clone(),
-            match_state: MatchState::Running,
-            server_tick: self.server_tick,
-            players: self.player_snapshots(),
-            projectiles: vec![],
-            weapon_pickups: vec![],
-            item_pickups: vec![],
-            time_remaining_ms: self.time_remaining_ms,
-        }
-    }
-}
-
-fn spawn_position(spawn_index: usize) -> Vector2 {
-    let positions = [140.0, 660.0, 320.0, 480.0];
-    Vector2 {
-        x: positions[spawn_index % positions.len()],
-        y: 80.0,
-    }
-}
-
-fn step_player(player: &mut PlayerRuntime, now_ms: u64) {
-    let input = player.latest_input.clone();
-    let move_x = input.move_ref().x.clamp(-1.0, 1.0);
-    let down_pressed = input.move_ref().y > 0.5;
-
-    player.snapshot.velocity.x = move_x * RUN_SPEED_PER_TICK;
-
-    if move_x < 0.0 {
-        player.snapshot.direction = Direction::Left;
-    } else if move_x > 0.0 {
-        player.snapshot.direction = Direction::Right;
-    } else if input.aim.x < 0.0 {
-        player.snapshot.direction = Direction::Left;
-    } else if input.aim.x > 0.0 {
-        player.snapshot.direction = Direction::Right;
-    }
-
-    let on_one_way_platform = is_on_one_way_platform(&player.snapshot);
-    let drop_active = player
-        .snapshot
-        .drop_through_until
-        .is_some_and(|until| until > now_ms);
-
-    if input.jump {
-        if player.snapshot.grounded && down_pressed && on_one_way_platform {
-            player.snapshot.drop_through_until = Some(now_ms + DROP_THROUGH_MS);
-            player.snapshot.grounded = false;
-            player.snapshot.position.y += 2.0;
-            player.snapshot.velocity.y = 2.0;
-        } else if player.snapshot.jump_count_used < player.snapshot.max_jump_count {
-            player.snapshot.velocity.y = JUMP_VELOCITY;
-            player.snapshot.grounded = false;
-            player.snapshot.jump_count_used += 1;
-        }
-    }
-
-    if !player.snapshot.grounded {
-        if down_pressed && player.snapshot.velocity.y < 0.0 {
-            player.snapshot.velocity.y = 0.0;
-        }
-
-        let gravity = if down_pressed {
-            FAST_FALL_GRAVITY_PER_TICK
-        } else {
-            GRAVITY_PER_TICK
-        };
-        let max_fall_speed = if down_pressed {
-            MAX_FAST_FALL_SPEED
-        } else {
-            MAX_FALL_SPEED
-        };
-        player.snapshot.velocity.y = (player.snapshot.velocity.y + gravity).min(max_fall_speed);
-    }
-
-    let previous_position = player.snapshot.position.clone();
-    player.snapshot.position.x += player.snapshot.velocity.x;
-    player.snapshot.position.x = player
-        .snapshot
-        .position
-        .x
-        .clamp(PLAYER_HALF_SIZE, WORLD_WIDTH - PLAYER_HALF_SIZE);
-
-    player.snapshot.position.y += player.snapshot.velocity.y;
-
-    player.snapshot.grounded = false;
-
-    resolve_wall_collisions(&mut player.snapshot, &previous_position);
-
-    let previous_bottom = previous_position.y + PLAYER_HALF_SIZE;
-    let current_bottom = player.snapshot.position.y + PLAYER_HALF_SIZE;
-
-    for floor in FLOOR_SEGMENTS {
-        if current_bottom >= floor.top_y
-            && surface_contains_x(floor.left_x, floor.right_x, player.snapshot.position.x)
-        {
-            land_on_surface(&mut player.snapshot, floor.top_y);
-            return;
-        }
-    }
-
-    if player.snapshot.velocity.y >= 0.0 && !drop_active {
-        for platform in ONE_WAY_PLATFORMS {
-            if previous_bottom <= platform.top_y
-                && current_bottom >= platform.top_y
-                && surface_contains_x(
-                    platform.left_x,
-                    platform.right_x,
-                    player.snapshot.position.x,
-                )
-            {
-                land_on_surface(&mut player.snapshot, platform.top_y);
-                return;
-            }
-        }
-    }
-}
-
-fn is_on_one_way_platform(player: &PlayerSnapshot) -> bool {
-    player.grounded
-        && ONE_WAY_PLATFORMS.iter().any(|platform| {
-            (player.position.y + PLAYER_HALF_SIZE - platform.top_y).abs() < 1.0
-                && surface_contains_x(platform.left_x, platform.right_x, player.position.x)
-        })
-}
-
-fn surface_contains_x(left_x: f64, right_x: f64, x: f64) -> bool {
-    (left_x..=right_x).contains(&x)
-}
-
-fn land_on_surface(player: &mut PlayerSnapshot, top_y: f64) {
-    player.position.y = top_y - PLAYER_HALF_SIZE;
-    player.velocity.y = 0.0;
-    player.grounded = true;
-    player.jump_count_used = 0;
-}
-
-fn resolve_wall_collisions(player: &mut PlayerSnapshot, previous_position: &Vector2) {
-    let current_top = player.position.y - PLAYER_HALF_SIZE;
-    let current_bottom = player.position.y + PLAYER_HALF_SIZE;
-
-    for wall in SOLID_WALLS {
-        if current_bottom <= wall.top_y || current_top >= wall.bottom_y {
-            continue;
-        }
-
-        let previous_left = previous_position.x - PLAYER_HALF_SIZE;
-        let previous_right = previous_position.x + PLAYER_HALF_SIZE;
-        let current_left = player.position.x - PLAYER_HALF_SIZE;
-        let current_right = player.position.x + PLAYER_HALF_SIZE;
-
-        if previous_left >= wall.x && current_left <= wall.x {
-            player.position.x = wall.x + PLAYER_HALF_SIZE;
-            player.velocity.x = 0.0;
-        } else if previous_right <= wall.x && current_right >= wall.x {
-            player.position.x = wall.x - PLAYER_HALF_SIZE;
-            player.velocity.x = 0.0;
-        }
-    }
-}
-
-fn intersecting_hazard(player: &PlayerSnapshot) -> Option<HazardKind> {
-    let player_left = player.position.x - PLAYER_HALF_SIZE;
-    let player_right = player.position.x + PLAYER_HALF_SIZE;
-    let player_top = player.position.y - PLAYER_HALF_SIZE;
-    let player_bottom = player.position.y + PLAYER_HALF_SIZE;
-
-    HAZARDS.iter().find_map(|hazard| {
-        let hazard_right = hazard.x + hazard.width;
-        let hazard_bottom = hazard.y + hazard.height;
-        let overlaps = player_right > hazard.x
-            && player_left < hazard_right
-            && player_bottom > hazard.y
-            && player_top < hazard_bottom;
-
-        overlaps.then_some(hazard.kind)
-    })
-}
-
-fn trigger_respawn(player: &mut PlayerRuntime, now_ms: u64) {
-    if player.snapshot.lives > 0 {
-        player.snapshot.lives -= 1;
-    }
-
-    player.snapshot.hp = 0;
-    player.snapshot.state = PlayerState::Respawning;
-    player.snapshot.respawn_at = Some(now_ms + RESPAWN_DELAY_MS);
-    player.snapshot.velocity = Vector2 { x: 0.0, y: 0.0 };
-    player.snapshot.grounded = false;
-    player.snapshot.jump_count_used = 0;
-    player.snapshot.drop_through_until = None;
-    player.snapshot.position.y = GROUND_TOP_Y + 80.0;
-}
-
-fn respawn_player(player: &mut PlayerRuntime) {
-    player.snapshot.position = spawn_position(player.spawn_index);
-    player.snapshot.velocity = Vector2 { x: 0.0, y: 0.0 };
-    player.snapshot.hp = 100;
-    player.snapshot.grounded = false;
-    player.snapshot.jump_count_used = 0;
-    player.snapshot.drop_through_until = None;
-    player.snapshot.respawn_at = None;
-    player.snapshot.state = PlayerState::Alive;
-}
-
-struct AppState {
-    room: Arc<Mutex<RoomState>>,
-    next_connection_id: AtomicU64,
-    next_player_id: AtomicU64,
-}
-
-impl AppState {
-    fn new() -> Self {
-        Self {
-            room: Arc::new(Mutex::new(RoomState::new())),
-            next_connection_id: AtomicU64::new(1),
-            next_player_id: AtomicU64::new(1),
-        }
-    }
-
-    fn next_connection_id(&self) -> String {
-        format!(
-            "conn_{}",
-            self.next_connection_id.fetch_add(1, Ordering::Relaxed)
-        )
-    }
-
-    fn next_player_id(&self) -> String {
-        format!(
-            "player_{}",
-            self.next_player_id.fetch_add(1, Ordering::Relaxed)
-        )
-    }
-}
-
-#[derive(Message)]
-#[rtype(result = "()")]
-struct WsText(pub String);
-
-struct WsSession {
-    connection_id: String,
-    player_id: Option<String>,
-    app_state: web::Data<AppState>,
-    heartbeat_at: Instant,
-}
-
-impl WsSession {
-    fn new(connection_id: String, app_state: web::Data<AppState>) -> Self {
-        Self {
-            connection_id,
-            player_id: None,
-            app_state,
-            heartbeat_at: Instant::now(),
-        }
-    }
-
-    fn send_json<T>(&self, ctx: &mut ws::WebsocketContext<Self>, kind: &'static str, payload: T)
-    where
-        T: Serialize,
-    {
-        if let Ok(text) = serialize_message(kind, payload) {
-            ctx.text(text);
-        }
-    }
-
-    fn handle_join_room(&mut self, payload: JoinRoomPayload, ctx: &mut ws::WebsocketContext<Self>) {
-        if payload.room_id != ROOM_ID {
-            self.send_json(
-                ctx,
-                "error",
-                ErrorPayload {
-                    code: "ROOM_NOT_FOUND".to_string(),
-                    message: format!("Requested room '{}' does not exist", payload.room_id),
-                },
-            );
-            return;
-        }
-
-        if self.player_id.is_some() {
-            self.send_json(
-                ctx,
-                "error",
-                ErrorPayload {
-                    code: "ALREADY_JOINED".to_string(),
-                    message: "Connection already joined a room".to_string(),
-                },
-            );
-            return;
-        }
-
-        let player_id = self.app_state.next_player_id();
-        let recipient = ctx.address().recipient::<WsText>();
-
-        let room_snapshot = {
-            let mut room = self.app_state.room.lock().expect("room mutex poisoned");
-            room.add_player(player_id.clone(), payload.player_name.clone(), recipient)
-        };
-
-        self.player_id = Some(player_id.clone());
-        self.send_json(ctx, "room_snapshot", room_snapshot);
-        broadcast_to_room(
-            &self.app_state,
-            &serialize_message(
-                "player_joined",
-                PlayerJoinedPayload {
-                    player_id,
-                    name: payload.player_name,
-                },
-            )
-            .expect("serialize player_joined"),
-        );
-    }
-
-    fn handle_player_input(
-        &mut self,
-        payload: PlayerInputPayload,
-        ctx: &mut ws::WebsocketContext<Self>,
-    ) {
-        let Some(player_id) = self.player_id.as_deref() else {
-            self.send_json(
-                ctx,
-                "error",
-                ErrorPayload {
-                    code: "NOT_JOINED".to_string(),
-                    message: "Join a room before sending input".to_string(),
-                },
-            );
-            return;
-        };
-
-        let mut room = self.app_state.room.lock().expect("room mutex poisoned");
-        room.apply_input(player_id, payload);
-    }
-
-    fn start_heartbeat(&self, ctx: &mut ws::WebsocketContext<Self>) {
-        ctx.run_interval(
-            Duration::from_secs(HEARTBEAT_INTERVAL_SECS),
-            |actor, ctx| {
-                if actor.heartbeat_at.elapsed() > Duration::from_secs(CLIENT_TIMEOUT_SECS) {
-                    log::warn!("WebSocket client timed out: {}", actor.connection_id);
-                    ctx.stop();
-                    return;
-                }
-
-                ctx.ping(b"ping");
-            },
-        );
-    }
-}
-
-impl Actor for WsSession {
-    type Context = ws::WebsocketContext<Self>;
-
-    fn started(&mut self, ctx: &mut Self::Context) {
-        self.start_heartbeat(ctx);
-        self.send_json(
-            ctx,
-            "welcome",
-            WelcomePayload {
-                connection_id: self.connection_id.clone(),
-                server_version: SERVER_VERSION.to_string(),
-            },
-        );
-    }
-
-    fn stopped(&mut self, _: &mut Self::Context) {
-        let Some(player_id) = self.player_id.take() else {
-            return;
-        };
-
-        let removed = {
-            let mut room = self.app_state.room.lock().expect("room mutex poisoned");
-            room.remove_player(&player_id)
-        };
-
-        if removed {
-            let message = serialize_message("player_left", PlayerLeftPayload { player_id })
-                .expect("serialize player_left");
-            broadcast_to_room(&self.app_state, &message);
-        }
-    }
-}
-
-impl Handler<WsText> for WsSession {
-    type Result = ();
-
-    fn handle(&mut self, msg: WsText, ctx: &mut Self::Context) -> Self::Result {
-        ctx.text(msg.0);
-    }
-}
-
-impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
-    fn handle(&mut self, item: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
-        match item {
-            Ok(ws::Message::Text(text)) => {
-                let envelope = match serde_json::from_str::<IncomingEnvelope>(&text) {
-                    Ok(envelope) => envelope,
-                    Err(error) => {
-                        self.send_json(
-                            ctx,
-                            "error",
-                            ErrorPayload {
-                                code: "INVALID_MESSAGE".to_string(),
-                                message: error.to_string(),
-                            },
-                        );
-                        return;
-                    }
-                };
-
-                match envelope.kind.as_str() {
-                    "join_room" => {
-                        match serde_json::from_value::<JoinRoomPayload>(envelope.payload) {
-                            Ok(payload) => self.handle_join_room(payload, ctx),
-                            Err(error) => self.send_json(
-                                ctx,
-                                "error",
-                                ErrorPayload {
-                                    code: "INVALID_JOIN_ROOM".to_string(),
-                                    message: error.to_string(),
-                                },
-                            ),
-                        }
-                    }
-                    "player_input" => {
-                        match serde_json::from_value::<PlayerInputPayload>(envelope.payload) {
-                            Ok(payload) => self.handle_player_input(payload, ctx),
-                            Err(error) => self.send_json(
-                                ctx,
-                                "error",
-                                ErrorPayload {
-                                    code: "INVALID_PLAYER_INPUT".to_string(),
-                                    message: error.to_string(),
-                                },
-                            ),
-                        }
-                    }
-                    "ping" => {
-                        if let Ok(payload) = serde_json::from_value::<PingPayload>(envelope.payload)
-                        {
-                            self.send_json(ctx, "pong", payload);
-                        }
-                    }
-                    _ => {
-                        self.send_json(
-                            ctx,
-                            "error",
-                            ErrorPayload {
-                                code: "UNKNOWN_MESSAGE_TYPE".to_string(),
-                                message: format!("Unsupported message type: {}", envelope.kind),
-                            },
-                        );
-                    }
-                }
-            }
-            Ok(ws::Message::Ping(bytes)) => {
-                self.heartbeat_at = Instant::now();
-                ctx.pong(&bytes);
-            }
-            Ok(ws::Message::Pong(_)) => {
-                self.heartbeat_at = Instant::now();
-            }
-            Ok(ws::Message::Close(reason)) => {
-                ctx.close(reason);
-                ctx.stop();
-            }
-            Ok(ws::Message::Binary(_)) => {
-                self.send_json(
-                    ctx,
-                    "error",
-                    ErrorPayload {
-                        code: "BINARY_NOT_SUPPORTED".to_string(),
-                        message: "This server currently accepts JSON text messages only"
-                            .to_string(),
-                    },
-                );
-            }
-            Ok(ws::Message::Continuation(_)) | Ok(ws::Message::Nop) => {}
-            Err(error) => {
-                log::warn!("WebSocket protocol error: {}", error);
-                ctx.stop();
-            }
         }
     }
 }
@@ -790,7 +399,10 @@ struct PlayerInputPayload {
     aim: Vector2,
     jump: bool,
     attack: bool,
+    attack_pressed: bool,
+    pickup_weapon_pressed: bool,
     drop_weapon: bool,
+    drop_weapon_pressed: bool,
 }
 
 impl PlayerInputPayload {
@@ -820,6 +432,7 @@ struct RoomSnapshotPayload {
     weapon_pickups: Vec<WorldWeaponPickup>,
     item_pickups: Vec<WorldItemPickup>,
     match_state: MatchState,
+    kill_feed: Vec<KillFeedEntry>,
 }
 
 #[derive(Serialize)]
@@ -834,6 +447,36 @@ struct WorldSnapshotPayload {
     weapon_pickups: Vec<WorldWeaponPickup>,
     item_pickups: Vec<WorldItemPickup>,
     time_remaining_ms: u64,
+    kill_feed: Vec<KillFeedEntry>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct KillFeedEntry {
+    id: String,
+    occurred_at: u64,
+    victim_id: String,
+    cause: DeathCause,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum DeathCause {
+    FallZone,
+    InstantKillHazard,
+    #[serde(rename_all = "camelCase")]
+    Weapon {
+        killer_id: String,
+        weapon_id: String,
+    },
+    // `self` variant is reserved for self-inflicted damage (e.g. self-recoil kill).
+    // Not emitted yet in v1 hazard feedback, but kept in the contract so the
+    // shared TS DeathCause remains in sync with the server.
+    #[allow(dead_code)]
+    #[serde(rename = "self", rename_all = "camelCase")]
+    SelfInflicted {
+        weapon_id: String,
+    },
 }
 
 #[derive(Serialize)]
@@ -867,6 +510,16 @@ struct WorldWeaponPickup {
     despawn_style: DespawnStyle,
     spawned_at: u64,
     despawn_at: Option<u64>,
+    #[serde(skip_serializing)]
+    spawn_cycle_key: Option<String>,
+    #[serde(skip_serializing)]
+    respawn_ms: Option<u64>,
+    #[serde(skip_serializing)]
+    kinematics: PickupKinematics,
+    #[serde(skip_serializing)]
+    pickup_blocked_until: Option<u64>,
+    #[serde(skip_serializing)]
+    pickup_blocked_player_id: Option<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -878,6 +531,13 @@ struct WorldItemPickup {
     source: ItemSource,
     spawned_at: u64,
     despawn_at: Option<u64>,
+    spawn_style: SpawnStyle,
+    #[serde(skip_serializing)]
+    spawn_cycle_key: Option<String>,
+    #[serde(skip_serializing)]
+    respawn_ms: Option<u64>,
+    #[serde(skip_serializing)]
+    kinematics: PickupKinematics,
 }
 
 #[derive(Serialize, Clone)]
@@ -925,7 +585,7 @@ enum Direction {
 }
 
 #[allow(dead_code)]
-#[derive(Serialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 enum PlayerState {
     Alive,
@@ -951,7 +611,7 @@ enum ItemSource {
 }
 
 #[allow(dead_code)]
-#[derive(Serialize, Clone, Copy)]
+#[derive(Serialize, Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 enum SpawnStyle {
     Airdrop,
@@ -960,10 +620,44 @@ enum SpawnStyle {
 }
 
 #[allow(dead_code)]
-#[derive(Serialize, Clone, Copy)]
+#[derive(Serialize, Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 enum DespawnStyle {
     ShrinkPop,
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
+enum HitType {
+    Melee,
+    Hitscan,
+    Projectile,
+    Beam,
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
+enum FireMode {
+    Single,
+    Burst,
+    Auto,
+    Channel,
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
+enum ResourceModel {
+    Infinite,
+    Magazine,
+    Capacity,
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
+enum WeaponRarity {
+    Common,
+    Uncommon,
+    Rare,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -990,43 +684,6 @@ fn serialize_message<T: Serialize>(
     })
 }
 
-fn broadcast_to_room(app_state: &web::Data<AppState>, text: &str) {
-    let recipients = {
-        let room = app_state.room.lock().expect("room mutex poisoned");
-        room.sessions.values().cloned().collect::<Vec<_>>()
-    };
-
-    for recipient in recipients {
-        let _ = recipient.try_send(WsText(text.to_string()));
-    }
-}
-
-fn start_room_loop(app_state: web::Data<AppState>) {
-    actix_web::rt::spawn(async move {
-        let mut ticker = actix_web::rt::time::interval(Duration::from_millis(TICK_INTERVAL_MS));
-
-        loop {
-            ticker.tick().await;
-            let message = {
-                let mut room = app_state.room.lock().expect("room mutex poisoned");
-                let snapshot = room.tick(now_ms());
-                serialize_message("world_snapshot", snapshot)
-                    .expect("world_snapshot should serialize")
-            };
-            broadcast_to_room(&app_state, &message);
-        }
-    });
-}
-
-async fn ws_handler(
-    req: HttpRequest,
-    stream: web::Payload,
-    app_state: web::Data<AppState>,
-) -> Result<HttpResponse, Error> {
-    let connection_id = app_state.next_connection_id();
-    ws::start(WsSession::new(connection_id, app_state), &req, stream)
-}
-
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::default().default_filter_or("info"));
@@ -1042,10 +699,20 @@ async fn main() -> std::io::Result<()> {
     log::info!("Starting Battle Hamsters Server on port {}", api_port);
 
     HttpServer::new(move || {
+        let cors = Cors::default()
+            .allow_any_origin()
+            .allowed_methods(vec!["GET", "POST", "OPTIONS"])
+            .allowed_headers(vec![header::CONTENT_TYPE, header::ACCEPT])
+            .max_age(3600);
+
         App::new()
+            .wrap(cors)
             .app_data(app_state.clone())
             .route("/health", web::get().to(health))
             .route("/hello", web::get().to(hello))
+            .route("/rooms", web::post().to(create_room))
+            .route("/rooms", web::get().to(list_rooms))
+            .route("/rooms/free", web::get().to(free_room))
             .route("/ws", web::get().to(ws_handler))
     })
     .bind(("0.0.0.0", api_port))?
@@ -1069,7 +736,7 @@ mod tests {
                 hp: 100,
                 lives: TEST_LIVES,
                 move_speed_rank: 0,
-                max_jump_count: MAX_JUMP_COUNT,
+                max_jump_count: BASE_MAX_JUMP_COUNT,
                 jump_count_used: 0,
                 grounded: false,
                 drop_through_until: None,
@@ -1081,6 +748,11 @@ mod tests {
             },
             latest_input: PlayerInputPayload::default(),
             spawn_index: 0,
+            external_velocity: Vector2 { x: 0.0, y: 0.0 },
+            next_attack_at: 0,
+            attack_queued: false,
+            attack_was_down: false,
+            last_hit_by: None,
         }
     }
 
@@ -1095,28 +767,31 @@ mod tests {
 
     #[test]
     fn player_lands_on_floor_outside_pit() {
-        let mut player = test_player(180.0, GROUND_TOP_Y - PLAYER_HALF_SIZE - 2.0);
+        let mut player = test_player(180.0, ground_top_y() - PLAYER_HALF_SIZE - 2.0);
         player.snapshot.velocity.y = 8.0;
 
         step_player(&mut player, 0);
 
         assert!(player.snapshot.grounded);
-        assert_eq!(player.snapshot.position.y, GROUND_TOP_Y - PLAYER_HALF_SIZE);
+        assert_eq!(
+            player.snapshot.position.y,
+            ground_top_y() - PLAYER_HALF_SIZE
+        );
         assert_eq!(player.snapshot.velocity.y, 0.0);
     }
 
     #[test]
     fn player_does_not_land_inside_fall_zone_gap() {
         let mut player = test_player(
-            (PIT_LEFT_X + PIT_RIGHT_X) / 2.0,
-            GROUND_TOP_Y - PLAYER_HALF_SIZE - 2.0,
+            (pit_left_x() + pit_right_x()) / 2.0,
+            ground_top_y() - PLAYER_HALF_SIZE - 2.0,
         );
         player.snapshot.velocity.y = 8.0;
 
         step_player(&mut player, 0);
 
         assert!(!player.snapshot.grounded);
-        assert!(player.snapshot.position.y > GROUND_TOP_Y - PLAYER_HALF_SIZE);
+        assert!(player.snapshot.position.y > ground_top_y() - PLAYER_HALF_SIZE);
         assert_eq!(intersecting_hazard(&player.snapshot), None);
 
         for _ in 0..24 {
@@ -1134,32 +809,33 @@ mod tests {
 
     #[test]
     fn player_collides_with_pit_wall_from_inside() {
-        let mut player = test_player(PIT_LEFT_X + PLAYER_HALF_SIZE + 2.0, GROUND_TOP_Y + 20.0);
+        let mut player = test_player(pit_left_x() + PLAYER_HALF_SIZE + 2.0, ground_top_y() + 20.0);
         player.latest_input.movement = Vector2 { x: -1.0, y: 0.0 };
 
         step_player(&mut player, 0);
 
-        assert_eq!(player.snapshot.position.x, PIT_LEFT_X + PLAYER_HALF_SIZE);
+        assert_eq!(player.snapshot.position.x, pit_left_x() + PLAYER_HALF_SIZE);
         assert_eq!(player.snapshot.velocity.x, 0.0);
     }
 
     #[test]
     fn player_still_collides_with_extended_pit_wall_below_screen() {
-        let mut player = test_player(PIT_LEFT_X + PLAYER_HALF_SIZE + 2.0, WORLD_HEIGHT + 40.0);
+        let mut player = test_player(pit_left_x() + PLAYER_HALF_SIZE + 2.0, world_height() + 40.0);
         player.latest_input.movement = Vector2 { x: -1.0, y: 0.0 };
 
         step_player(&mut player, 0);
 
-        assert_eq!(player.snapshot.position.x, PIT_LEFT_X + PLAYER_HALF_SIZE);
+        assert_eq!(player.snapshot.position.x, pit_left_x() + PLAYER_HALF_SIZE);
         assert_eq!(player.snapshot.velocity.x, 0.0);
     }
 
     #[test]
     fn instant_kill_hazard_is_separate_from_fall_zone() {
-        let player_on_spikes = test_player(660.0, GROUND_TOP_Y - PLAYER_HALF_SIZE);
+        let ikh = primary_instant_kill_hazard();
+        let player_on_spikes = test_player(ikh.x + ikh.width / 2.0, ground_top_y() - PLAYER_HALF_SIZE);
         let player_in_pit = test_player(
-            (PIT_LEFT_X + PIT_RIGHT_X) / 2.0,
-            FALL_ZONE_START_Y + PLAYER_HALF_SIZE + 1.0,
+            (pit_left_x() + pit_right_x()) / 2.0,
+            primary_fall_zone().y + PLAYER_HALF_SIZE + 1.0,
         );
 
         assert_eq!(
@@ -1170,5 +846,713 @@ mod tests {
             intersecting_hazard(&player_in_pit.snapshot),
             Some(HazardKind::FallZone)
         );
+    }
+
+    #[test]
+    fn room_starts_with_spawned_weapon_pickup() {
+        let room = RoomState::new();
+        assert_eq!(room.weapon_pickups.len(), 1);
+        let pickup = room
+            .weapon_pickups
+            .values()
+            .next()
+            .expect("spawn pickup should exist");
+        assert_eq!(pickup.weapon_id, "acorn_blaster");
+        assert_eq!(pickup.resource_remaining, 8);
+        assert!(matches!(pickup.position.x, 320.0 | 1280.0));
+    }
+
+    #[test]
+    fn room_starts_with_spawned_item_pickups() {
+        let room = RoomState::new();
+        assert_eq!(room.item_pickups.len(), 2);
+        let item_ids = room
+            .item_pickups
+            .values()
+            .map(|pickup| pickup.item_id.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(item_ids.contains(&"jump_boost_small"));
+        assert!(item_ids.contains(&"health_pack_small"));
+        let heal_pickup = room
+            .item_pickups
+            .values()
+            .find(|pickup| pickup.item_id == "health_pack_small")
+            .expect("heal pickup should exist");
+        assert!(matches!(heal_pickup.position.x, 220.0 | 1380.0));
+    }
+
+    #[test]
+    fn item_pickup_applies_jump_boost_and_respawns() {
+        let mut room = RoomState::new();
+        let jump_spawn = runtime_map_data()
+            .item_spawns
+            .iter()
+            .find(|spawn| spawn.item_id == "jump_boost_small")
+            .expect("jump spawn should exist")
+            .clone();
+
+        let mut player = test_player(jump_spawn.position.x, jump_spawn.position.y);
+        player.snapshot.max_jump_count = BASE_MAX_JUMP_COUNT;
+        room.players.insert("player".to_string(), player);
+
+        room.handle_item_pickup("player", 1000);
+
+        let player_after = room.players.get("player").expect("player should exist");
+        assert_eq!(player_after.snapshot.max_jump_count, 2);
+        assert!(room
+            .item_pickups
+            .values()
+            .all(|pickup| pickup.item_id != "jump_boost_small"));
+        assert_eq!(
+            room.next_item_spawn_respawn_at.get(&jump_spawn.id),
+            Some(&(1000 + jump_spawn.respawn_ms))
+        );
+
+        room.refresh_item_spawns(1000 + jump_spawn.respawn_ms);
+
+        assert!(room
+            .item_pickups
+            .values()
+            .any(|pickup| pickup.item_id == "jump_boost_small"));
+    }
+
+    #[test]
+    fn item_pickup_heals_and_clamps_hp() {
+        let mut room = RoomState::new();
+        let health_pickup_position = room
+            .item_pickups
+            .values()
+            .find(|pickup| pickup.item_id == "health_pack_small")
+            .map(|pickup| pickup.position.clone())
+            .expect("health pickup should exist");
+
+        let mut player = test_player(health_pickup_position.x, health_pickup_position.y);
+        player.snapshot.hp = 80;
+        room.players.insert("player".to_string(), player);
+
+        room.handle_item_pickup("player", 1000);
+
+        let player_after = room.players.get("player").expect("player should exist");
+        assert_eq!(player_after.snapshot.hp, MAX_HP);
+    }
+
+    #[test]
+    fn fade_in_item_stays_floating() {
+        let mut room = RoomState::new();
+        let jump_item_id = room
+            .item_pickups
+            .iter()
+            .find(|(_, pickup)| pickup.item_id == "jump_boost_small")
+            .map(|(pickup_id, _)| pickup_id.clone())
+            .expect("jump item should exist");
+
+        let starting_y = room
+            .item_pickups
+            .get(&jump_item_id)
+            .expect("jump item should exist")
+            .position
+            .y;
+
+        room.step_item_pickups();
+
+        let after_y = room
+            .item_pickups
+            .get(&jump_item_id)
+            .expect("jump item should exist")
+            .position
+            .y;
+
+        assert_eq!(starting_y, after_y);
+    }
+
+    #[test]
+    fn airdrop_item_falls_until_grounded() {
+        let mut room = RoomState::new();
+        // Find specifically an airdrop-style item (affected_by_gravity = true).
+        // random_candidates may select either the airdrop or fade_in health pack
+        // variant, so filter by kinematics rather than item_id alone.
+        let heal_item_id = room
+            .item_pickups
+            .iter()
+            .find(|(_, pickup)| {
+                pickup.item_id == "health_pack_small" && pickup.kinematics.affected_by_gravity
+            })
+            .map(|(pickup_id, _)| pickup_id.clone())
+            .expect("airdrop heal item should exist when the airdrop candidate is selected");
+
+        let starting_y = room
+            .item_pickups
+            .get(&heal_item_id)
+            .expect("heal item should exist")
+            .position
+            .y;
+
+        for _ in 0..40 {
+            room.step_item_pickups();
+        }
+
+        let pickup = room
+            .item_pickups
+            .get(&heal_item_id)
+            .expect("heal item should exist");
+
+        assert!(pickup.position.y > starting_y);
+        assert!(pickup.kinematics.grounded);
+    }
+
+    #[test]
+    fn room_gameplay_config_applies_to_new_players() {
+        let gameplay_config = RoomGameplayConfig {
+            start_hp: 150,
+            stock_lives: 7,
+            base_jump_count: 2,
+            max_jump_count_limit: 3,
+            time_limit_ms: 123_000,
+        };
+        let room = RoomState::with_gameplay_config(gameplay_config);
+        let player = room.build_player_snapshot("player_cfg".to_string(), "cfg".to_string(), 0);
+
+        assert_eq!(room.time_remaining_ms, gameplay_config.time_limit_ms);
+        assert_eq!(player.hp, gameplay_config.start_hp);
+        assert_eq!(player.lives, gameplay_config.stock_lives);
+        assert_eq!(player.max_jump_count, gameplay_config.base_jump_count);
+    }
+
+    #[test]
+    fn hitscan_attack_consumes_weapon_and_applies_recoil() {
+        let mut room = RoomState::new();
+
+        let shooter = PlayerRuntime {
+            snapshot: PlayerSnapshot {
+                id: "shooter".to_string(),
+                name: "shooter".to_string(),
+                position: Vector2 { x: 140.0, y: 120.0 },
+                velocity: Vector2 { x: 0.0, y: 0.0 },
+                direction: Direction::Right,
+                hp: 100,
+                lives: TEST_LIVES,
+                move_speed_rank: 0,
+                max_jump_count: BASE_MAX_JUMP_COUNT,
+                jump_count_used: 0,
+                grounded: true,
+                drop_through_until: None,
+                respawn_at: None,
+                equipped_weapon_id: "acorn_blaster".to_string(),
+                equipped_weapon_resource: Some(1),
+                grab_state: None,
+                state: PlayerState::Alive,
+            },
+            latest_input: PlayerInputPayload {
+                sequence: 1,
+                movement: Vector2 { x: 0.0, y: 0.0 },
+                aim: Vector2 { x: 1.0, y: 0.0 },
+                jump: false,
+                attack: true,
+                attack_pressed: true,
+                pickup_weapon_pressed: false,
+                drop_weapon: false,
+                drop_weapon_pressed: false,
+            },
+            spawn_index: 0,
+            external_velocity: Vector2 { x: 0.0, y: 0.0 },
+            next_attack_at: 0,
+            attack_queued: true,
+            attack_was_down: true,
+            last_hit_by: None,
+        };
+
+        let target = PlayerRuntime {
+            snapshot: PlayerSnapshot {
+                id: "target".to_string(),
+                name: "target".to_string(),
+                position: Vector2 { x: 240.0, y: 120.0 },
+                velocity: Vector2 { x: 0.0, y: 0.0 },
+                direction: Direction::Left,
+                hp: 100,
+                lives: TEST_LIVES,
+                move_speed_rank: 0,
+                max_jump_count: BASE_MAX_JUMP_COUNT,
+                jump_count_used: 0,
+                grounded: true,
+                drop_through_until: None,
+                respawn_at: None,
+                equipped_weapon_id: "paws".to_string(),
+                equipped_weapon_resource: None,
+                grab_state: None,
+                state: PlayerState::Alive,
+            },
+            latest_input: PlayerInputPayload::default(),
+            spawn_index: 1,
+            external_velocity: Vector2 { x: 0.0, y: 0.0 },
+            next_attack_at: 0,
+            attack_queued: false,
+            attack_was_down: false,
+            last_hit_by: None,
+        };
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying_this_tick = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying_this_tick);
+
+        let shooter_after = room.players.get("shooter").expect("shooter should exist");
+        let target_after = room.players.get("target").expect("target should exist");
+
+        assert_eq!(shooter_after.snapshot.equipped_weapon_id, "paws");
+        assert_eq!(shooter_after.snapshot.equipped_weapon_resource, None);
+        assert!(shooter_after.external_velocity.x < 0.0);
+        assert!(target_after.external_velocity.x > 0.0);
+        assert_eq!(target_after.snapshot.hp, 88);
+        assert!(deaths.is_empty());
+    }
+
+    #[test]
+    fn queued_attack_is_cleared_when_player_only_has_paws() {
+        let mut room = RoomState::new();
+        let mut player = test_player(140.0, 120.0);
+        player.attack_queued = true;
+        room.players.insert("player".to_string(), player);
+
+        let mut deaths = Vec::new();
+        let mut dying_this_tick = std::collections::HashSet::new();
+        room.handle_weapon_attack("player", 1000, &mut deaths, &mut dying_this_tick);
+
+        let player_after = room.players.get("player").expect("player should exist");
+        assert!(!player_after.attack_queued);
+    }
+
+    #[test]
+    fn death_resets_general_combat_state() {
+        let mut player = test_player(140.0, 120.0);
+        player.snapshot.move_speed_rank = 3;
+        player.snapshot.max_jump_count = 3;
+        player.snapshot.jump_count_used = 2;
+        player.snapshot.equipped_weapon_id = "acorn_blaster".to_string();
+        player.snapshot.equipped_weapon_resource = Some(3);
+        player.attack_queued = true;
+        player.attack_was_down = true;
+        player.next_attack_at = 1234;
+
+        trigger_respawn(
+            &mut player,
+            1000,
+            ground_top_y(),
+            &RoomGameplayConfig::default(),
+        );
+
+        assert_eq!(player.snapshot.move_speed_rank, 0);
+        assert_eq!(player.snapshot.max_jump_count, BASE_MAX_JUMP_COUNT);
+        assert_eq!(player.snapshot.jump_count_used, 0);
+        assert_eq!(player.snapshot.equipped_weapon_id, "paws");
+        assert_eq!(player.snapshot.equipped_weapon_resource, None);
+        assert!(!player.attack_queued);
+        assert!(!player.attack_was_down);
+        assert_eq!(player.next_attack_at, 0);
+    }
+
+    #[test]
+    fn respawn_keeps_general_state_reset() {
+        let mut player = test_player(140.0, 120.0);
+        player.snapshot.move_speed_rank = 2;
+        player.snapshot.max_jump_count = 3;
+        player.snapshot.jump_count_used = 1;
+        player.snapshot.equipped_weapon_id = "acorn_blaster".to_string();
+        player.snapshot.equipped_weapon_resource = Some(2);
+
+        let gameplay_config = RoomGameplayConfig::default();
+        let respawn_position = spawn_position(player.spawn_index);
+        trigger_respawn(&mut player, 1000, ground_top_y(), &gameplay_config);
+        respawn_player(&mut player, respawn_position, &gameplay_config);
+
+        assert_eq!(player.snapshot.state, PlayerState::Alive);
+        assert_eq!(player.snapshot.move_speed_rank, 0);
+        assert_eq!(player.snapshot.max_jump_count, BASE_MAX_JUMP_COUNT);
+        assert_eq!(player.snapshot.jump_count_used, 0);
+        assert_eq!(player.snapshot.equipped_weapon_id, "paws");
+        assert_eq!(player.snapshot.equipped_weapon_resource, None);
+        assert_eq!(player.snapshot.hp, MAX_HP);
+    }
+
+    #[test]
+    fn hazard_death_pushes_fall_zone_kill_feed_entry() {
+        let mut room = RoomState::new();
+        let pit_center_x = (pit_left_x() + pit_right_x()) / 2.0;
+        let mut player = test_player(pit_center_x, primary_fall_zone().y + PLAYER_HALF_SIZE + 2.0);
+        player.snapshot.id = "player_falls".to_string();
+        room.players.insert("player_falls".to_string(), player);
+
+        let snapshot = room.tick(2_000);
+
+        assert_eq!(snapshot.kill_feed.len(), 1);
+        let entry = &snapshot.kill_feed[0];
+        assert_eq!(entry.victim_id, "player_falls");
+        assert!(matches!(entry.cause, DeathCause::FallZone));
+
+        let player_after = room
+            .players
+            .get("player_falls")
+            .expect("player should still exist");
+        assert_eq!(player_after.snapshot.state, PlayerState::Respawning);
+    }
+
+    #[test]
+    fn instant_kill_hazard_pushes_kill_feed_entry() {
+        let mut room = RoomState::new();
+        let ikh = primary_instant_kill_hazard();
+        let mut player = test_player(ikh.x + ikh.width / 2.0, ground_top_y() - PLAYER_HALF_SIZE);
+        player.snapshot.id = "player_spikes".to_string();
+        room.players.insert("player_spikes".to_string(), player);
+
+        let snapshot = room.tick(2_000);
+
+        assert_eq!(snapshot.kill_feed.len(), 1);
+        assert!(matches!(
+            snapshot.kill_feed[0].cause,
+            DeathCause::InstantKillHazard
+        ));
+    }
+
+    #[test]
+    fn weapon_kill_records_weapon_cause_with_killer_and_weapon_id() {
+        let mut room = RoomState::new();
+        let mut shooter = test_player(140.0, 120.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.equipped_weapon_id = "acorn_blaster".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(8);
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+
+        let mut target = test_player(220.0, 120.0);
+        target.snapshot.id = "target".to_string();
+        target.snapshot.hp = 1;
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths: Vec<(String, DeathCause)> = Vec::new();
+        let mut dying_this_tick = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1_000, &mut deaths, &mut dying_this_tick);
+
+        assert_eq!(deaths.len(), 1);
+        let (victim, cause) = &deaths[0];
+        assert_eq!(victim, "target");
+        match cause {
+            DeathCause::Weapon {
+                killer_id,
+                weapon_id,
+            } => {
+                assert_eq!(killer_id, "shooter");
+                assert_eq!(weapon_id, "acorn_blaster");
+            }
+            _ => panic!("expected Weapon cause"),
+        }
+    }
+
+    #[test]
+    fn weapon_attack_skips_target_already_dying_this_tick() {
+        let mut room = RoomState::new();
+        let mut shooter = test_player(140.0, 120.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.equipped_weapon_id = "acorn_blaster".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(8);
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+
+        let mut target = test_player(220.0, 120.0);
+        target.snapshot.id = "target".to_string();
+        target.snapshot.hp = 1;
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths: Vec<(String, DeathCause)> = Vec::new();
+        let mut dying_this_tick = std::collections::HashSet::new();
+        dying_this_tick.insert("target".to_string());
+
+        room.handle_weapon_attack("shooter", 1_000, &mut deaths, &mut dying_this_tick);
+
+        assert!(deaths.is_empty(), "dying target should not be pushed again");
+        let target_after = room.players.get("target").expect("target should exist");
+        assert_eq!(
+            target_after.snapshot.hp, 1,
+            "dying target should not take extra damage"
+        );
+    }
+
+    #[test]
+    fn tick_never_records_same_victim_twice_on_hazard_and_weapon_combo() {
+        let mut room = RoomState::new();
+
+        // Shooter equipped with acorn_blaster, aiming at the pit center.
+        let mut shooter = test_player(pit_left_x() - 60.0, ground_top_y() - PLAYER_HALF_SIZE - 2.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "acorn_blaster".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(8);
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+
+        // Victim starts at very low HP, already inside the pit fall_zone.
+        let pit_center_x = (pit_left_x() + pit_right_x()) / 2.0;
+        let mut victim = test_player(
+            pit_center_x,
+            primary_fall_zone().y + PLAYER_HALF_SIZE + 2.0,
+        );
+        victim.snapshot.id = "victim".to_string();
+        victim.snapshot.hp = 1;
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("victim".to_string(), victim);
+
+        let snapshot = room.tick(2_000);
+
+        let victim_entries = snapshot
+            .kill_feed
+            .iter()
+            .filter(|entry| entry.victim_id == "victim")
+            .count();
+        assert_eq!(
+            victim_entries, 1,
+            "the same victim must not appear in the kill feed twice in a single tick",
+        );
+    }
+
+    #[test]
+    fn cull_removes_weapon_pickup_that_entered_fall_zone() {
+        let mut room = RoomState::new();
+        let pickup_id = room
+            .weapon_pickups
+            .keys()
+            .next()
+            .cloned()
+            .expect("initial weapon pickup should exist");
+        let fall_zone = primary_fall_zone();
+
+        {
+            let pickup = room
+                .weapon_pickups
+                .get_mut(&pickup_id)
+                .expect("pickup should exist");
+            pickup.position.x = fall_zone.x + fall_zone.width / 2.0;
+            pickup.position.y = fall_zone.y + fall_zone.height / 2.0;
+        }
+
+        room.cull_out_of_world_pickups(5_000);
+
+        assert!(
+            !room.weapon_pickups.contains_key(&pickup_id),
+            "pickup that entered fall_zone should be removed",
+        );
+    }
+
+    #[test]
+    fn cull_removes_weapon_pickup_that_fell_below_world() {
+        let mut room = RoomState::new();
+        let pickup_id = room
+            .weapon_pickups
+            .keys()
+            .next()
+            .cloned()
+            .expect("initial weapon pickup should exist");
+
+        {
+            let pickup = room
+                .weapon_pickups
+                .get_mut(&pickup_id)
+                .expect("pickup should exist");
+            pickup.position.y = world_height() + PICKUP_CULL_MARGIN + 1.0;
+        }
+
+        room.cull_out_of_world_pickups(5_000);
+
+        assert!(
+            !room.weapon_pickups.contains_key(&pickup_id),
+            "pickup below the world should be removed",
+        );
+    }
+
+    #[test]
+    fn cull_schedules_respawn_for_spawn_source_pickup() {
+        let mut room = RoomState::new();
+        let (pickup_id, spawn_cycle_key, respawn_ms) = {
+            let (id, pickup) = room
+                .weapon_pickups
+                .iter()
+                .next()
+                .expect("initial weapon pickup should exist");
+            (
+                id.clone(),
+                pickup.spawn_cycle_key.clone(),
+                pickup.respawn_ms,
+            )
+        };
+        let spawn_cycle_key = spawn_cycle_key.expect("spawn pickup should have a cycle key");
+        let respawn_ms = respawn_ms.expect("spawn pickup should have a respawn timer");
+
+        {
+            let pickup = room
+                .weapon_pickups
+                .get_mut(&pickup_id)
+                .expect("pickup should exist");
+            pickup.position.y = world_height() + PICKUP_CULL_MARGIN + 10.0;
+        }
+
+        room.cull_out_of_world_pickups(5_000);
+
+        assert!(!room.weapon_pickups.contains_key(&pickup_id));
+        assert_eq!(
+            room.next_spawn_respawn_at.get(&spawn_cycle_key),
+            Some(&(5_000 + respawn_ms)),
+            "culling a spawn-source pickup should schedule its respawn",
+        );
+    }
+
+    #[test]
+    fn cull_leaves_grounded_pickups_alone() {
+        let mut room = RoomState::new();
+        let pickup_count_before = room.weapon_pickups.len();
+
+        room.cull_out_of_world_pickups(5_000);
+
+        assert_eq!(
+            room.weapon_pickups.len(),
+            pickup_count_before,
+            "pickups resting on valid ground should not be culled",
+        );
+    }
+
+    #[test]
+    fn kill_feed_cleanup_drops_expired_entries() {
+        let mut room = RoomState::new();
+        room.push_kill_feed("victim_old".to_string(), DeathCause::FallZone, 1_000);
+        room.push_kill_feed("victim_new".to_string(), DeathCause::FallZone, 4_000);
+
+        room.cleanup_kill_feed(5_000);
+
+        assert_eq!(room.kill_feed.len(), 1);
+        assert_eq!(room.kill_feed.front().unwrap().victim_id, "victim_new");
+    }
+
+    #[test]
+    fn kill_feed_is_capped_at_max_entries() {
+        let mut room = RoomState::new();
+        for i in 0..(KILL_FEED_MAX_ENTRIES as u64 + 4) {
+            room.push_kill_feed(format!("victim_{}", i), DeathCause::FallZone, 1_000 + i);
+        }
+
+        assert_eq!(room.kill_feed.len(), KILL_FEED_MAX_ENTRIES);
+        // oldest entries (victim_0..victim_3) should have been dropped
+        assert_eq!(room.kill_feed.front().unwrap().victim_id, "victim_4");
+    }
+
+    #[test]
+    fn respawn_uses_room_gameplay_config_values() {
+        let gameplay_config = RoomGameplayConfig {
+            start_hp: 150,
+            stock_lives: 5,
+            base_jump_count: 2,
+            max_jump_count_limit: 3,
+            time_limit_ms: 90_000,
+        };
+        let mut player = test_player(140.0, 120.0);
+        player.snapshot.max_jump_count = 3;
+        player.snapshot.jump_count_used = 2;
+        player.snapshot.hp = 1;
+
+        let respawn_position = spawn_position(player.spawn_index);
+        trigger_respawn(&mut player, 1000, ground_top_y(), &gameplay_config);
+        respawn_player(&mut player, respawn_position, &gameplay_config);
+
+        assert_eq!(player.snapshot.hp, gameplay_config.start_hp);
+        assert_eq!(
+            player.snapshot.max_jump_count,
+            gameplay_config.base_jump_count
+        );
+    }
+
+    #[test]
+    fn hazard_death_within_ttl_is_attributed_to_last_shooter() {
+        let mut room = RoomState::new();
+        let pit_center_x = (pit_left_x() + pit_right_x()) / 2.0;
+
+        // Place victim already in the fall zone with a recent last_hit_by.
+        let mut victim = test_player(
+            pit_center_x,
+            primary_fall_zone().y + PLAYER_HALF_SIZE + 2.0,
+        );
+        victim.snapshot.id = "victim".to_string();
+        victim.last_hit_by = Some(crate::LastHitInfo {
+            killer_id: "shooter".to_string(),
+            weapon_id: "acorn_blaster".to_string(),
+            hit_at_ms: 1_000, // 1s before tick time 2_000 → within 5s TTL
+        });
+        room.players.insert("victim".to_string(), victim);
+
+        let snapshot = room.tick(2_000);
+
+        assert_eq!(snapshot.kill_feed.len(), 1);
+        let entry = &snapshot.kill_feed[0];
+        assert_eq!(entry.victim_id, "victim");
+        match &entry.cause {
+            DeathCause::Weapon {
+                killer_id,
+                weapon_id,
+            } => {
+                assert_eq!(killer_id, "shooter");
+                assert_eq!(weapon_id, "acorn_blaster");
+            }
+            other => panic!(
+                "expected Weapon cause but got {:?}",
+                std::mem::discriminant(other)
+            ),
+        }
+    }
+
+    #[test]
+    fn hazard_death_after_ttl_falls_back_to_hazard_cause() {
+        let mut room = RoomState::new();
+        let pit_center_x = (pit_left_x() + pit_right_x()) / 2.0;
+
+        let mut victim = test_player(
+            pit_center_x,
+            primary_fall_zone().y + PLAYER_HALF_SIZE + 2.0,
+        );
+        victim.snapshot.id = "victim_stale".to_string();
+        victim.last_hit_by = Some(crate::LastHitInfo {
+            killer_id: "old_shooter".to_string(),
+            weapon_id: "acorn_blaster".to_string(),
+            hit_at_ms: 0, // 2s before tick time 2_000 — BUT 5s TTL → still within? No: 2000-0=2000 < 5000
+            // Let's use hit_at_ms that exceeds TTL: now_ms 2_000, hit 6_001ms ago → hit_at_ms = MAX or negative won't work
+            // Use a fresh tick time far in the future so TTL is exceeded
+        });
+        // Override with a hit_at_ms that guarantees expiry: tick at 10_000, hit at 0 → delta 10_000 > 5_000
+        room.players.insert("victim_stale".to_string(), victim);
+
+        // Tick at now_ms=10_000 so delta from hit_at_ms=0 is 10_000ms, exceeding LAST_HIT_TTL_MS=5_000
+        let snapshot = room.tick(10_000);
+
+        assert_eq!(snapshot.kill_feed.len(), 1);
+        assert!(matches!(
+            snapshot.kill_feed[0].cause,
+            DeathCause::FallZone
+        ));
+    }
+
+    #[test]
+    fn last_hit_by_cleared_on_respawn() {
+        let mut player = test_player(200.0, ground_top_y() - PLAYER_HALF_SIZE - 2.0);
+        player.last_hit_by = Some(crate::LastHitInfo {
+            killer_id: "some_player".to_string(),
+            weapon_id: "acorn_blaster".to_string(),
+            hit_at_ms: 1_000,
+        });
+
+        let gameplay_config = RoomGameplayConfig::default();
+        trigger_respawn(&mut player, 2_000, ground_top_y(), &gameplay_config);
+
+        assert!(player.last_hit_by.is_none(), "last_hit_by must be cleared on respawn");
     }
 }

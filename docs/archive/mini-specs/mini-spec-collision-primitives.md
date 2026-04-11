@@ -1,4 +1,4 @@
-# 미니 스펙 — 충돌 primitive 확장 및 테스트 맵 개선
+# Archived — 미니 스펙 — 충돌 primitive 확장 및 테스트 맵 개선
 
 ## 작업명
 충돌 primitive 확장 및 테스트 맵 개선

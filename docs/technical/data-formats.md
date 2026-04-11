@@ -33,6 +33,12 @@
   },
   "boundaryPolicy": "closed",
   "cameraPolicy": "static",
+  "visualBounds": {
+    "left": 0,
+    "right": 1280,
+    "top": 0,
+    "bottom": 720
+  },
   "gameplayBounds": {
     "left": 0,
     "right": 1280,
@@ -50,15 +56,59 @@
     { "id": "spawn_b", "x": 1160, "y": 80 }
   ],
   "collision": [
-    { "id": "floor_left", "type": "floor", "leftX": 0, "rightX": 330, "topY": 540 },
-    { "id": "floor_right", "type": "floor", "leftX": 470, "rightX": 1280, "topY": 540 },
-    { "id": "platform_mid", "type": "one_way_platform", "leftX": 250, "rightX": 550, "topY": 380 },
-    { "id": "pit_wall_left", "type": "solid_wall", "x": 330, "topY": 540, "bottomY": 720 },
-    { "id": "pit_wall_right", "type": "solid_wall", "x": 470, "topY": 540, "bottomY": 720 }
+    {
+      "id": "floor_left",
+      "type": "floor",
+      "leftX": 0,
+      "rightX": 330,
+      "topY": 540
+    },
+    {
+      "id": "floor_right",
+      "type": "floor",
+      "leftX": 470,
+      "rightX": 1280,
+      "topY": 540
+    },
+    {
+      "id": "platform_mid",
+      "type": "one_way_platform",
+      "leftX": 250,
+      "rightX": 550,
+      "topY": 380
+    },
+    {
+      "id": "pit_wall_left",
+      "type": "solid_wall",
+      "x": 330,
+      "topY": 540,
+      "bottomY": 720
+    },
+    {
+      "id": "pit_wall_right",
+      "type": "solid_wall",
+      "x": 470,
+      "topY": 540,
+      "bottomY": 720
+    }
   ],
   "hazards": [
-    { "id": "pit_fall_zone", "type": "fall_zone", "x": 330, "y": 540, "width": 140, "height": 180 },
-    { "id": "spike_strip_right", "type": "instant_kill_hazard", "x": 960, "y": 522, "width": 96, "height": 18 }
+    {
+      "id": "pit_fall_zone",
+      "type": "fall_zone",
+      "x": 330,
+      "y": 540,
+      "width": 140,
+      "height": 180
+    },
+    {
+      "id": "spike_strip_right",
+      "type": "instant_kill_hazard",
+      "x": 960,
+      "y": 522,
+      "width": 96,
+      "height": 18
+    }
   ],
   "terrain": [],
   "weaponSpawns": [
@@ -90,19 +140,22 @@
 
 ### 맵 필드 설명
 
-| 필드 | 설명 |
-|------|------|
-| `boundaryPolicy` | `closed | open` |
-| `cameraPolicy` | `static | follow | dynamic` |
-| `gameplayBounds` | 실제 이동 가능 범위 |
-| `deathBounds` | out-of-bounds 사망 범위 |
-| `spawnPoints` | 리스폰 위치 목록 |
-| `collision` | `floor | one_way_platform | solid_wall` primitive 목록 |
-| `hazards` | `fall_zone | instant_kill_hazard` rect 목록 |
-| `weaponSpawns` | 무기 생성 위치 및 소멸 규칙 |
-| `itemSpawns` | 아이템 생성 위치와 연출 |
-| `spawnStyle` | `airdrop | fade_in | triggered` |
-| `despawnStyle` | `shrink_pop` 등 디스폰 연출 |
+| 필드             | 설명                                       |
+| ---------------- | ------------------------------------------ | ------------------------------ | -------------------------- |
+| `boundaryPolicy` | `closed                                    | open`                          |
+| `cameraPolicy`   | `static                                    | follow                         | dynamic`                   |
+| `visualBounds`   | 카메라가 보여줄 수 있는 시각적 울타리 범위 |
+| `gameplayBounds` | 실제 이동 가능 범위                        |
+| `deathBounds`    | out-of-bounds 사망 범위                    |
+| `spawnPoints`    | 리스폰 위치 목록                           |
+| `collision`      | `floor                                     | one_way_platform               | solid_wall` primitive 목록 |
+| `hazards`        | `fall_zone                                 | instant_kill_hazard` rect 목록 |
+| `weaponSpawns`   | 무기 생성 위치 및 소멸 규칙                |
+| `itemSpawns`     | 아이템 생성 위치와 연출                    |
+| `spawnStyle`     | `airdrop                                   | fade_in                        | triggered`                 |
+| `despawnStyle`   | `shrink_pop` 등 디스폰 연출                |
+| `mode`           | `fixed | random_candidates` |
+| `spawnGroupId`   | 후보 지점 랜덤 스폰 그룹 ID |
 
 ### 충돌 primitive 규칙
 
@@ -142,12 +195,26 @@
   - `width`
   - `height`
 
+### spawn 후보 그룹 규칙
+
+- `mode: "fixed"`
+  - 해당 위치에 고정 스폰
+- `mode: "random_candidates"`
+  - 같은 `spawnGroupId`를 공유하는 후보들 중 하나만 활성화
+- `spawnGroupId`
+  - 무기/아이템 후보 지점을 같은 순환 그룹으로 묶는 식별자
+
 ### 경계 / 카메라 정책 규칙
 
 - `boundaryPolicy`
   - `closed | open`
 - `cameraPolicy`
   - `static | follow | dynamic`
+- `visualBounds`
+  - `left`
+  - `right`
+  - `top`
+  - `bottom`
 - `gameplayBounds`
   - `left`
   - `right`
@@ -165,6 +232,25 @@
 - 현재 구현은 아직 이 필드를 실제 런타임 로딩에 사용하지 않는다.
 - 현재 상태는 `docs/technical/current-implementation.md`를 기준으로 본다.
 
+### visualBounds / gameplayBounds / deathBounds 해석
+
+- `visualBounds`
+  - 카메라가 보여줄 수 있는 최대 시각 범위
+  - pit 아래 낙사 유도 영역, 버그 방지용 fence 같은 논리 영역을 굳이 보여줄 필요는 없다
+- `gameplayBounds`
+  - 플레이어가 실제로 이동 가능한 범위
+- `deathBounds`
+  - gameplayBounds 바깥에서 더 멀리 벗어났을 때 사망 처리되는 범위
+
+즉, **카메라 clamp는 visualBounds 기준**이고,
+논리 판정은 gameplayBounds / deathBounds 기준으로 따로 해석한다.
+
+### follow 카메라 이동 원칙
+
+- `cameraPolicy: "follow"`는 선형 고정 속도 이동보다
+  **지연 추적 + 가속/감속이 있는 damping 계열 이동**을 기본 후보로 둔다.
+- Bezier 곡선은 기본 follow 수단보다 **연출용/특수 카메라 경로**에 더 적합한 후보로 본다.
+
 ## 무기 정의 포맷
 
 ```json
@@ -177,6 +263,11 @@
   "resourceModel": "magazine",
   "damage": 12,
   "knockback": 8,
+  "selfRecoilForce": 1,
+  "selfRecoilAngleDeg": 0,
+  "selfRecoilAngleJitterDeg": 0,
+  "selfRecoilGroundMultiplier": 1,
+  "selfRecoilAirMultiplier": 1.2,
   "attackIntervalMs": 220,
   "range": 620,
   "projectileSpeed": 0,
@@ -195,17 +286,23 @@
 
 ### 무기 정의 필드
 
-| 필드 | 설명 |
-|------|------|
-| `hitType` | `melee | hitscan | projectile | beam` |
-| `fireMode` | `single | burst | auto | channel` |
-| `resourceModel` | `infinite | magazine | capacity` |
-| `maxResource` | 최대 탄/에너지 |
-| `resourcePerShot` | 발사당 소모량 |
-| `resourcePerSecond` | 채널형 무기 초당 소모량 |
-| `discardOnEmpty` | 자원 고갈 시 무기 제거 여부 |
-| `worldDespawnMs` | 월드에 놓였을 때 자동 소멸 시간 |
-| `specialEffect` | `grab | explode | none` 등 |
+| 필드                         | 설명                            |
+| ---------------------------- | ------------------------------- | -------- | ---------- | -------- |
+| `hitType`                    | `melee                          | hitscan  | projectile | beam`    |
+| `fireMode`                   | `single                         | burst    | auto       | channel` |
+| `resourceModel`              | `infinite                       | magazine | capacity`  |
+| `knockback`                  | 상대에게 가는 넉백              |
+| `selfRecoilForce`            | 발사자에게 가는 기본 반동 세기  |
+| `selfRecoilAngleDeg`         | 에임 반대 방향 기준 각도 보정   |
+| `selfRecoilAngleJitterDeg`   | 발사마다 줄 수 있는 반동 오차   |
+| `selfRecoilGroundMultiplier` | 지상 반동 배수                  |
+| `selfRecoilAirMultiplier`    | 공중 반동 배수                  |
+| `maxResource`                | 최대 탄/에너지                  |
+| `resourcePerShot`            | 발사당 소모량                   |
+| `resourcePerSecond`          | 채널형 무기 초당 소모량         |
+| `discardOnEmpty`             | 자원 고갈 시 무기 제거 여부     |
+| `worldDespawnMs`             | 월드에 놓였을 때 자동 소멸 시간 |
+| `specialEffect`              | `grab                           | explode  | none` 등   |
 
 ### 예시: beam 무기
 
@@ -219,6 +316,11 @@
   "resourceModel": "capacity",
   "damage": 6,
   "knockback": 1,
+  "selfRecoilForce": 0,
+  "selfRecoilAngleDeg": 0,
+  "selfRecoilAngleJitterDeg": 0,
+  "selfRecoilGroundMultiplier": 1,
+  "selfRecoilAirMultiplier": 1,
   "attackIntervalMs": 100,
   "range": 520,
   "projectileSpeed": 0,
@@ -247,6 +349,11 @@
   "resourceModel": "magazine",
   "damage": 4,
   "knockback": 2,
+  "selfRecoilForce": 0.4,
+  "selfRecoilAngleDeg": 0,
+  "selfRecoilAngleJitterDeg": 0,
+  "selfRecoilGroundMultiplier": 1,
+  "selfRecoilAirMultiplier": 1,
   "attackIntervalMs": 900,
   "range": 80,
   "projectileSpeed": 0,
@@ -282,12 +389,14 @@
 ```
 
 ### 아이템 종류
+
 - `speed_rank_up`
 - `extra_life`
 - `health_recover`
 - `jump_boost`
 
 ### 아이템 규칙
+
 - `jumpCountDelta` 적용 후 `maxJumpCount`는 `1 ~ 3` 범위로 clamp
 - `speed_rank_up` 적용 후 `moveSpeedRank`는 `-7 ~ +7` 범위로 clamp
 - 회복 아이템은 최대 HP를 넘기지 않음
@@ -371,9 +480,23 @@
   "mapId": "arena_01",
   "timeLimitSec": 300,
   "stockLives": 3,
+  "startHp": 100,
+  "baseJumpCount": 1,
+  "maxJumpCountLimit": 3,
   "friendlyFire": false
 }
 ```
+
+### 룸 설정 필드 설명
+
+| 필드 | 설명 |
+|------|------|
+| `timeLimitSec` | 매치 시간 제한(초) |
+| `stockLives` | 시작 생명 수 |
+| `startHp` | 시작 HP |
+| `baseJumpCount` | 기본 점프 수 |
+| `maxJumpCountLimit` | 룸에서 허용하는 최대 점프 수 상한 |
+| `friendlyFire` | 아군 피해 허용 여부 |
 
 ## 매치 스냅샷 포맷
 
@@ -387,7 +510,8 @@
   "projectiles": [],
   "weaponPickups": [],
   "itemPickups": [],
-  "timeRemainingMs": 284000
+  "timeRemainingMs": 284000,
+  "killFeed": []
 }
 ```
 
@@ -397,6 +521,46 @@
 - 최적화 전에는 delta-compression을 도입하지 않는다.
 - `serverTick`은 클라이언트 보간 기준점으로 사용한다.
 - 빔 무기도 동일 스냅샷 구조 안에서 처리하되, 필요 시 별도 이펙트 이벤트를 추가한다.
+
+## 킬로그 포맷
+
+`world_snapshot.killFeed` 와 `room_snapshot.killFeed` 는 동일 구조를 공유한다.
+
+```json
+[
+  {
+    "id": "kf_128_3",
+    "occurredAt": 1712600001150,
+    "victimId": "player_2",
+    "cause": {
+      "kind": "weapon",
+      "killerId": "player_1",
+      "weaponId": "acorn_blaster"
+    }
+  },
+  {
+    "id": "kf_130_1",
+    "occurredAt": 1712600002500,
+    "victimId": "player_3",
+    "cause": { "kind": "fall_zone" }
+  }
+]
+```
+
+### 사망 원인 (`DeathCause`)
+
+- `{ "kind": "fall_zone" }` — `fall_zone` hazard 진입으로 사망
+- `{ "kind": "instant_kill_hazard" }` — `instant_kill_hazard` 진입으로 사망
+- `{ "kind": "weapon", "killerId": ..., "weaponId": ... }` — 다른 플레이어 무기에 의한 사망
+- `{ "kind": "self", "weaponId": ... }` — 자기 반동/자폭 등 스스로의 피해로 사망
+
+### 킬로그 규칙
+
+- `id` 는 서버가 발급하며, 클라이언트는 중복 렌더 방지용으로 사용한다.
+- 서버는 `occurredAt` 기준 `3.5s` 동안 엔트리를 보존하고, 그 이후 tick cleanup 에서 제거한다.
+- 버퍼 상한은 `16` 엔트리이며, 초과 시 가장 오래된 엔트리부터 제거한다.
+- 클라이언트는 수신 시각 기준 `3s` 후 로컬에서 엔트리를 제거한다 (서버 TTL 과 독립).
+- 재접속 또는 지각 합류한 클라이언트는 첫 `room_snapshot` 의 `killFeed` 로 현재 상태를 복원한다.
 
 ## 입력 포맷
 
@@ -420,6 +584,7 @@
 ```
 
 ### 입력 규칙
+
 - `jump`: 해당 틱의 점프 입력
 - `attack`: 단발/채널/투척/그랩 무기의 공통 공격 입력
 - `dropWeapon`: 현재 무기 버리기

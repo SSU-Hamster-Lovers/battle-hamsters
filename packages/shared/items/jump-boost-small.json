@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "id": "jump_boost_small",
+  "name": "Jump Boost",
+  "itemType": "jump_boost",
+  "maxStack": 1,
+  "effect": {
+    "jumpCountDelta": 1
+  }
+}

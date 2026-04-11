@@ -30,6 +30,27 @@
 검증 방법:
 ```
 
+## 미니 스펙 보존 규칙
+
+### 진행 중 / 다음 작업
+- 현재 구현 중이거나 다음 브랜치의 기준이 되는 미니 스펙은 `docs/technical/mini-spec-*.md`에 둔다.
+
+### 완료된 작업
+- 구현이 끝난 미니 스펙은 바로 삭제하지 않는다.
+- 기본 기준은 **develop에 merge되어 현재 구현 문서에 반영된 시점**에 archive로 옮긴다.
+- `docs/archive/mini-specs/`로 이동해 **작업 계획 이력**으로 보존한다.
+
+### 이동 전 필수 반영
+- 아카이브로 옮기기 전에 아래를 먼저 갱신한다.
+  - `docs/technical/current-implementation.md`
+  - 관련 설계 문서 (`docs/game-design/*`, `docs/technical/*`)
+  - 필요 시 `docs/ROADMAP.md`
+
+### 해석 원칙
+- 현재 정답은 항상 최신 스펙 문서와 `current-implementation.md`를 우선한다.
+- 아카이브된 미니 스펙은 과거 작업 계획과 의사결정 순서를 복원하는 참고 자료다.
+- 세부 구현 diff와 최종 변경 이력은 git/PR이 정본이다.
+
 ## 작업 중 규칙
 
 - 스펙 변경이 생기면 구현보다 먼저 영향 범위를 적는다.
