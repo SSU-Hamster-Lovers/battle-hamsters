@@ -961,7 +961,8 @@ mod tests {
         room.players.insert("target".to_string(), target);
 
         let mut deaths = Vec::new();
-        room.handle_weapon_attack("shooter", 1000, &mut deaths);
+        let mut dying_this_tick = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying_this_tick);
 
         let shooter_after = room.players.get("shooter").expect("shooter should exist");
         let target_after = room.players.get("target").expect("target should exist");
@@ -982,7 +983,8 @@ mod tests {
         room.players.insert("player".to_string(), player);
 
         let mut deaths = Vec::new();
-        room.handle_weapon_attack("player", 1000, &mut deaths);
+        let mut dying_this_tick = std::collections::HashSet::new();
+        room.handle_weapon_attack("player", 1000, &mut deaths, &mut dying_this_tick);
 
         let player_after = room.players.get("player").expect("player should exist");
         assert!(!player_after.attack_queued);
@@ -1096,7 +1098,8 @@ mod tests {
         room.players.insert("target".to_string(), target);
 
         let mut deaths: Vec<(String, DeathCause)> = Vec::new();
-        room.handle_weapon_attack("shooter", 1_000, &mut deaths);
+        let mut dying_this_tick = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1_000, &mut deaths, &mut dying_this_tick);
 
         assert_eq!(deaths.len(), 1);
         let (victim, cause) = &deaths[0];
@@ -1111,6 +1114,75 @@ mod tests {
             }
             _ => panic!("expected Weapon cause"),
         }
+    }
+
+    #[test]
+    fn weapon_attack_skips_target_already_dying_this_tick() {
+        let mut room = RoomState::new();
+        let mut shooter = test_player(140.0, 120.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.equipped_weapon_id = "acorn_blaster".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(8);
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+
+        let mut target = test_player(220.0, 120.0);
+        target.snapshot.id = "target".to_string();
+        target.snapshot.hp = 1;
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths: Vec<(String, DeathCause)> = Vec::new();
+        let mut dying_this_tick = std::collections::HashSet::new();
+        dying_this_tick.insert("target".to_string());
+
+        room.handle_weapon_attack("shooter", 1_000, &mut deaths, &mut dying_this_tick);
+
+        assert!(deaths.is_empty(), "dying target should not be pushed again");
+        let target_after = room.players.get("target").expect("target should exist");
+        assert_eq!(
+            target_after.snapshot.hp, 1,
+            "dying target should not take extra damage"
+        );
+    }
+
+    #[test]
+    fn tick_never_records_same_victim_twice_on_hazard_and_weapon_combo() {
+        let mut room = RoomState::new();
+
+        // Shooter equipped with acorn_blaster, aiming at the pit center.
+        let mut shooter = test_player(pit_left_x() - 60.0, ground_top_y() - PLAYER_HALF_SIZE - 2.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "acorn_blaster".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(8);
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+
+        // Victim starts at very low HP, already inside the pit fall_zone.
+        let pit_center_x = (pit_left_x() + pit_right_x()) / 2.0;
+        let mut victim = test_player(
+            pit_center_x,
+            primary_fall_zone().y + PLAYER_HALF_SIZE + 2.0,
+        );
+        victim.snapshot.id = "victim".to_string();
+        victim.snapshot.hp = 1;
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("victim".to_string(), victim);
+
+        let snapshot = room.tick(2_000);
+
+        let victim_entries = snapshot
+            .kill_feed
+            .iter()
+            .filter(|entry| entry.victim_id == "victim")
+            .count();
+        assert_eq!(
+            victim_entries, 1,
+            "the same victim must not appear in the kill feed twice in a single tick",
+        );
     }
 
     #[test]

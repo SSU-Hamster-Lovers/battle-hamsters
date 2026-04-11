@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::game_data::{ground_top_y, runtime_map_data, world_width, HazardKind};
 use crate::room_combat::{respawn_player, trigger_respawn};
 use crate::{
@@ -23,6 +25,7 @@ impl RoomState {
 
         let player_ids = self.players.keys().cloned().collect::<Vec<_>>();
         let mut deaths: Vec<(String, DeathCause)> = Vec::new();
+        let mut dying_this_tick: HashSet<String> = HashSet::new();
 
         for player_id in &player_ids {
             let Some(player) = self.players.get_mut(player_id) else {
@@ -45,11 +48,13 @@ impl RoomState {
             step_player(player, now_ms);
 
             if let Some(kind) = intersecting_hazard(&player.snapshot) {
-                let cause = match kind {
-                    HazardKind::FallZone => DeathCause::FallZone,
-                    HazardKind::InstantKillHazard => DeathCause::InstantKillHazard,
-                };
-                deaths.push((player_id.clone(), cause));
+                if dying_this_tick.insert(player_id.clone()) {
+                    let cause = match kind {
+                        HazardKind::FallZone => DeathCause::FallZone,
+                        HazardKind::InstantKillHazard => DeathCause::InstantKillHazard,
+                    };
+                    deaths.push((player_id.clone(), cause));
+                }
             }
         }
 
@@ -64,7 +69,7 @@ impl RoomState {
             self.handle_item_pickup(player_id, now_ms);
             self.drop_equipped_weapon_if_needed(player_id, now_ms);
             self.handle_weapon_pickup(player_id, now_ms);
-            self.handle_weapon_attack(player_id, now_ms, &mut deaths);
+            self.handle_weapon_attack(player_id, now_ms, &mut deaths, &mut dying_this_tick);
         }
 
         for (player_id, cause) in deaths {

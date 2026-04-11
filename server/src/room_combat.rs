@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::{
     room_config::RoomGameplayConfig, weapon_definition, DeathCause, Direction, FireMode, HitType,
     PlayerRuntime, PlayerState, RoomState, Vector2, PLAYER_HALF_SIZE, RESPAWN_DELAY_MS,
@@ -9,6 +11,7 @@ impl RoomState {
         player_id: &str,
         now_ms: u64,
         deaths: &mut Vec<(String, DeathCause)>,
+        dying_this_tick: &mut HashSet<String>,
     ) {
         let Some(shooter_view) = self.players.get(player_id) else {
             return;
@@ -67,8 +70,13 @@ impl RoomState {
                     weapon.self_recoil_angle_jitter_deg,
                 ),
         );
-        let target_id =
-            self.find_hitscan_target(player_id, &shooter_position, &aim_direction, weapon.range);
+        let target_id = self.find_hitscan_target(
+            player_id,
+            &shooter_position,
+            &aim_direction,
+            weapon.range,
+            dying_this_tick,
+        );
 
         {
             let shooter = self
@@ -109,7 +117,7 @@ impl RoomState {
             target.external_velocity.x += aim_direction.x * weapon.knockback;
             target.external_velocity.y += aim_direction.y * weapon.knockback;
             target.snapshot.hp = target.snapshot.hp.saturating_sub(weapon.damage);
-            if target.snapshot.hp == 0 {
+            if target.snapshot.hp == 0 && dying_this_tick.insert(target_id.clone()) {
                 deaths.push((
                     target_id,
                     DeathCause::Weapon {
@@ -127,11 +135,14 @@ impl RoomState {
         shooter_position: &Vector2,
         aim_direction: &Vector2,
         range: f64,
+        dying_this_tick: &HashSet<String>,
     ) -> Option<String> {
         self.players
             .iter()
             .filter(|(target_id, target)| {
-                target_id.as_str() != shooter_id && target.snapshot.state == PlayerState::Alive
+                target_id.as_str() != shooter_id
+                    && target.snapshot.state == PlayerState::Alive
+                    && !dying_this_tick.contains(target_id.as_str())
             })
             .filter_map(|(target_id, target)| {
                 let to_target = Vector2 {
