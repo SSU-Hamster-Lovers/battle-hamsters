@@ -109,15 +109,16 @@ jobs:
             API_PORT_VALUE="8081"
           fi
 
-          if docker compose version >/dev/null 2>&1; then
-            COMPOSE_CMD=(docker compose -p battle-hamsters --env-file .env)
-          elif command -v docker-compose >/dev/null 2>&1; then
-            COMPOSE_CMD=(docker-compose -p battle-hamsters --env-file .env)
-          else
-            echo "Neither 'docker compose' nor 'docker-compose' is available on the target host." >&2
+          # V2 플러그인(docker compose)만 사용 — V1(docker-compose python)는 ContainerConfig 호환 문제 있음
+          if ! docker compose version >/dev/null 2>&1; then
+            echo "docker compose V2 plugin is not available. Please install docker-compose-plugin on the host." >&2
             exit 1
           fi
 
+          COMPOSE_CMD=(docker compose -p battle-hamsters --env-file .env)
+
+          # 이전 컨테이너 정리 후 재빌드 (stale 메타데이터 방지)
+          "${COMPOSE_CMD[@]}" down --remove-orphans || true
           "${COMPOSE_CMD[@]}" up -d --build
 
           if ! python3 - "${API_PORT_VALUE}" <<'PY'
