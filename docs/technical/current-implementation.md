@@ -105,8 +105,9 @@
   - `Finished`: 점수판 오버레이
 - `room_snapshot.matchState`를 실제 값으로 해석한다.
 - 사망 연출 1차:
-  - `fall_zone`, `instant_kill_hazard` 사망 시 본체를 즉시 숨긴다.
-  - `weapon`, `self` 사망 시 마지막 피격 방향을 반영한 짧은 임시 중력 더미를 렌더링한다.
+  - `fall_zone` 사망 시 더 빠르게 아래로 가속하며 회전하는 낙사 echo 를 렌더링한다.
+  - `instant_kill_hazard` 사망 시 본체를 즉시 숨긴다.
+  - `weapon`, `self` 사망 시 마지막 피격 반대 방향으로 짧은 임시 중력 더미를 렌더링한다.
   - 후속 단계에서 실제 래그돌/더미 시스템으로 확장 예정
 - 디버그 오버레이는 기본 OFF다.
   - `?ops=1` 로 ops 접근을 로컬에 저장할 수 있다.
@@ -176,9 +177,10 @@
 
 1. 하단 플레이어 상태 HUD 실제 배치
 2. 킬로그 카드 + 아이콘 레이아웃
-3. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체
-4. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
-5. `develop` preview / staging 배포 전략 분리
+3. 무기별 피격 파티클 차별화
+4. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체
+5. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
+6. `develop` preview / staging 배포 전략 분리
 
 ## 참고
 
@@ -188,3 +190,4 @@
 - 사망 연출 + 디버그 토글 미니 스펙: `docs/archive/mini-specs/mini-spec-death-feedback-debug-toggle-v1.md`
 - 로컬 개발 환경 정리 미니 스펙: `docs/archive/mini-specs/mini-spec-local-dev-env-runner-v1.md`
 - 점프 아이템 세부 규칙 후속은 `docs/technical/mini-spec-jump-item-integration-v1.md` 참조
+- 전투 표현 polish 후속은 `docs/technical/mini-spec-combat-presentation-polish-v0.md` 참조

@@ -199,6 +199,7 @@ type DeathEcho = {
   velocityX: number;
   velocityY: number;
   angularVelocity: number;
+  gravity: number;
   fadeAt: number;
   destroyAt: number;
   baseAlpha: number;
@@ -453,11 +454,7 @@ class MainScene extends Phaser.Scene {
     nextSnapshot: PlayerSnapshot,
   ) {
     const cause = nextSnapshot.lastDeathCause;
-    if (
-      !cause ||
-      cause.kind === "fall_zone" ||
-      cause.kind === "instant_kill_hazard"
-    ) {
+    if (!cause || cause.kind === "instant_kill_hazard") {
       return;
     }
 
@@ -471,28 +468,51 @@ class MainScene extends Phaser.Scene {
       .setAlpha(0.78);
     sprite.setFlipX(previousSnapshot.direction === "left");
 
+    if (cause.kind === "fall_zone") {
+      const spinDirection = previousSnapshot.direction === "left" ? -1 : 1;
+      this.deathEchoes.push({
+        sprite,
+        velocityX: previousSnapshot.velocity.x * 0.06,
+        velocityY: Math.max(previousSnapshot.velocity.y * 0.18, 1.6) + 2.8,
+        angularVelocity: spinDirection * 0.16,
+        gravity: 0.56,
+        fadeAt: this.time.now + 260,
+        destroyAt: this.time.now + 860,
+        baseAlpha: 0.78,
+      });
+      return;
+    }
+
     const recentImpactDirection =
       rendered.lastImpactDirection &&
       this.time.now - rendered.lastImpactAt <= 700
         ? rendered.lastImpactDirection
         : null;
-    const launchDirection = addUpwardBias(
-      recentImpactDirection ??
-        normalizeVector(
-          previousSnapshot.velocity,
+    const recoilOppositeDirection = recentImpactDirection
+      ? {
+          x: -recentImpactDirection.x,
+          y: -recentImpactDirection.y,
+        }
+      : normalizeVector(
+          {
+            x: -previousSnapshot.velocity.x,
+            y: -previousSnapshot.velocity.y,
+          },
           previousSnapshot.direction === "left"
-            ? { x: -1, y: -0.2 }
-            : { x: 1, y: -0.2 },
-        ),
-    );
+            ? { x: 1, y: -0.2 }
+            : { x: -1, y: -0.2 },
+        );
+    const launchDirection = addUpwardBias(recoilOppositeDirection);
 
     this.deathEchoes.push({
       sprite,
-      velocityX: previousSnapshot.velocity.x * 0.08 + launchDirection.x * 1.6,
-      velocityY: Math.min(previousSnapshot.velocity.y * 0.08, 0) + launchDirection.y * 1.8 - 1.8,
-      angularVelocity: launchDirection.x * 0.02,
-      fadeAt: this.time.now + 560,
-      destroyAt: this.time.now + 1320,
+      velocityX: previousSnapshot.velocity.x * 0.05 + launchDirection.x * 1.2,
+      velocityY:
+        Math.min(previousSnapshot.velocity.y * 0.06, 0) + launchDirection.y * 1.45 - 1.35,
+      angularVelocity: launchDirection.x * 0.016,
+      gravity: 0.22,
+      fadeAt: this.time.now + 620,
+      destroyAt: this.time.now + 1460,
       baseAlpha: 0.78,
     });
   }
@@ -502,7 +522,7 @@ class MainScene extends Phaser.Scene {
       const echo = this.deathEchoes[index];
       echo.sprite.x += echo.velocityX;
       echo.sprite.y += echo.velocityY;
-      echo.velocityY += 0.28;
+      echo.velocityY += echo.gravity;
       echo.sprite.rotation += echo.angularVelocity;
 
       if (now >= echo.fadeAt) {
@@ -1266,6 +1286,12 @@ class MainScene extends Phaser.Scene {
       rendered.shadow.setFillStyle(isLocalPlayer ? 0x14532d : 0x020617, 0.24);
       rendered.targetX = player.position.x;
       rendered.targetY = player.position.y;
+      this.applyDamageFeedback(
+        rendered,
+        previousSnapshot,
+        player,
+        damageEventMap.get(player.id) ?? [],
+      );
       if (
         previousSnapshot.state !== "respawning" &&
         player.state === "respawning"
@@ -1273,12 +1299,6 @@ class MainScene extends Phaser.Scene {
         this.spawnDeathEcho(rendered, previousSnapshot, player);
       }
 
-      this.applyDamageFeedback(
-        rendered,
-        previousSnapshot,
-        player,
-        damageEventMap.get(player.id) ?? [],
-      );
       rendered.snapshot = player;
       const isRespawning = player.state === "respawning";
       this.updateWeaponOverlay(rendered, player, isRespawning);

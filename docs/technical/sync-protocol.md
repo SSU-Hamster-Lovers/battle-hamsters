@@ -132,8 +132,9 @@
 - `world_snapshot.players[].lastDeathCause` 는 최근 사망 원인을 담는다.
 - 목적은 클라이언트가 리스폰 대기 중 연출을 분기하기 위함이다.
 - 현재 1차 클라이언트 해석:
-  - `fall_zone`, `instant_kill_hazard`: 본체를 즉시 숨김
-  - `weapon`, `self`: 짧은 임시 중력 더미를 표시
+  - `fall_zone`: 더 빠르게 아래로 가속하며 회전하는 낙사 echo 를 표시
+  - `instant_kill_hazard`: 본체를 즉시 숨김
+  - `weapon`, `self`: 마지막 피격 반대 방향으로 짧은 임시 중력 더미를 표시
 
 #### 피격 연출 보조 필드
 
