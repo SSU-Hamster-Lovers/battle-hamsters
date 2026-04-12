@@ -150,6 +150,7 @@ export interface MatchSnapshot {
   timeRemainingMs: number;
   countdownMs: number | null;
   killFeed: KillFeedEntry[];
+  damageEvents: DamageAppliedEvent[];
 }
 
 /**
@@ -170,4 +171,15 @@ export interface KillFeedEntry {
   occurredAt: TimestampMs;
   victimId: EntityId;
   cause: DeathCause;
+}
+
+export interface DamageAppliedEvent {
+  id: EntityId;
+  occurredAt: TimestampMs;
+  victimId: EntityId;
+  attackerId: EntityId;
+  weaponId: EntityId;
+  damage: number;
+  impactDirection: Vector2;
+  impactPoint: Vector2;
 }

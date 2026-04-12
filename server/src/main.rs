@@ -47,6 +47,8 @@ const PICKUP_CULL_MARGIN: f64 = 64.0;
 const LAST_HIT_TTL_MS: u64 = 5_000;
 const KILL_FEED_TTL_MS: u64 = 3_500;
 const KILL_FEED_MAX_ENTRIES: usize = 16;
+const DAMAGE_EVENT_TTL_MS: u64 = 350;
+const DAMAGE_EVENT_MAX_ENTRIES: usize = 32;
 const FREE_PLAY_ROOM_ID: &str = "free_play";
 const EMPTY_ROOM_TTL_MS: u64 = 600_000; // 10분, 빈 매치룸 자동 제거
 const MATCH_COUNTDOWN_MS: u64 = 5_000; // 매치 시작 카운트다운
@@ -192,6 +194,8 @@ struct RoomState {
     sessions: HashMap<String, Recipient<WsText>>,
     kill_feed: VecDeque<KillFeedEntry>,
     next_kill_feed_seq: u64,
+    damage_events: VecDeque<DamageAppliedEvent>,
+    next_damage_event_seq: u64,
 }
 
 impl RoomState {
@@ -269,6 +273,8 @@ impl RoomState {
             sessions: HashMap::new(),
             kill_feed: VecDeque::new(),
             next_kill_feed_seq: 0,
+            damage_events: VecDeque::new(),
+            next_damage_event_seq: 0,
         };
         room.spawn_initial_weapons(now);
         room.spawn_initial_items(now);
@@ -308,6 +314,47 @@ impl RoomState {
 
     fn kill_feed_snapshot(&self) -> Vec<KillFeedEntry> {
         self.kill_feed.iter().cloned().collect()
+    }
+
+    pub(crate) fn push_damage_event(
+        &mut self,
+        victim_id: String,
+        attacker_id: String,
+        weapon_id: String,
+        damage: u16,
+        impact_direction: Vector2,
+        impact_point: Vector2,
+        now_ms: u64,
+    ) {
+        self.next_damage_event_seq += 1;
+        let entry = DamageAppliedEvent {
+            id: format!("dmg_{}_{}", self.server_tick, self.next_damage_event_seq),
+            occurred_at: now_ms,
+            victim_id,
+            attacker_id,
+            weapon_id,
+            damage,
+            impact_direction,
+            impact_point,
+        };
+        self.damage_events.push_back(entry);
+        while self.damage_events.len() > DAMAGE_EVENT_MAX_ENTRIES {
+            self.damage_events.pop_front();
+        }
+    }
+
+    pub(crate) fn cleanup_damage_events(&mut self, now_ms: u64) {
+        while let Some(front) = self.damage_events.front() {
+            if now_ms.saturating_sub(front.occurred_at) > DAMAGE_EVENT_TTL_MS {
+                self.damage_events.pop_front();
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn damage_event_snapshot(&self) -> Vec<DamageAppliedEvent> {
+        self.damage_events.iter().cloned().collect()
     }
 
     fn build_player_snapshot(
@@ -376,6 +423,7 @@ impl RoomState {
             item_pickups: self.item_pickup_snapshots(),
             match_state: self.match_state,
             kill_feed: self.kill_feed_snapshot(),
+            damage_events: self.damage_event_snapshot(),
         }
     }
 
@@ -465,6 +513,7 @@ struct RoomSnapshotPayload {
     item_pickups: Vec<WorldItemPickup>,
     match_state: MatchState,
     kill_feed: Vec<KillFeedEntry>,
+    damage_events: Vec<DamageAppliedEvent>,
 }
 
 #[derive(Serialize)]
@@ -481,6 +530,7 @@ struct WorldSnapshotPayload {
     item_pickups: Vec<WorldItemPickup>,
     time_remaining_ms: u64,
     kill_feed: Vec<KillFeedEntry>,
+    damage_events: Vec<DamageAppliedEvent>,
 }
 
 #[derive(Serialize, Clone)]
@@ -490,6 +540,19 @@ struct KillFeedEntry {
     occurred_at: u64,
     victim_id: String,
     cause: DeathCause,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct DamageAppliedEvent {
+    id: String,
+    occurred_at: u64,
+    victim_id: String,
+    attacker_id: String,
+    weapon_id: String,
+    damage: u16,
+    impact_direction: Vector2,
+    impact_point: Vector2,
 }
 
 #[derive(Serialize, Clone)]
@@ -1162,6 +1225,13 @@ mod tests {
         assert!(shooter_after.external_velocity.x < 0.0);
         assert!(target_after.external_velocity.x > 0.0);
         assert_eq!(target_after.snapshot.hp, 88);
+        assert_eq!(room.damage_events.len(), 1);
+        let damage_event = room.damage_events.front().expect("damage event should exist");
+        assert_eq!(damage_event.victim_id, "target");
+        assert_eq!(damage_event.attacker_id, "shooter");
+        assert_eq!(damage_event.weapon_id, "acorn_blaster");
+        assert_eq!(damage_event.damage, 12);
+        assert!(damage_event.impact_direction.x > 0.0);
         assert!(deaths.is_empty());
     }
 

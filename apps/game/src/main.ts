@@ -8,8 +8,16 @@ import {
   ensureHamsterPlaceholderTextures,
   hamsterTextureForSnapshot,
 } from "./hamster-visuals";
+import {
+  ensureWeaponPickupTextures,
+  resolveWeaponEquipPresentation,
+  resolveWeaponFireStyle,
+  resolveWeaponPickupPresentation,
+  weaponPickupAccentColor,
+} from "./weapon-presentation";
 import type {
   CollisionPrimitive,
+  DamageAppliedEvent,
   HazardZone,
   JoinRoomMessage,
   KillFeedEntry,
@@ -21,6 +29,7 @@ import type {
   WorldItemPickup,
   WorldWeaponPickup,
   WorldSnapshotMessage,
+  Vector2,
 } from "@battle-hamsters/shared";
 
 const MAP_DEFINITION = trainingArenaMap;
@@ -112,6 +121,7 @@ const KILL_FEED_SLIDE_IN_DISTANCE = 96;
 const KILL_FEED_SLIDE_IN_MS = 200;
 const KILL_FEED_EXIT_RISE = 18;
 const KILL_FEED_EXIT_MS = 280;
+const DAMAGE_EVENT_DISMISSED_RETENTION_MS = 1_200;
 
 const COLLISION_PRIMITIVES: CollisionPrimitive[] = MAP_DEFINITION.collision;
 const HAZARDS: HazardZone[] = MAP_DEFINITION.hazards;
@@ -153,17 +163,23 @@ type RenderedPlayer = {
   root: Phaser.GameObjects.Container;
   shadow: Phaser.GameObjects.Ellipse;
   sprite: Phaser.GameObjects.Image;
+  weaponOverlay: Phaser.GameObjects.Image;
   collider: Phaser.GameObjects.Rectangle;
   label: Phaser.GameObjects.Text;
   targetX: number;
   targetY: number;
   isLocal: boolean;
   snapshot: PlayerSnapshot;
+  lastImpactDirection: Vector2 | null;
+  lastImpactAt: number;
 };
 
 type RenderedWeaponPickup = {
-  body: Phaser.GameObjects.Ellipse;
-  label: Phaser.GameObjects.Text;
+  root: Phaser.GameObjects.Container;
+  body: Phaser.GameObjects.Ellipse | Phaser.GameObjects.Image;
+  accent: Phaser.GameObjects.Rectangle;
+  codeText: Phaser.GameObjects.Text;
+  detailText: Phaser.GameObjects.Text;
   targetX: number;
   targetY: number;
 };
@@ -180,6 +196,16 @@ type VisibilityControlledObject =
 
 type DeathEcho = {
   sprite: Phaser.GameObjects.Image;
+  velocityX: number;
+  velocityY: number;
+  angularVelocity: number;
+  fadeAt: number;
+  destroyAt: number;
+  baseAlpha: number;
+};
+
+type HitParticle = {
+  node: Phaser.GameObjects.Rectangle;
   velocityX: number;
   velocityY: number;
   angularVelocity: number;
@@ -217,6 +243,54 @@ function isRectHazard(hazard: HazardZone): hazard is HazardZone & {
   height: number;
 } {
   return "width" in hazard && "height" in hazard;
+}
+
+function vectorLengthSquared(vector: Vector2): number {
+  return vector.x * vector.x + vector.y * vector.y;
+}
+
+function normalizeVector(vector: Vector2, fallback: Vector2): Vector2 {
+  const lengthSq = vectorLengthSquared(vector);
+  if (lengthSq <= 0.0001) {
+    return fallback;
+  }
+
+  const length = Math.sqrt(lengthSq);
+  return {
+    x: vector.x / length,
+    y: vector.y / length,
+  };
+}
+
+function addUpwardBias(direction: Vector2): Vector2 {
+  return normalizeVector(
+    {
+      x: direction.x,
+      y: Math.min(direction.y, 0) - 0.38,
+    },
+    { x: 0, y: -1 },
+  );
+}
+
+function fallbackImpactDirection(
+  previousSnapshot: PlayerSnapshot,
+  nextSnapshot: PlayerSnapshot,
+): Vector2 {
+  const deltaVelocity = {
+    x: nextSnapshot.velocity.x - previousSnapshot.velocity.x,
+    y: nextSnapshot.velocity.y - previousSnapshot.velocity.y,
+  };
+  if (vectorLengthSquared(deltaVelocity) > 0.3) {
+    return addUpwardBias(normalizeVector(deltaVelocity, { x: 1, y: 0 }));
+  }
+
+  if (vectorLengthSquared(nextSnapshot.velocity) > 0.3) {
+    return addUpwardBias(normalizeVector(nextSnapshot.velocity, { x: 1, y: 0 }));
+  }
+
+  return previousSnapshot.direction === "left"
+    ? { x: -0.74, y: -0.46 }
+    : { x: 0.74, y: -0.46 };
 }
 
 function getOrCreatePlayerName(): string {
@@ -306,6 +380,7 @@ class MainScene extends Phaser.Scene {
   private cameraConfigured = false;
   private debugLayer: VisibilityControlledObject[] = [];
   private deathEchoes: DeathEcho[] = [];
+  private hitParticles: HitParticle[] = [];
   private renderedPlayers = new Map<string, RenderedPlayer>();
   private renderedWeaponPickups = new Map<string, RenderedWeaponPickup>();
   private renderedItemPickups = new Map<string, RenderedItemPickup>();
@@ -319,6 +394,7 @@ class MainScene extends Phaser.Scene {
     }
   >();
   private dismissedKillFeedIds = new Map<string, number>();
+  private dismissedDamageEventIds = new Map<string, number>();
   private playerName = getOrCreatePlayerName();
   // 미래 계정 연동용 — 현재는 로컬 저장만 하고 서버에 아직 전달하지 않음
   private readonly _playerId = getOrCreatePlayerId();
@@ -395,14 +471,28 @@ class MainScene extends Phaser.Scene {
       .setAlpha(0.78);
     sprite.setFlipX(previousSnapshot.direction === "left");
 
-    const drift = previousSnapshot.direction === "left" ? -1.5 : 1.5;
+    const recentImpactDirection =
+      rendered.lastImpactDirection &&
+      this.time.now - rendered.lastImpactAt <= 700
+        ? rendered.lastImpactDirection
+        : null;
+    const launchDirection = addUpwardBias(
+      recentImpactDirection ??
+        normalizeVector(
+          previousSnapshot.velocity,
+          previousSnapshot.direction === "left"
+            ? { x: -1, y: -0.2 }
+            : { x: 1, y: -0.2 },
+        ),
+    );
+
     this.deathEchoes.push({
       sprite,
-      velocityX: previousSnapshot.velocity.x * 0.18 + drift,
-      velocityY: Math.min(previousSnapshot.velocity.y * 0.2, 0) - 4.8,
-      angularVelocity: drift * 0.03,
-      fadeAt: this.time.now + 420,
-      destroyAt: this.time.now + 980,
+      velocityX: previousSnapshot.velocity.x * 0.08 + launchDirection.x * 1.6,
+      velocityY: Math.min(previousSnapshot.velocity.y * 0.08, 0) + launchDirection.y * 1.8 - 1.8,
+      angularVelocity: launchDirection.x * 0.02,
+      fadeAt: this.time.now + 560,
+      destroyAt: this.time.now + 1320,
       baseAlpha: 0.78,
     });
   }
@@ -412,7 +502,7 @@ class MainScene extends Phaser.Scene {
       const echo = this.deathEchoes[index];
       echo.sprite.x += echo.velocityX;
       echo.sprite.y += echo.velocityY;
-      echo.velocityY += 0.42;
+      echo.velocityY += 0.28;
       echo.sprite.rotation += echo.angularVelocity;
 
       if (now >= echo.fadeAt) {
@@ -436,9 +526,40 @@ class MainScene extends Phaser.Scene {
     this.deathEchoes = [];
   }
 
+  private clearHitParticles() {
+    for (const particle of this.hitParticles) {
+      particle.node.destroy();
+    }
+    this.hitParticles = [];
+  }
+
+  private updateHitParticles(now: number) {
+    for (let index = this.hitParticles.length - 1; index >= 0; index -= 1) {
+      const particle = this.hitParticles[index];
+      particle.node.x += particle.velocityX;
+      particle.node.y += particle.velocityY;
+      particle.velocityX *= 0.96;
+      particle.velocityY += 0.16;
+      particle.node.rotation += particle.angularVelocity;
+
+      if (now >= particle.fadeAt) {
+        const fadeWindow = particle.destroyAt - particle.fadeAt;
+        const remaining = Math.max(0, particle.destroyAt - now);
+        const ratio = fadeWindow <= 0 ? 0 : remaining / fadeWindow;
+        particle.node.setAlpha(particle.baseAlpha * ratio);
+      }
+
+      if (now >= particle.destroyAt) {
+        particle.node.destroy();
+        this.hitParticles.splice(index, 1);
+      }
+    }
+  }
+
   create() {
     this.cameras.main.setBackgroundColor("#111827");
     ensureHamsterPlaceholderTextures(this);
+    ensureWeaponPickupTextures(this);
     this.drawStage();
     this.setDebugVisible(this.debugEnabled);
 
@@ -550,10 +671,12 @@ class MainScene extends Phaser.Scene {
 
     this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.clearDeathEchoes();
+      this.clearHitParticles();
       this.socket?.close();
     });
     this.events.on(Phaser.Scenes.Events.DESTROY, () => {
       this.clearDeathEchoes();
+      this.clearHitParticles();
       this.socket?.close();
     });
     this.input.on("pointerdown", () => {
@@ -782,6 +905,8 @@ class MainScene extends Phaser.Scene {
       this.clearRenderedWeaponPickups();
       this.clearRenderedItemPickups();
       this.clearDeathEchoes();
+      this.clearHitParticles();
+      this.dismissedDamageEventIds.clear();
       this.time.delayedCall(2000, () => {
         if (!this.socket || this.socket.readyState === WebSocket.CLOSED) {
           this.connect();
@@ -837,7 +962,8 @@ class MainScene extends Phaser.Scene {
     if (message.payload.selfPlayerId) {
       this.localPlayerId = message.payload.selfPlayerId;
     }
-    this.renderPlayers(message.payload.players);
+    const damageEventMap = this.buildDamageEventMap(message.payload.damageEvents);
+    this.renderPlayers(message.payload.players, damageEventMap);
     this.renderWeaponPickups(message.payload.weaponPickups);
     this.renderItemPickups(message.payload.itemPickups);
     this.captureLocalPlayer(message.payload.players);
@@ -848,7 +974,8 @@ class MainScene extends Phaser.Scene {
 
   private applyWorldSnapshot(message: WorldSnapshotMessage) {
     this.latestTick = message.payload.serverTick;
-    this.renderPlayers(message.payload.players);
+    const damageEventMap = this.buildDamageEventMap(message.payload.damageEvents);
+    this.renderPlayers(message.payload.players, damageEventMap);
     this.renderWeaponPickups(message.payload.weaponPickups);
     this.renderItemPickups(message.payload.itemPickups);
     this.captureLocalPlayer(message.payload.players);
@@ -860,6 +987,21 @@ class MainScene extends Phaser.Scene {
       message.payload.timeRemainingMs,
       message.payload.countdownMs ?? null,
     );
+  }
+
+  private buildDamageEventMap(
+    events: DamageAppliedEvent[],
+  ): Map<string, DamageAppliedEvent[]> {
+    const byVictim = new Map<string, DamageAppliedEvent[]>();
+    for (const event of events) {
+      const existing = byVictim.get(event.victimId);
+      if (existing) {
+        existing.push(event);
+      } else {
+        byVictim.set(event.victimId, [event]);
+      }
+    }
+    return byVictim;
   }
 
   private applyKillFeed(entries: KillFeedEntry[], players: PlayerSnapshot[]) {
@@ -1065,7 +1207,10 @@ class MainScene extends Phaser.Scene {
     }
   }
 
-  private renderPlayers(players: PlayerSnapshot[]) {
+  private renderPlayers(
+    players: PlayerSnapshot[],
+    damageEventMap: Map<string, DamageAppliedEvent[]>,
+  ) {
     const nextIds = new Set(players.map((player) => player.id));
 
     for (const player of players) {
@@ -1078,6 +1223,7 @@ class MainScene extends Phaser.Scene {
           -2,
           hamsterTextureForSnapshot(player, this.time.now),
         );
+        const weaponOverlay = this.add.image(0, 0, "__MISSING").setVisible(false);
         const collider = this.add.rectangle(
           0,
           0,
@@ -1088,11 +1234,12 @@ class MainScene extends Phaser.Scene {
         );
         collider.setVisible(this.debugEnabled);
         collider.setStrokeStyle(2, 0xffedd5, 0.95);
-        root.add([shadow, sprite, collider]);
+        root.add([shadow, sprite, weaponOverlay, collider]);
         rendered = {
           root,
           shadow,
           sprite,
+          weaponOverlay,
           collider,
           label: this.add.text(player.position.x, player.position.y - 28, player.name, {
             fontSize: "12px",
@@ -1102,6 +1249,8 @@ class MainScene extends Phaser.Scene {
           targetY: player.position.y,
           isLocal: false,
           snapshot: player,
+          lastImpactDirection: null,
+          lastImpactAt: 0,
         };
         this.renderedPlayers.set(player.id, rendered);
       }
@@ -1124,8 +1273,15 @@ class MainScene extends Phaser.Scene {
         this.spawnDeathEcho(rendered, previousSnapshot, player);
       }
 
+      this.applyDamageFeedback(
+        rendered,
+        previousSnapshot,
+        player,
+        damageEventMap.get(player.id) ?? [],
+      );
       rendered.snapshot = player;
       const isRespawning = player.state === "respawning";
+      this.updateWeaponOverlay(rendered, player, isRespawning);
       rendered.root.setVisible(!isRespawning);
       rendered.label.setVisible(!isRespawning);
       rendered.collider.setVisible(this.debugEnabled && !isRespawning);
@@ -1157,6 +1313,109 @@ class MainScene extends Phaser.Scene {
     }
   }
 
+  private applyDamageFeedback(
+    rendered: RenderedPlayer,
+    previousSnapshot: PlayerSnapshot,
+    nextSnapshot: PlayerSnapshot,
+    damageEvents: DamageAppliedEvent[],
+  ) {
+    let exactDamageApplied = false;
+
+    for (const event of damageEvents) {
+      if (this.dismissedDamageEventIds.has(event.id)) {
+        continue;
+      }
+
+      this.spawnHitBurst(event.impactPoint, event.impactDirection, event.damage, true);
+      rendered.lastImpactDirection = addUpwardBias(event.impactDirection);
+      rendered.lastImpactAt = this.time.now;
+      this.dismissedDamageEventIds.set(event.id, this.time.now);
+      exactDamageApplied = true;
+    }
+
+    if (!exactDamageApplied && previousSnapshot.hp > nextSnapshot.hp) {
+      const direction = fallbackImpactDirection(previousSnapshot, nextSnapshot);
+      const impactPoint = {
+        x: nextSnapshot.position.x - direction.x * PLAYER_SIZE * 0.28,
+        y: nextSnapshot.position.y - 7 - direction.y * 3,
+      };
+      this.spawnHitBurst(
+        impactPoint,
+        direction,
+        previousSnapshot.hp - nextSnapshot.hp,
+        false,
+      );
+      rendered.lastImpactDirection = direction;
+      rendered.lastImpactAt = this.time.now;
+    }
+  }
+
+  private spawnHitBurst(
+    impactPoint: Vector2,
+    impactDirection: Vector2,
+    damage: number,
+    isExact: boolean,
+  ) {
+    const direction = addUpwardBias(normalizeVector(impactDirection, { x: 1, y: -0.2 }));
+    const count = isExact ? 7 : 5;
+    const colors = isExact
+      ? [0xfde68a, 0xfca5a5, 0xfef3c7]
+      : [0xfcd34d, 0xfde68a];
+
+    for (let index = 0; index < count; index += 1) {
+      const speed = Phaser.Math.FloatBetween(1.4, 2.8) + damage * 0.015;
+      const spreadX = Phaser.Math.FloatBetween(-0.35, 0.35);
+      const spreadY = Phaser.Math.FloatBetween(-0.25, 0.18);
+      const velocityX = (direction.x + spreadX) * speed;
+      const velocityY = (direction.y + spreadY) * speed - 0.35;
+      const node = this.add
+        .rectangle(
+          impactPoint.x + Phaser.Math.FloatBetween(-1.5, 1.5),
+          impactPoint.y + Phaser.Math.FloatBetween(-1.5, 1.5),
+          Phaser.Math.Between(3, 5),
+          Phaser.Math.Between(2, 4),
+          Phaser.Utils.Array.GetRandom(colors),
+          0.92,
+        )
+        .setDepth(8);
+      node.setAngle(Phaser.Math.FloatBetween(-35, 35));
+
+      this.hitParticles.push({
+        node,
+        velocityX,
+        velocityY,
+        angularVelocity: Phaser.Math.FloatBetween(-0.08, 0.08),
+        fadeAt: this.time.now + (isExact ? 160 : 120),
+        destroyAt: this.time.now + (isExact ? 430 : 320),
+        baseAlpha: 0.92,
+      });
+    }
+  }
+
+  private updateWeaponOverlay(
+    rendered: RenderedPlayer,
+    snapshot: PlayerSnapshot,
+    isRespawning: boolean,
+  ) {
+    const presentation = resolveWeaponEquipPresentation(snapshot.equippedWeaponId);
+    const visible = presentation.textureKey !== null && !isRespawning;
+
+    if (presentation.textureKey !== null) {
+      rendered.weaponOverlay.setTexture(presentation.textureKey);
+      rendered.weaponOverlay.setPosition(
+        snapshot.direction === "left"
+          ? -presentation.offsetX
+          : presentation.offsetX,
+        presentation.offsetY,
+      );
+      rendered.weaponOverlay.setFlipX(
+        presentation.flipWithDirection && snapshot.direction === "left",
+      );
+    }
+
+    rendered.weaponOverlay.setVisible(visible);
+  }
+
   private removeRenderedPlayer(playerId: string) {
     const rendered = this.renderedPlayers.get(playerId);
     if (!rendered) {
@@ -1176,8 +1435,7 @@ class MainScene extends Phaser.Scene {
 
   private clearRenderedWeaponPickups() {
     for (const [pickupId, rendered] of this.renderedWeaponPickups) {
-      rendered.body.destroy();
-      rendered.label.destroy();
+      rendered.root.destroy();
       this.renderedWeaponPickups.delete(pickupId);
     }
   }
@@ -1197,26 +1455,57 @@ class MainScene extends Phaser.Scene {
       let rendered = this.renderedWeaponPickups.get(pickup.id);
       const weaponName =
         weaponDefinitionById[pickup.weaponId]?.name ?? pickup.weaponId;
+      const presentation = resolveWeaponPickupPresentation(pickup.weaponId);
+      const accentColor = weaponPickupAccentColor(pickup.source);
 
       if (!rendered) {
-        rendered = {
-          body: this.add.ellipse(
-            pickup.position.x,
-            pickup.position.y,
-            22,
-            14,
-            pickup.source === "spawn" ? 0x38bdf8 : 0xf97316,
-            0.95,
-          ),
-          label: this.add.text(
-            pickup.position.x,
-            pickup.position.y - 18,
-            weaponName,
+        const shadow = this.add.ellipse(0, 12, 30, 10, 0x020617, 0.26);
+        const body =
+          presentation.textureKey !== null
+            ? this.add.image(0, 0, presentation.textureKey)
+            : this.add.ellipse(0, 0, 22, 14, accentColor, 0.95);
+        const accent = this.add.rectangle(
+          0,
+          presentation.textureKey !== null ? 12 : 10,
+          presentation.textureKey !== null ? 34 : 18,
+          6,
+          accentColor,
+          0.98,
+        );
+        const codeText = this.add
+          .text(
+            0,
+            presentation.textureKey !== null ? 12 : 0,
+            presentation.code,
             {
-              fontSize: "11px",
-              color: "#f8fafc",
+              fontSize: presentation.textureKey !== null ? "11px" : "10px",
+              color: presentation.textureKey !== null ? "#0f172a" : "#e2e8f0",
+              fontStyle: "bold",
             },
-          ),
+          )
+          .setOrigin(0.5);
+        const detailText = this.add
+          .text(0, presentation.textureKey !== null ? 26 : -18, "", {
+            fontSize: "10px",
+            color: "#cbd5e1",
+          })
+          .setOrigin(0.5);
+        const root = this.add
+          .container(pickup.position.x, pickup.position.y, [
+            shadow,
+            body,
+            accent,
+            codeText,
+            detailText,
+          ])
+          .setDepth(6);
+
+        rendered = {
+          root,
+          body,
+          accent,
+          codeText,
+          detailText,
           targetX: pickup.position.x,
           targetY: pickup.position.y,
         };
@@ -1227,30 +1516,32 @@ class MainScene extends Phaser.Scene {
       rendered.targetY = pickup.position.y;
       if (
         shouldSnapToTarget(
-          rendered.body.x,
-          rendered.body.y,
+          rendered.root.x,
+          rendered.root.y,
           rendered.targetX,
           rendered.targetY,
           PICKUP_SNAP_DISTANCE,
         )
       ) {
-        rendered.body.setPosition(rendered.targetX, rendered.targetY);
+        rendered.root.setPosition(rendered.targetX, rendered.targetY);
       }
-      rendered.body.setFillStyle(
-        pickup.source === "spawn" ? 0x38bdf8 : 0xf97316,
-        0.95,
-      );
-      rendered.label.setText(`${weaponName} (${pickup.resourceRemaining})`);
-      rendered.label.setPosition(
-        rendered.body.x - rendered.label.width / 2,
-        rendered.body.y - 20,
+      if (rendered.body instanceof Phaser.GameObjects.Ellipse) {
+        rendered.body.setFillStyle(accentColor, 0.95);
+      }
+      rendered.accent.setFillStyle(accentColor, 0.98);
+      rendered.codeText.setText(presentation.code);
+      rendered.detailText.setText(
+        presentation.showNameLabel
+          ? `${weaponName} (${pickup.resourceRemaining})`
+          : pickup.source === "spawn"
+            ? ""
+            : `${pickup.resourceRemaining}`,
       );
     }
 
     for (const [pickupId, rendered] of this.renderedWeaponPickups) {
       if (!nextIds.has(pickupId)) {
-        rendered.body.destroy();
-        rendered.label.destroy();
+        rendered.root.destroy();
         this.renderedWeaponPickups.delete(pickupId);
       }
     }
@@ -1356,7 +1647,13 @@ class MainScene extends Phaser.Scene {
     const attackPressed =
       this.queuedClickAttack || (attackHeld && !this.attackWasDown);
     if (attackPressed) {
-      this.showAttackFlash(originX, originY, aim.x, aim.y);
+      this.showAttackFlash(
+        localPlayer?.snapshot.equippedWeaponId ?? "paws",
+        originX,
+        originY,
+        aim.x,
+        aim.y,
+      );
     }
     this.attackWasDown = attackHeld;
     const pickupWeaponPressed =
@@ -1388,12 +1685,52 @@ class MainScene extends Phaser.Scene {
   }
 
   private showAttackFlash(
+    weaponId: string,
     originX: number,
     originY: number,
     aimX: number,
     aimY: number,
   ) {
     this.attackFlash.clear();
+    const fireStyle = resolveWeaponFireStyle(weaponId);
+    const muzzleX = originX + aimX * 15;
+    const muzzleY = originY + aimY * 15;
+
+    if (fireStyle === "muzzle_flash") {
+      const tracerEndX = muzzleX + aimX * 62;
+      const tracerEndY = muzzleY + aimY * 62;
+      const sideX = -aimY;
+      const sideY = aimX;
+
+      this.attackFlash.lineStyle(2, 0xfde68a, 0.9);
+      this.attackFlash.lineBetween(muzzleX, muzzleY, tracerEndX, tracerEndY);
+
+      this.attackFlash.fillStyle(0xf59e0b, 0.96);
+      this.attackFlash.fillTriangle(
+        muzzleX + aimX * 11,
+        muzzleY + aimY * 11,
+        muzzleX - sideX * 3,
+        muzzleY - sideY * 3,
+        muzzleX + sideX * 3,
+        muzzleY + sideY * 3,
+      );
+      this.attackFlash.fillStyle(0xfef3c7, 0.92);
+      this.attackFlash.fillCircle(muzzleX, muzzleY, 3.5);
+      this.attackFlashUntil = this.time.now + 70;
+      return;
+    }
+
+    if (fireStyle === "paws_pulse") {
+      const pulseX = originX + aimX * 24;
+      const pulseY = originY + aimY * 24;
+      this.attackFlash.lineStyle(3, 0xfef08a, 0.95);
+      this.attackFlash.strokeCircle(pulseX, pulseY, 12);
+      this.attackFlash.lineStyle(2, 0xfcd34d, 0.8);
+      this.attackFlash.strokeCircle(pulseX, pulseY, 20);
+      this.attackFlashUntil = this.time.now + 90;
+      return;
+    }
+
     this.attackFlash.lineStyle(3, 0xfef08a, 0.95);
     this.attackFlash.lineBetween(
       originX,
@@ -1412,7 +1749,9 @@ class MainScene extends Phaser.Scene {
 
   update() {
     this.pruneKillFeed(this.time.now);
+    this.pruneDismissedDamageEvents(this.time.now);
     this.updateDeathEchoes(this.time.now);
+    this.updateHitParticles(this.time.now);
 
     if (this.attackFlashUntil !== 0 && this.time.now > this.attackFlashUntil) {
       this.attackFlash.clear();
@@ -1439,11 +1778,15 @@ class MainScene extends Phaser.Scene {
     }
 
     for (const [, rendered] of this.renderedWeaponPickups) {
-      rendered.body.x = Phaser.Math.Linear(rendered.body.x, rendered.targetX, PICKUP_LERP);
-      rendered.body.y = Phaser.Math.Linear(rendered.body.y, rendered.targetY, PICKUP_LERP);
-      rendered.label.setPosition(
-        rendered.body.x - rendered.label.width / 2,
-        rendered.body.y - 20,
+      rendered.root.x = Phaser.Math.Linear(
+        rendered.root.x,
+        rendered.targetX,
+        PICKUP_LERP,
+      );
+      rendered.root.y = Phaser.Math.Linear(
+        rendered.root.y,
+        rendered.targetY,
+        PICKUP_LERP,
       );
     }
 
@@ -1459,6 +1802,14 @@ class MainScene extends Phaser.Scene {
     this.statusText.setText(
       `Battle Hamsters  |  server tick ${this.latestTick}  |  room ${ROOM_ID}${this.debugEnabled ? "  |  DEBUG" : ""}`,
     );
+  }
+
+  private pruneDismissedDamageEvents(now: number) {
+    for (const [id, receivedAt] of this.dismissedDamageEventIds) {
+      if (now - receivedAt >= DAMAGE_EVENT_DISMISSED_RETENTION_MS) {
+        this.dismissedDamageEventIds.delete(id);
+      }
+    }
   }
 }
 
