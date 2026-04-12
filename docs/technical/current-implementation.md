@@ -175,6 +175,7 @@
 
 - 맵 경계/카메라 정책 설계 배경은 `docs/technical/mini-spec-map-boundaries-camera.md` 참조
 - 카메라 구현 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-camera-visual-bounds-v1.md`
-- 문서 동기화 + 배포 전략 미니 스펙: `docs/technical/mini-spec-doc-sync-deploy-strategy-v1.md`
-- 사망 연출 + 디버그 토글 미니 스펙: `docs/technical/mini-spec-death-feedback-debug-toggle-v1.md`
+- 문서 동기화 + 배포 전략 미니 스펙: `docs/archive/mini-specs/mini-spec-doc-sync-deploy-strategy-v1.md`
+- 사망 연출 + 디버그 토글 미니 스펙: `docs/archive/mini-specs/mini-spec-death-feedback-debug-toggle-v1.md`
+- 로컬 개발 환경 정리 미니 스펙: `docs/archive/mini-specs/mini-spec-local-dev-env-runner-v1.md`
 - 점프 아이템 세부 규칙 후속은 `docs/technical/mini-spec-jump-item-integration-v1.md` 참조

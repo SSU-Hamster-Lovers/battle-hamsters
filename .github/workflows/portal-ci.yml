@@ -3,10 +3,18 @@ name: Portal CI
 on:
   push:
     branches: [main, develop]
-    paths: ['apps/portal/**']
+    paths:
+      - 'apps/portal/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/portal-ci.yml'
   pull_request:
     branches: [main, develop]
-    paths: ['apps/portal/**']
+    paths:
+      - 'apps/portal/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/portal-ci.yml'
 
 jobs:
   lint:

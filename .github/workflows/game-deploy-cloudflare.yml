@@ -6,6 +6,8 @@ on:
     paths:
       - 'apps/game/**'
       - 'packages/shared/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
       - '.github/workflows/game-deploy-cloudflare.yml'
   workflow_dispatch:
 

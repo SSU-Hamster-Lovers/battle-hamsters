@@ -79,6 +79,8 @@ GitHub Actions가 Portal을 빌드한 뒤 `wrangler pages deploy`로 Cloudflare 
 2. GitHub Actions가 `apps/portal`에서 `pnpm install`과 `pnpm build`를 실행한다.
 3. 생성된 `apps/portal/out` 디렉터리를 Cloudflare Pages 프로젝트에 업로드한다.
 
+Portal 관련 변경에는 `apps/portal/**` 뿐 아니라 workspace 공용 `package.json`, `pnpm-lock.yaml`, 배포 워크플로 파일 변경도 포함한다.
+
 ### Cloudflare에서 필요한 1회 작업
 Cloudflare Pages 프로젝트를 한 번 만들어 두고, 프로젝트 이름을 GitHub environment variable과 맞춰야 한다.
 
