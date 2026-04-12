@@ -49,6 +49,9 @@ const KILL_FEED_TTL_MS: u64 = 3_500;
 const KILL_FEED_MAX_ENTRIES: usize = 16;
 const FREE_PLAY_ROOM_ID: &str = "free_play";
 const EMPTY_ROOM_TTL_MS: u64 = 600_000; // 10분, 빈 매치룸 자동 제거
+const MATCH_COUNTDOWN_MS: u64 = 5_000;   // 매치 시작 카운트다운
+const MATCH_RESULT_DISPLAY_MS: u64 = 5_000; // 결과 화면 유지 시간
+const MATCH_MIN_PLAYERS: usize = 2;      // 카운트다운 시작 최소 인원
 
 #[derive(Serialize)]
 struct HealthResponse {
@@ -119,7 +122,7 @@ async fn list_rooms(app_state: web::Data<AppState>) -> impl Responder {
                 "type": if r.room_type == RoomType::FreePlay { "free_play" } else { "match" },
                 "code": r.room_code,
                 "players": r.sessions.len(),
-                "matchState": "running",
+                "matchState": r.match_state,
             })
         })
         .collect();
@@ -173,6 +176,9 @@ struct RoomState {
     room_type: RoomType,
     room_code: Option<String>,
     empty_since_ms: Option<u64>,
+    match_state: MatchState,
+    countdown_start_ms: Option<u64>,
+    result_display_until_ms: Option<u64>,
     server_tick: u64,
     time_remaining_ms: u64,
     gameplay_config: RoomGameplayConfig,
@@ -189,13 +195,15 @@ struct RoomState {
 }
 
 impl RoomState {
-    /// 테스트 및 내부용 기본 생성자 (Match 타입, 기본 config)
+    /// 테스트 및 내부용 기본 생성자 — Running 상태로 시작해 게임 물리가 바로 동작
     fn new() -> Self {
         Self::with_gameplay_config(RoomGameplayConfig::default())
     }
 
     fn with_gameplay_config(gameplay_config: RoomGameplayConfig) -> Self {
-        Self::create(room_id().to_string(), RoomType::Match, None, gameplay_config)
+        let mut room = Self::create(room_id().to_string(), RoomType::Match, None, gameplay_config);
+        room.match_state = MatchState::Running;
+        room
     }
 
     pub(crate) fn new_free_play() -> Self {
@@ -219,12 +227,20 @@ impl RoomState {
         room_code: Option<String>,
         gameplay_config: RoomGameplayConfig,
     ) -> Self {
+        let initial_match_state = if room_type == RoomType::FreePlay {
+            MatchState::Running
+        } else {
+            MatchState::Waiting
+        };
         let now = now_ms();
         let mut room = Self {
             room_id,
             room_type,
             room_code,
             empty_since_ms: None,
+            match_state: initial_match_state,
+            countdown_start_ms: None,
+            result_display_until_ms: None,
             server_tick: 0,
             time_remaining_ms: gameplay_config.time_limit_ms,
             gameplay_config,
@@ -309,6 +325,8 @@ impl RoomState {
             equipped_weapon_resource: None,
             grab_state: None,
             state: PlayerState::Alive,
+            kills: 0,
+            deaths: 0,
         }
     }
 
@@ -336,13 +354,16 @@ impl RoomState {
             },
         );
 
+        // 플레이어 합류 시 empty 타이머 취소
+        self.empty_since_ms = None;
+
         RoomSnapshotPayload {
             room_id: self.room_id.clone(),
             self_player_id: Some(player_id),
             players: self.player_snapshots(),
             weapon_pickups: self.weapon_pickup_snapshots(),
             item_pickups: self.item_pickup_snapshots(),
-            match_state: MatchState::Waiting,
+            match_state: self.match_state,
             kill_feed: self.kill_feed_snapshot(),
         }
     }
@@ -441,6 +462,7 @@ struct WorldSnapshotPayload {
     version: u8,
     room_id: String,
     match_state: MatchState,
+    countdown_ms: Option<u64>,
     server_tick: u64,
     players: Vec<PlayerSnapshot>,
     projectiles: Vec<Value>,
@@ -560,6 +582,8 @@ struct PlayerSnapshot {
     equipped_weapon_resource: Option<u32>,
     grab_state: Option<GrabState>,
     state: PlayerState,
+    kills: u32,
+    deaths: u32,
 }
 
 #[derive(Serialize, Clone)]
@@ -569,7 +593,7 @@ struct GrabState {
     remaining_ms: u64,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "snake_case")]
 enum MatchState {
     Waiting,
@@ -745,6 +769,8 @@ mod tests {
                 equipped_weapon_resource: None,
                 grab_state: None,
                 state: PlayerState::Alive,
+                kills: 0,
+                deaths: 0,
             },
             latest_input: PlayerInputPayload::default(),
             spawn_index: 0,
@@ -1042,6 +1068,8 @@ mod tests {
                 equipped_weapon_resource: Some(1),
                 grab_state: None,
                 state: PlayerState::Alive,
+                kills: 0,
+                deaths: 0,
             },
             latest_input: PlayerInputPayload {
                 sequence: 1,
@@ -1081,6 +1109,8 @@ mod tests {
                 equipped_weapon_resource: None,
                 grab_state: None,
                 state: PlayerState::Alive,
+                kills: 0,
+                deaths: 0,
             },
             latest_input: PlayerInputPayload::default(),
             spawn_index: 1,

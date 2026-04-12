@@ -53,6 +53,7 @@ const CAMERA_FOLLOW_LERP_Y = 0.1;
 // is the full world/map size that the camera scrolls over.
 const VIEWPORT_WIDTH = 800;
 const VIEWPORT_HEIGHT = 600;
+const MATCH_MIN_PLAYERS_DISPLAY = 2;
 const KILL_FEED_TTL_MS = 3_000;
 const KILL_FEED_DISMISSED_RETENTION_MS = 5_000;
 const KILL_FEED_LINE_HEIGHT = 18;
@@ -249,6 +250,8 @@ class MainScene extends Phaser.Scene {
   private connectionText!: Phaser.GameObjects.Text;
   private attackFlash!: Phaser.GameObjects.Graphics;
   private attackFlashUntil = 0;
+  private matchOverlayBg!: Phaser.GameObjects.Rectangle;
+  private matchOverlayText!: Phaser.GameObjects.Text;
   private cameraConfigured = false;
   private renderedPlayers = new Map<string, RenderedPlayer>();
   private renderedWeaponPickups = new Map<string, RenderedWeaponPickup>();
@@ -319,6 +322,23 @@ class MainScene extends Phaser.Scene {
       .setScrollFactor(0);
 
     this.attackFlash = this.add.graphics().setDepth(9);
+
+    this.matchOverlayBg = this.add
+      .rectangle(VIEWPORT_WIDTH / 2, VIEWPORT_HEIGHT / 2, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, 0x000000, 0.6)
+      .setDepth(20)
+      .setScrollFactor(0)
+      .setVisible(false);
+    this.matchOverlayText = this.add
+      .text(VIEWPORT_WIDTH / 2, VIEWPORT_HEIGHT / 2, "", {
+        fontSize: "24px",
+        color: "#f9fafb",
+        align: "center",
+        lineSpacing: 10,
+      })
+      .setOrigin(0.5)
+      .setDepth(21)
+      .setScrollFactor(0)
+      .setVisible(false);
 
     this.add
       .text(24, VIEWPORT_HEIGHT - 70, "Move: A / D or Arrow Left / Right", {
@@ -650,7 +670,7 @@ class MainScene extends Phaser.Scene {
     this.captureLocalPlayer(message.payload.players);
     this.maybeFinalizeCamera();
     this.applyKillFeed(message.payload.killFeed, message.payload.players);
-    this.updateInfoText(message.payload.players, "waiting", null);
+    this.updateInfoText(message.payload.players, "waiting", null, null);
   }
 
   private applyWorldSnapshot(message: WorldSnapshotMessage) {
@@ -665,6 +685,7 @@ class MainScene extends Phaser.Scene {
       message.payload.players,
       message.payload.matchState,
       message.payload.timeRemainingMs,
+      message.payload.countdownMs ?? null,
     );
   }
 
@@ -804,6 +825,7 @@ class MainScene extends Phaser.Scene {
     players: PlayerSnapshot[],
     matchState: string,
     timeRemainingMs: number | null,
+    countdownMs: number | null,
   ) {
     const localPlayer = players.find(
       (player) => player.id === this.localPlayerId,
@@ -812,18 +834,51 @@ class MainScene extends Phaser.Scene {
       `room: ${ROOM_ID}`,
       `players: ${players.length}`,
       `match: ${matchState}`,
-      `self: ${this.localPlayerId ?? "unknown"}`,
       `hp: ${localPlayer?.hp ?? 0}`,
+      `kills: ${localPlayer?.kills ?? 0}  deaths: ${localPlayer?.deaths ?? 0}`,
       `weapon: ${localPlayer ? (weaponDefinitionById[localPlayer.equippedWeaponId]?.name ?? localPlayer.equippedWeaponId) : "unknown"}`,
       `ammo: ${localPlayer?.equippedWeaponResource ?? "∞"}`,
-      `max jumps: ${localPlayer?.maxJumpCount ?? 0}`,
-      `grounded: ${localPlayer?.grounded ?? false}`,
-      `state: ${localPlayer?.state ?? "unknown"}`,
-      `jumps used: ${localPlayer?.jumpCountUsed ?? 0}`,
       `lives: ${localPlayer?.lives ?? 0}`,
-      `tick: ${this.latestTick}`,
-      `time remaining: ${timeRemainingMs === null ? "waiting" : `${Math.ceil(timeRemainingMs / 1000)}s`}`,
+      `time: ${timeRemainingMs === null ? "∞" : `${Math.ceil(timeRemainingMs / 1000)}s`}`,
     ]);
+
+    this.updateMatchOverlay(players, matchState, countdownMs);
+  }
+
+  private updateMatchOverlay(
+    players: PlayerSnapshot[],
+    matchState: string,
+    countdownMs: number | null,
+  ) {
+    if (matchState === "waiting") {
+      this.matchOverlayBg.setVisible(true);
+      this.matchOverlayText.setVisible(true);
+      if (countdownMs !== null && countdownMs > 0) {
+        this.matchOverlayText.setText(
+          `게임 시작까지\n${Math.ceil(countdownMs / 1000)}초`,
+        );
+      } else {
+        this.matchOverlayText.setText(
+          `대기 중...\n${players.length}명 / ${MATCH_MIN_PLAYERS_DISPLAY}명 이상 필요`,
+        );
+      }
+    } else if (matchState === "finished") {
+      this.matchOverlayBg.setVisible(true);
+      this.matchOverlayText.setVisible(true);
+      const sorted = [...players].sort(
+        (a, b) => b.kills - a.kills || a.deaths - b.deaths,
+      );
+      const lines = ["게임 종료!\n"];
+      sorted.forEach((p, i) => {
+        const marker = p.id === this.localPlayerId ? " ◀" : "";
+        lines.push(`#${i + 1}  ${p.name}  ${p.kills}킬 ${p.deaths}데스${marker}`);
+      });
+      lines.push("\n잠시 후 다음 매치가 시작됩니다...");
+      this.matchOverlayText.setText(lines.join("\n"));
+    } else {
+      this.matchOverlayBg.setVisible(false);
+      this.matchOverlayText.setVisible(false);
+    }
   }
 
   private captureLocalPlayer(players: PlayerSnapshot[]) {
