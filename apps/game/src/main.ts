@@ -873,7 +873,7 @@ class MainScene extends Phaser.Scene {
         const marker = p.id === this.localPlayerId ? " ◀" : "";
         lines.push(`#${i + 1}  ${p.name}  ${p.kills}킬 ${p.deaths}데스${marker}`);
       });
-      lines.push("\n잠시 후 다음 매치가 시작됩니다...");
+      lines.push("\n매치가 종료되었습니다.\n로비로 돌아가려면 뒤로 가기를 눌러주세요.");
       this.matchOverlayText.setText(lines.join("\n"));
     } else {
       this.matchOverlayBg.setVisible(false);

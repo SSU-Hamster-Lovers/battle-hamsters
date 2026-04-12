@@ -88,11 +88,8 @@ impl RoomState {
                 // 시간 소진 체크는 tick() 본체에서 처리
             }
             MatchState::Finished => {
-                if let Some(until) = self.result_display_until_ms {
-                    if now_ms >= until {
-                        self.reset_match(now_ms);
-                    }
-                }
+                // 자동 재시작 안 함 — 방은 Finished 상태로 유지.
+                // 모든 플레이어가 나가면 유령 방 정리(10분)에 의해 제거됨.
             }
         }
     }
