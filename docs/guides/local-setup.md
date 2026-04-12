@@ -48,6 +48,8 @@ pnpm dev:game
 - `PUBLIC_SERVER_HOST`
 - `PUBLIC_GAME_HOST`
 
+추가로 `pnpm dev`, `pnpm dev:web`, `pnpm dev:portal` 은 `portal` 실행 전에 `apps/portal/.next` 를 정리해, 브랜치 전환이나 이전 build 산출물 때문에 Next 개발 서버가 stale chunk 를 참조하는 문제를 줄인다.
+
 프런트는 위 값을 바탕으로 아래 주소를 자동 구성한다.
 
 - `NEXT_PUBLIC_SERVER_API_URL=http://{PUBLIC_SERVER_HOST}:{API_PORT}`
