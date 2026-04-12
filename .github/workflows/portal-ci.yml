@@ -2,7 +2,7 @@ name: Portal CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
     paths:
       - 'apps/portal/**'
       - 'package.json'
