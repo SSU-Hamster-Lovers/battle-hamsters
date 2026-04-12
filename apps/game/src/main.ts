@@ -31,10 +31,59 @@ const WS_URL =
   `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.hostname}:8081/ws`;
 const PLAYER_NAME_STORAGE_KEY = "battle-hamsters-player-name";
 const PLAYER_ID_STORAGE_KEY = "battle-hamsters-player-id";
+const OPS_ACCESS_STORAGE_KEY = "battle-hamsters-ops-access";
+const DEBUG_VISIBLE_STORAGE_KEY = "battle-hamsters-debug-visible";
 const FREE_PLAY_ROOM_ID = "free_play";
 
 function getUrlParam(key: string): string | null {
   return new URLSearchParams(window.location.search).get(key);
+}
+
+function parseBooleanUrlParam(key: string): boolean | null {
+  const value = getUrlParam(key);
+  if (value === null) {
+    return null;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (["0", "false", "off", "no"].includes(normalized)) {
+    return false;
+  }
+
+  return true;
+}
+
+function readStoredFlag(key: string): boolean {
+  return window.localStorage.getItem(key) === "1";
+}
+
+function writeStoredFlag(key: string, enabled: boolean) {
+  window.localStorage.setItem(key, enabled ? "1" : "0");
+}
+
+function resolveOpsAccess(): boolean {
+  const fromUrl = parseBooleanUrlParam("ops");
+  if (fromUrl !== null) {
+    writeStoredFlag(OPS_ACCESS_STORAGE_KEY, fromUrl);
+    return fromUrl;
+  }
+
+  return readStoredFlag(OPS_ACCESS_STORAGE_KEY);
+}
+
+function resolveInitialDebugVisible(opsAccess: boolean): boolean {
+  if (!opsAccess) {
+    writeStoredFlag(DEBUG_VISIBLE_STORAGE_KEY, false);
+    return false;
+  }
+
+  const fromUrl = parseBooleanUrlParam("debug");
+  if (fromUrl !== null) {
+    writeStoredFlag(DEBUG_VISIBLE_STORAGE_KEY, fromUrl);
+    return fromUrl;
+  }
+
+  return readStoredFlag(DEBUG_VISIBLE_STORAGE_KEY);
 }
 
 // URL ?room=xxxx 이 있으면 그 값, 없으면 자유맵
@@ -124,6 +173,19 @@ type RenderedItemPickup = {
   label: Phaser.GameObjects.Text;
   targetX: number;
   targetY: number;
+};
+
+type VisibilityControlledObject =
+  Phaser.GameObjects.GameObject & Phaser.GameObjects.Components.Visible;
+
+type DeathEcho = {
+  sprite: Phaser.GameObjects.Image;
+  velocityX: number;
+  velocityY: number;
+  angularVelocity: number;
+  fadeAt: number;
+  destroyAt: number;
+  baseAlpha: number;
 };
 
 function drawCross(
@@ -219,17 +281,6 @@ function formatKillFeedEntry(
   }
 }
 
-function formatRespawnCountdown(respawnAt: number | null): string {
-  if (respawnAt === null) {
-    return "중";
-  }
-  const remainingMs = respawnAt - Date.now();
-  if (remainingMs <= 0) {
-    return "곧";
-  }
-  return `${Math.ceil(remainingMs / 1000)}s`;
-}
-
 function killFeedColorForCause(kind: KillFeedEntry["cause"]["kind"]): string {
   switch (kind) {
     case "fall_zone":
@@ -253,6 +304,8 @@ class MainScene extends Phaser.Scene {
   private matchOverlayBg!: Phaser.GameObjects.Rectangle;
   private matchOverlayText!: Phaser.GameObjects.Text;
   private cameraConfigured = false;
+  private debugLayer: VisibilityControlledObject[] = [];
+  private deathEchoes: DeathEcho[] = [];
   private renderedPlayers = new Map<string, RenderedPlayer>();
   private renderedWeaponPickups = new Map<string, RenderedWeaponPickup>();
   private renderedItemPickups = new Map<string, RenderedItemPickup>();
@@ -269,6 +322,8 @@ class MainScene extends Phaser.Scene {
   private playerName = getOrCreatePlayerName();
   // 미래 계정 연동용 — 현재는 로컬 저장만 하고 서버에 아직 전달하지 않음
   private readonly _playerId = getOrCreatePlayerId();
+  private readonly debugAccess = resolveOpsAccess();
+  private debugEnabled = resolveInitialDebugVisible(this.debugAccess);
   private localPlayerId: string | null = null;
   private latestTick = 0;
   private sequence = 0;
@@ -291,10 +346,101 @@ class MainScene extends Phaser.Scene {
     super("MainScene");
   }
 
+  private addDebugObject<T extends VisibilityControlledObject>(object: T): T {
+    object.setVisible(this.debugEnabled);
+    this.debugLayer.push(object);
+    return object;
+  }
+
+  private setDebugVisible(visible: boolean) {
+    this.debugEnabled = this.debugAccess && visible;
+    writeStoredFlag(DEBUG_VISIBLE_STORAGE_KEY, this.debugEnabled);
+
+    for (const object of this.debugLayer) {
+      object.setVisible(this.debugEnabled);
+    }
+
+    for (const [, rendered] of this.renderedPlayers) {
+      rendered.collider.setVisible(
+        this.debugEnabled && rendered.snapshot.state !== "respawning",
+      );
+    }
+  }
+
+  private toggleDebugVisible() {
+    this.setDebugVisible(!this.debugEnabled);
+  }
+
+  private spawnDeathEcho(
+    rendered: RenderedPlayer,
+    previousSnapshot: PlayerSnapshot,
+    nextSnapshot: PlayerSnapshot,
+  ) {
+    const cause = nextSnapshot.lastDeathCause;
+    if (
+      !cause ||
+      cause.kind === "fall_zone" ||
+      cause.kind === "instant_kill_hazard"
+    ) {
+      return;
+    }
+
+    const sprite = this.add
+      .image(
+        rendered.root.x,
+        rendered.root.y,
+        hamsterTextureForSnapshot(previousSnapshot, this.time.now),
+      )
+      .setDepth(5)
+      .setAlpha(0.78);
+    sprite.setFlipX(previousSnapshot.direction === "left");
+
+    const drift = previousSnapshot.direction === "left" ? -1.5 : 1.5;
+    this.deathEchoes.push({
+      sprite,
+      velocityX: previousSnapshot.velocity.x * 0.18 + drift,
+      velocityY: Math.min(previousSnapshot.velocity.y * 0.2, 0) - 4.8,
+      angularVelocity: drift * 0.03,
+      fadeAt: this.time.now + 420,
+      destroyAt: this.time.now + 980,
+      baseAlpha: 0.78,
+    });
+  }
+
+  private updateDeathEchoes(now: number) {
+    for (let index = this.deathEchoes.length - 1; index >= 0; index -= 1) {
+      const echo = this.deathEchoes[index];
+      echo.sprite.x += echo.velocityX;
+      echo.sprite.y += echo.velocityY;
+      echo.velocityY += 0.42;
+      echo.sprite.rotation += echo.angularVelocity;
+
+      if (now >= echo.fadeAt) {
+        const fadeWindow = echo.destroyAt - echo.fadeAt;
+        const remaining = Math.max(0, echo.destroyAt - now);
+        const ratio = fadeWindow <= 0 ? 0 : remaining / fadeWindow;
+        echo.sprite.setAlpha(echo.baseAlpha * ratio);
+      }
+
+      if (now >= echo.destroyAt || echo.sprite.y > GAME_HEIGHT + 160) {
+        echo.sprite.destroy();
+        this.deathEchoes.splice(index, 1);
+      }
+    }
+  }
+
+  private clearDeathEchoes() {
+    for (const echo of this.deathEchoes) {
+      echo.sprite.destroy();
+    }
+    this.deathEchoes = [];
+  }
+
   create() {
     this.cameras.main.setBackgroundColor("#111827");
     ensureHamsterPlaceholderTextures(this);
     this.drawStage();
+    this.setDebugVisible(this.debugEnabled);
 
     this.statusText = this.add
       .text(24, 20, "Battle Hamsters", {
@@ -379,6 +525,16 @@ class MainScene extends Phaser.Scene {
       e: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E),
       space: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
     };
+    if (this.debugAccess) {
+      keyboard.on("keydown-D", (event: KeyboardEvent) => {
+        if (!event.altKey || !event.shiftKey) {
+          return;
+        }
+
+        event.preventDefault();
+        this.toggleDebugVisible();
+      });
+    }
     this.keys.e.on("down", () => {
       this.queuedPickupWeapon = true;
     });
@@ -392,8 +548,14 @@ class MainScene extends Phaser.Scene {
       callback: () => this.sendLatestInput(),
     });
 
-    this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => this.socket?.close());
-    this.events.on(Phaser.Scenes.Events.DESTROY, () => this.socket?.close());
+    this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.clearDeathEchoes();
+      this.socket?.close();
+    });
+    this.events.on(Phaser.Scenes.Events.DESTROY, () => {
+      this.clearDeathEchoes();
+      this.socket?.close();
+    });
     this.input.on("pointerdown", () => {
       this.queuedClickAttack = true;
     });
@@ -443,7 +605,7 @@ class MainScene extends Phaser.Scene {
       );
     }
 
-    const debug = this.add.graphics().setDepth(2);
+    const debug = this.addDebugObject(this.add.graphics().setDepth(2));
     for (const primitive of COLLISION_PRIMITIVES) {
       if (primitive.type === "floor") {
         debug.lineStyle(2, 0x22c55e, 0.9);
@@ -504,22 +666,26 @@ class MainScene extends Phaser.Scene {
       } => primitive.type === "one_way_platform",
     );
     if (oneWayPlatform) {
-      this.add.text(
-        oneWayPlatform.leftX,
-        oneWayPlatform.topY - 24,
-        "원웨이 플랫폼",
-        {
-          fontSize: "12px",
-          color: "#93c5fd",
-        },
+      this.addDebugObject(
+        this.add.text(
+          oneWayPlatform.leftX,
+          oneWayPlatform.topY - 24,
+          "원웨이 플랫폼",
+          {
+            fontSize: "12px",
+            color: "#93c5fd",
+          },
+        ),
       );
     }
 
     if (PRIMARY_FLOOR) {
-      this.add.text(24, PRIMARY_FLOOR.topY + 12, "바닥 충돌면", {
-        fontSize: "12px",
-        color: "#d1d5db",
-      });
+      this.addDebugObject(
+        this.add.text(24, PRIMARY_FLOOR.topY + 12, "바닥 충돌면", {
+          fontSize: "12px",
+          color: "#d1d5db",
+        }),
+      );
     }
 
     const instantKillHazard = HAZARDS.find(
@@ -532,40 +698,46 @@ class MainScene extends Phaser.Scene {
       } => hazard.type === "instant_kill_hazard" && isRectHazard(hazard),
     );
     if (instantKillHazard) {
-      this.add.text(
-        instantKillHazard.x,
-        instantKillHazard.y - 24,
-        "즉사 함정",
-        {
-          fontSize: "12px",
-          color: "#f5d0fe",
-        },
+      this.addDebugObject(
+        this.add.text(
+          instantKillHazard.x,
+          instantKillHazard.y - 24,
+          "즉사 함정",
+          {
+            fontSize: "12px",
+            color: "#f5d0fe",
+          },
+        ),
       );
     }
 
     for (const wall of PIT_WALLS) {
-      this.add.text(wall.x - 48, wall.topY + 24, "pit wall", {
-        fontSize: "12px",
-        color: "#fed7aa",
-      });
-    }
-
-    if (PRIMARY_FALL_ZONE) {
-      this.add.text(
-        24,
-        PRIMARY_FALL_ZONE.y > GAME_HEIGHT
-          ? GAME_HEIGHT - 96
-          : PRIMARY_FALL_ZONE.y + 24,
-        "fall zone은 화면 밖 논리 영역",
-        {
+      this.addDebugObject(
+        this.add.text(wall.x - 48, wall.topY + 24, "pit wall", {
           fontSize: "12px",
-          color: "#a78bfa",
-        },
+          color: "#fed7aa",
+        }),
       );
     }
 
-    this.add
-      .text(
+    if (PRIMARY_FALL_ZONE) {
+      this.addDebugObject(
+        this.add.text(
+          24,
+          PRIMARY_FALL_ZONE.y > GAME_HEIGHT
+            ? GAME_HEIGHT - 96
+            : PRIMARY_FALL_ZONE.y + 24,
+          "fall zone은 화면 밖 논리 영역",
+          {
+            fontSize: "12px",
+            color: "#a78bfa",
+          },
+        ),
+      );
+    }
+
+    this.addDebugObject(
+      this.add.text(
         24,
         112,
         "디버그: 초록=바닥, 파랑=원웨이, 주황=벽, 분홍=hazard, 노랑=spawn",
@@ -573,8 +745,8 @@ class MainScene extends Phaser.Scene {
           fontSize: "12px",
           color: "#a5b4fc",
         },
-      )
-      .setDepth(10);
+      ).setDepth(10),
+    );
   }
 
   private connect() {
@@ -609,6 +781,7 @@ class MainScene extends Phaser.Scene {
       this.clearRenderedPlayers();
       this.clearRenderedWeaponPickups();
       this.clearRenderedItemPickups();
+      this.clearDeathEchoes();
       this.time.delayedCall(2000, () => {
         if (!this.socket || this.socket.readyState === WebSocket.CLOSED) {
           this.connect();
@@ -670,7 +843,7 @@ class MainScene extends Phaser.Scene {
     this.captureLocalPlayer(message.payload.players);
     this.maybeFinalizeCamera();
     this.applyKillFeed(message.payload.killFeed, message.payload.players);
-    this.updateInfoText(message.payload.players, "waiting", null, null);
+    this.updateInfoText(message.payload.players, message.payload.matchState, null, null);
   }
 
   private applyWorldSnapshot(message: WorldSnapshotMessage) {
@@ -913,6 +1086,7 @@ class MainScene extends Phaser.Scene {
           0x000000,
           0,
         );
+        collider.setVisible(this.debugEnabled);
         collider.setStrokeStyle(2, 0xffedd5, 0.95);
         root.add([shadow, sprite, collider]);
         rendered = {
@@ -932,9 +1106,9 @@ class MainScene extends Phaser.Scene {
         this.renderedPlayers.set(player.id, rendered);
       }
 
+      const previousSnapshot = rendered.snapshot;
       const isLocalPlayer = player.id === this.localPlayerId;
       rendered.isLocal = isLocalPlayer;
-      rendered.snapshot = player;
       rendered.collider.setStrokeStyle(
         2,
         isLocalPlayer ? 0xeafff7 : 0xffedd5,
@@ -944,7 +1118,19 @@ class MainScene extends Phaser.Scene {
       rendered.targetX = player.position.x;
       rendered.targetY = player.position.y;
       if (
-        player.state === "respawning" ||
+        previousSnapshot.state !== "respawning" &&
+        player.state === "respawning"
+      ) {
+        this.spawnDeathEcho(rendered, previousSnapshot, player);
+      }
+
+      rendered.snapshot = player;
+      const isRespawning = player.state === "respawning";
+      rendered.root.setVisible(!isRespawning);
+      rendered.label.setVisible(!isRespawning);
+      rendered.collider.setVisible(this.debugEnabled && !isRespawning);
+      if (
+        previousSnapshot.state === "respawning" ||
         shouldSnapToTarget(
           rendered.root.x,
           rendered.root.y,
@@ -955,15 +1141,13 @@ class MainScene extends Phaser.Scene {
       ) {
         rendered.root.setPosition(rendered.targetX, rendered.targetY);
       }
-      rendered.label.setText(
-        player.state === "respawning"
-          ? `${player.name} (리스폰 ${formatRespawnCountdown(player.respawnAt)})`
-          : player.name,
-      );
-      rendered.label.setPosition(
-        rendered.root.x - rendered.label.width / 2,
-        rendered.root.y - 32,
-      );
+      rendered.label.setText(player.name);
+      if (!isRespawning) {
+        rendered.label.setPosition(
+          rendered.root.x - rendered.label.width / 2,
+          rendered.root.y - 32,
+        );
+      }
     }
 
     for (const [playerId] of this.renderedPlayers) {
@@ -1228,6 +1412,7 @@ class MainScene extends Phaser.Scene {
 
   update() {
     this.pruneKillFeed(this.time.now);
+    this.updateDeathEchoes(this.time.now);
 
     if (this.attackFlashUntil !== 0 && this.time.now > this.attackFlashUntil) {
       this.attackFlash.clear();
@@ -1242,16 +1427,15 @@ class MainScene extends Phaser.Scene {
         hamsterTextureForSnapshot(rendered.snapshot, this.time.now),
       );
       rendered.sprite.setFlipX(rendered.snapshot.direction === "left");
+      if (rendered.snapshot.state === "respawning") {
+        rendered.root.setAlpha(1);
+        continue;
+      }
       rendered.label.setPosition(
         rendered.root.x - rendered.label.width / 2,
         rendered.root.y - 32,
       );
-      if (rendered.snapshot.state === "respawning") {
-        const pulse = 0.28 + (Math.sin(this.time.now / 120) + 1) * 0.12;
-        rendered.root.setAlpha(pulse);
-      } else {
-        rendered.root.setAlpha(1);
-      }
+      rendered.root.setAlpha(1);
     }
 
     for (const [, rendered] of this.renderedWeaponPickups) {
@@ -1273,7 +1457,7 @@ class MainScene extends Phaser.Scene {
     }
 
     this.statusText.setText(
-      `Battle Hamsters  |  server tick ${this.latestTick}  |  room ${ROOM_ID}`,
+      `Battle Hamsters  |  server tick ${this.latestTick}  |  room ${ROOM_ID}${this.debugEnabled ? "  |  DEBUG" : ""}`,
     );
   }
 }

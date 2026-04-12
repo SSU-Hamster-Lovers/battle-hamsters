@@ -14,6 +14,8 @@
 - 충돌 primitive / hazard 계약 분리
 - 공통 테스트 맵 JSON을 서버/클라이언트가 함께 읽도록 통합
 - 무기 시스템 1차 (`Acorn Blaster` pickup / 발사 / 넉백 / 자기 반동)
+- 다중 룸 시스템 (자유맵 + 4자리 코드 매치룸)
+- 매치 흐름 1차 (`Waiting -> Running -> Finished`, 점수 집계, 결과 오버레이)
 - Branch protection: main, develop
 
 ---
@@ -41,23 +43,23 @@
 
 - [x] WebSocket 기본 구조
 - [ ] 매칭 시스템 API
-- [ ] 방 생성/입장/퇴장 API
-- [x] 게임 세션 관리 (단일 in-memory room loop 1차)
+- [x] 방 생성/입장 API 1차
+- [x] 게임 세션 관리 (다중 in-memory room loop 1차)
 - [ ] PostgreSQL 스키마 (users, matches, players)
 
 ### Phase 4: Portal 개발
 
-- [ ] 로비 UI
+- [x] 로비 UI
 - [ ] 매칭 UI
-- [ ] 방 생성/입장 UI
+- [x] 방 생성/입장 UI
 - [ ] 게임 내 UI (HP, 생명, 점수)
 
 ### Phase 5: Game Client 개발
 
-- [ ] Phaser 기본 씬 구성
+- [x] Phaser 기본 씬 구성
 - [x] 캐릭터 이동 1차 (플랫폼 이동 테스트)
 - [ ] 캐릭터 애니메이션
-- [ ] 무기 시스템
+- [x] 무기 시스템 1차
 - [x] 충돌 감지 1차
 - [x] WebSocket 연결 (서버 연동 1차)
 
@@ -65,7 +67,7 @@
 
 - [x] 입력 전송 프로토콜 1차
 - [x] 상태 동기화 1차
-- [ ] 클라이언트 예측/보간
+- [x] 클라이언트 보간 1차
 - [ ] 지연 시간 처리
 
 ### Phase 7: CI/CD 및 배포
@@ -73,7 +75,7 @@
 - [x] Server CI/CD (GitHub Actions)
 - [x] Oracle Cloud 배포 설정 1차
 - [x] Cloudflare Pages direct upload 배포 설정
-- [ ] 도메인/SSL 설정
+- [x] 도메인/SSL 설정 1차
 
 ### Phase 8: 콘텐츠 제작
 
@@ -87,21 +89,24 @@
 
 ### 즉시 할 일 (Next Sprint)
 
-1. 점프 아이템 리스폰/사망 초기화 규칙 정리
-2. 클라이언트 보간 및 시각 품질 개선
-3. PostgreSQL 스키마 및 마이그레이션 구조 정의
-4. `visualBounds` 기반 카메라 clamp 및 follow 카메라 감쇠 이동 구현 준비
-5. 룸별 게임플레이 설정 / 스폰 동작 / 후보 지점 랜덤 스폰 미니 스펙 후속 구현 준비
+1. 하단 플레이어 상태 HUD 실제 배치
+2. 킬로그 카드 + 아이콘 레이아웃
+3. 사망 더미를 실제 래그돌/시체 연출로 확장
+4. PostgreSQL 스키마 및 마이그레이션 구조 정의
+5. `develop` preview / staging 배포 전략 분리
 
 ### 나중에 할 일
 
-1. Portal: 기본 UI 컴포넌트
-2. Game: 카메라 정책(`static / follow / dynamic`) 첫 구현
-3. 매칭/방 시스템 API
-4. 로비 월드맵 / 채널 전환 / 상점 같은 비전투 허브 시스템 검토
-5. backlog 스펙 참고:
+1. Portal: 매칭 UI 확장
+2. Game: 실제 atlas/spritesheet 아트 교체
+3. 플레이어 스폰을 `고정 스폰` / `동적 스폰` 모드로 확장
+4. 무기 pickup / 장착 / 발사 표현 규칙 정리 및 sprite화
+5. 매칭/방 시스템 API 확장
+6. 로비 월드맵 / 채널 전환 / 상점 같은 비전투 허브 시스템 검토
+7. backlog 스펙 참고:
    - `docs/technical/mini-spec-lobby-world-foundation.md`
    - `docs/technical/mini-spec-lobby-channel-system.md`
+   - `docs/technical/mini-spec-spawn-modes-and-weapon-presentation-v0.md`
 
 ---
 

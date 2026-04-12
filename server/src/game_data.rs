@@ -2,9 +2,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use crate::{
-    DespawnStyle, FireMode, HitType, ResourceModel, SpawnStyle, Vector2, WeaponRarity,
-};
+use crate::{DespawnStyle, FireMode, HitType, ResourceModel, SpawnStyle, Vector2, WeaponRarity};
 
 #[derive(Clone, Copy)]
 pub(crate) struct FloorSegment {

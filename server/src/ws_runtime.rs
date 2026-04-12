@@ -104,23 +104,21 @@ impl WsSession {
         let recipient = ctx.address().recipient::<WsText>();
 
         // 4자리 숫자 코드로 입장하는 경우 roomId 로 변환
-        let resolved_room_id = if payload.room_id.len() == 4
-            && payload.room_id.chars().all(|c| c.is_ascii_digit())
-        {
-            let codes = self.app_state.room_codes.lock().expect("codes poisoned");
-            codes.get(&payload.room_id).cloned().unwrap_or(payload.room_id.clone())
-        } else {
-            payload.room_id.clone()
-        };
+        let resolved_room_id =
+            if payload.room_id.len() == 4 && payload.room_id.chars().all(|c| c.is_ascii_digit()) {
+                let codes = self.app_state.room_codes.lock().expect("codes poisoned");
+                codes
+                    .get(&payload.room_id)
+                    .cloned()
+                    .unwrap_or(payload.room_id.clone())
+            } else {
+                payload.room_id.clone()
+            };
 
         let room_snapshot = {
             let mut rooms = self.app_state.rooms.lock().expect("rooms poisoned");
             if let Some(room) = rooms.get_mut(&resolved_room_id) {
-                Ok(room.add_player(
-                    player_id.clone(),
-                    payload.player_name.clone(),
-                    recipient,
-                ))
+                Ok(room.add_player(player_id.clone(), payload.player_name.clone(), recipient))
             } else {
                 Err(format!("Room '{}' not found", payload.room_id))
             }
@@ -221,9 +219,12 @@ impl Actor for WsSession {
             if let Some(room) = rooms.get_mut(&room_id) {
                 let removed = room.remove_player(&player_id);
                 let text = if removed {
-                    serialize_message("player_left", PlayerLeftPayload {
-                        player_id: player_id.clone(),
-                    })
+                    serialize_message(
+                        "player_left",
+                        PlayerLeftPayload {
+                            player_id: player_id.clone(),
+                        },
+                    )
                     .ok()
                 } else {
                     None
@@ -297,8 +298,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                         }
                     }
                     "ping" => {
-                        if let Ok(payload) =
-                            serde_json::from_value::<PingPayload>(envelope.payload)
+                        if let Ok(payload) = serde_json::from_value::<PingPayload>(envelope.payload)
                         {
                             self.send_json(ctx, "pong", payload);
                         }
@@ -309,10 +309,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                             "error",
                             ErrorPayload {
                                 code: "UNKNOWN_MESSAGE_TYPE".to_string(),
-                                message: format!(
-                                    "Unsupported message type: {}",
-                                    envelope.kind
-                                ),
+                                message: format!("Unsupported message type: {}", envelope.kind),
                             },
                         );
                     }
@@ -349,11 +346,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
     }
 }
 
-pub(crate) fn broadcast_to_room(
-    app_state: &web::Data<AppState>,
-    room_id: &str,
-    text: &str,
-) {
+pub(crate) fn broadcast_to_room(app_state: &web::Data<AppState>, room_id: &str, text: &str) {
     let recipients = {
         let rooms = app_state.rooms.lock().expect("rooms poisoned");
         rooms
