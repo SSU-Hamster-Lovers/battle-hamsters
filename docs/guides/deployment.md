@@ -48,9 +48,11 @@ cat .env
 
 - `main`
   - production 자동 배포 기준 브랜치
+  - CI는 `pull_request`와 merge 후 `push` 검증이 모두 돈다
   - Portal / Game / Server deploy workflow 의 `push.branches` 기준은 현재 모두 `main`
 - `develop`
   - 통합 브랜치
+  - CI는 `pull_request` 검증만 돌고, merge 후 `push` 재검증은 생략한다
   - 자동 배포는 없음
   - 필요 시 `workflow_dispatch` 로 같은 운영 대상에 수동 배포 가능
 - 즉, 현재 저장소에서 “develop에 merge됐다”와 “develop이 자동 배포된다”는 같은 뜻이 아니다.
