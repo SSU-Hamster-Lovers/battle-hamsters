@@ -1,5 +1,10 @@
 # 미니 스펙 초안 — 스폰 모드 + 무기 표현 규칙 메모
 
+> 상태: 이 초안은 아래 v1 문서 두 개로 분리되어 대체되었다.
+>
+> - `docs/technical/mini-spec-spawn-modes-v1.md`
+> - `docs/technical/mini-spec-weapon-presentation-v1.md`
+
 작업명:
 스폰 모드 + 무기 표현 규칙 메모
 

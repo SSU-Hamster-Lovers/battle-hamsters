@@ -106,7 +106,8 @@
 7. backlog 스펙 참고:
    - `docs/technical/mini-spec-lobby-world-foundation.md`
    - `docs/technical/mini-spec-lobby-channel-system.md`
-   - `docs/technical/mini-spec-spawn-modes-and-weapon-presentation-v0.md`
+   - `docs/technical/mini-spec-spawn-modes-v1.md`
+   - `docs/technical/mini-spec-weapon-presentation-v1.md`
 
 ---
 
