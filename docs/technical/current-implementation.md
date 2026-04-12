@@ -34,6 +34,7 @@
 - 서버 리팩토링 1차로 런타임 데이터 로딩은 `server/src/game_data.rs`, room의 spawn/pickup 관리는 `server/src/room_pickups.rs`, 전투/사망 리셋 로직은 `server/src/room_combat.rs`, room loop / movement orchestration은 `server/src/room_runtime.rs`, ws/session 처리는 `server/src/ws_runtime.rs`로 분리하기 시작했다.
 - 룸은 이제 `RoomGameplayConfig`를 가져 기본 HP / 시작 생명 / 기본 점프 수 / 최대 점프 수 상한 / 시간 제한을 자체 값으로 가질 수 있다.
 - pit wall / fall zone / instant kill hazard 판정을 검증하는 단위 테스트가 있다.
+- 다중 룸 시스템: `AppState` 가 `HashMap<RoomId, RoomState>` + `HashMap<code, RoomId>` 를 보관한다. 서버 시작 시 자유맵(`free_play`) 1개 자동 생성. `POST /rooms` 로 매치룸 생성 → 4자리 코드 발급, `GET /rooms` 활성 룸 목록, `GET /rooms/free` 자유맵 조회. `WS join_room` 에서 4자리 숫자 코드는 자동으로 roomId 로 변환된다. 매치룸은 빈 상태 10분 후 코드와 함께 자동 제거. CORS 허용.
 
 ### Game Client
 
@@ -56,12 +57,15 @@
 - `MAP_DEFINITION.cameraPolicy === "follow"` 일 때 로컬 플레이어를 중심으로 감쇠 추적(lerp 0.10) 하는 follow 카메라를 적용한다.
 - 캔버스(뷰포트) 크기는 `VIEWPORT_WIDTH = 800 / VIEWPORT_HEIGHT = 600` 으로 고정 분리하고, 맵 월드 크기(`MAP_DEFINITION.size`) 와 독립적으로 관리한다. HUD 요소는 `setScrollFactor(0)` 으로 화면에 고정된다.
 - 테스트 맵(`training-arena.json`)을 1600×900 으로 확장하고 `cameraPolicy: "follow"` 로 설정해 카메라가 실제로 스크롤되는 것을 검증했다. 바닥 3개 구간, 플랫폼 3개, 피트 벽(fall zone 끝까지 연장), 즉사 함정 구조를 유지한다.
+- URL 파라미터(`?room=&name=&pid=`)를 파싱해 Portal 로비에서 전달된 정보로 바로 접속할 수 있다. 파라미터가 없으면 자유맵으로 자동 입장. 닉네임/플레이어 ID 는 `localStorage` 에 저장되어 재접속 시 동일 신원 유지.
+- Cloudflare Pages 에 정적 빌드(`apps/game/dist`)로 배포되며 GitHub Actions 가 자동 처리한다. Oracle 서버는 Nginx + Let's Encrypt 로 `https://api-battlehamster.cuteshrew.com` 도메인에서 HTTPS/WSS 를 제공한다.
 
 ### Portal
 
 - Next.js 정적 포털 페이지가 Cloudflare Pages에 배포되어 있다.
-- 현재 첫 화면은 `Battle Hamsters / 로비 화면 - 매칭 대기 중` 문구를 보여주는 **placeholder UI**다.
-- 실제 매칭 상태/서버 연결 상태를 반영하는 로비 로직은 아직 없다.
+- Cloudflare Pages 에 배포된 Next.js 정적 로비. 닉네임 입력(localStorage), 자유맵 입장, 방 만들기(4자리 코드 표시), 코드로 입장 흐름을 제공한다.
+- 닉네임/플레이어 ID 는 `localStorage` 에 저장되어 새로고침 후에도 유지된다. 플레이어 ID 는 익명 UUID 로 자동 발급되며, 미래 계정 인증 추가 시 그대로 검증 레이어만 끼워 넣을 수 있도록 설계됐다.
+- 게임 클라이언트로 이동 시 `?room=&name=&pid=` 파라미터를 URL 로 전달한다.
 
 ### 배포
 
@@ -126,9 +130,10 @@
 
 ## 다음 구현 우선순위
 
-1. 하단 플레이어 상태 HUD 실제 배치 (v1 미니 스펙에서는 구조 정의만 남겨 둠)
-2. 하단 플레이어 상태 HUD 실제 배치 (v1 미니 스펙에서는 구조 정의만 남겨 둠)
-3. 실제 아트 atlas/spritesheet 기반 햄스터/무기/아이템 교체
+1. 매치 흐름 1차 — `Waiting → Running → Finished` 전환, 점수 집계, 결과 화면 (자유맵은 항상 Running 으로 유지)
+2. 하단 플레이어 상태 HUD 실제 배치 (hazard-feedback v1 미니 스펙에서는 구조 정의만 남겨 둠)
+3. 킬로그 카드 + 아이콘 레이아웃
+4. 실제 아트 atlas/spritesheet 기반 햄스터/무기/아이템 교체
 
 ## 참고
 
