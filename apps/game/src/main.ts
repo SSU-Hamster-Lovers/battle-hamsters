@@ -8,8 +8,16 @@ import {
   ensureHamsterPlaceholderTextures,
   hamsterTextureForSnapshot,
 } from "./hamster-visuals";
+import {
+  ensureWeaponPickupTextures,
+  resolveWeaponEquipPresentation,
+  resolveWeaponFireStyle,
+  resolveWeaponPickupPresentation,
+  weaponPickupAccentColor,
+} from "./weapon-presentation";
 import type {
   CollisionPrimitive,
+  DamageAppliedEvent,
   HazardZone,
   JoinRoomMessage,
   KillFeedEntry,
@@ -21,6 +29,7 @@ import type {
   WorldItemPickup,
   WorldWeaponPickup,
   WorldSnapshotMessage,
+  Vector2,
 } from "@battle-hamsters/shared";
 
 const MAP_DEFINITION = trainingArenaMap;
@@ -31,10 +40,59 @@ const WS_URL =
   `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.hostname}:8081/ws`;
 const PLAYER_NAME_STORAGE_KEY = "battle-hamsters-player-name";
 const PLAYER_ID_STORAGE_KEY = "battle-hamsters-player-id";
+const OPS_ACCESS_STORAGE_KEY = "battle-hamsters-ops-access";
+const DEBUG_VISIBLE_STORAGE_KEY = "battle-hamsters-debug-visible";
 const FREE_PLAY_ROOM_ID = "free_play";
 
 function getUrlParam(key: string): string | null {
   return new URLSearchParams(window.location.search).get(key);
+}
+
+function parseBooleanUrlParam(key: string): boolean | null {
+  const value = getUrlParam(key);
+  if (value === null) {
+    return null;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (["0", "false", "off", "no"].includes(normalized)) {
+    return false;
+  }
+
+  return true;
+}
+
+function readStoredFlag(key: string): boolean {
+  return window.localStorage.getItem(key) === "1";
+}
+
+function writeStoredFlag(key: string, enabled: boolean) {
+  window.localStorage.setItem(key, enabled ? "1" : "0");
+}
+
+function resolveOpsAccess(): boolean {
+  const fromUrl = parseBooleanUrlParam("ops");
+  if (fromUrl !== null) {
+    writeStoredFlag(OPS_ACCESS_STORAGE_KEY, fromUrl);
+    return fromUrl;
+  }
+
+  return readStoredFlag(OPS_ACCESS_STORAGE_KEY);
+}
+
+function resolveInitialDebugVisible(opsAccess: boolean): boolean {
+  if (!opsAccess) {
+    writeStoredFlag(DEBUG_VISIBLE_STORAGE_KEY, false);
+    return false;
+  }
+
+  const fromUrl = parseBooleanUrlParam("debug");
+  if (fromUrl !== null) {
+    writeStoredFlag(DEBUG_VISIBLE_STORAGE_KEY, fromUrl);
+    return fromUrl;
+  }
+
+  return readStoredFlag(DEBUG_VISIBLE_STORAGE_KEY);
 }
 
 // URL ?room=xxxx 이 있으면 그 값, 없으면 자유맵
@@ -63,6 +121,7 @@ const KILL_FEED_SLIDE_IN_DISTANCE = 96;
 const KILL_FEED_SLIDE_IN_MS = 200;
 const KILL_FEED_EXIT_RISE = 18;
 const KILL_FEED_EXIT_MS = 280;
+const DAMAGE_EVENT_DISMISSED_RETENTION_MS = 1_200;
 
 const COLLISION_PRIMITIVES: CollisionPrimitive[] = MAP_DEFINITION.collision;
 const HAZARDS: HazardZone[] = MAP_DEFINITION.hazards;
@@ -104,17 +163,23 @@ type RenderedPlayer = {
   root: Phaser.GameObjects.Container;
   shadow: Phaser.GameObjects.Ellipse;
   sprite: Phaser.GameObjects.Image;
+  weaponOverlay: Phaser.GameObjects.Image;
   collider: Phaser.GameObjects.Rectangle;
   label: Phaser.GameObjects.Text;
   targetX: number;
   targetY: number;
   isLocal: boolean;
   snapshot: PlayerSnapshot;
+  lastImpactDirection: Vector2 | null;
+  lastImpactAt: number;
 };
 
 type RenderedWeaponPickup = {
-  body: Phaser.GameObjects.Ellipse;
-  label: Phaser.GameObjects.Text;
+  root: Phaser.GameObjects.Container;
+  body: Phaser.GameObjects.Ellipse | Phaser.GameObjects.Image;
+  accent: Phaser.GameObjects.Rectangle;
+  codeText: Phaser.GameObjects.Text;
+  detailText: Phaser.GameObjects.Text;
   targetX: number;
   targetY: number;
 };
@@ -124,6 +189,30 @@ type RenderedItemPickup = {
   label: Phaser.GameObjects.Text;
   targetX: number;
   targetY: number;
+};
+
+type VisibilityControlledObject =
+  Phaser.GameObjects.GameObject & Phaser.GameObjects.Components.Visible;
+
+type DeathEcho = {
+  sprite: Phaser.GameObjects.Image;
+  velocityX: number;
+  velocityY: number;
+  angularVelocity: number;
+  gravity: number;
+  fadeAt: number;
+  destroyAt: number;
+  baseAlpha: number;
+};
+
+type HitParticle = {
+  node: Phaser.GameObjects.Rectangle;
+  velocityX: number;
+  velocityY: number;
+  angularVelocity: number;
+  fadeAt: number;
+  destroyAt: number;
+  baseAlpha: number;
 };
 
 function drawCross(
@@ -155,6 +244,54 @@ function isRectHazard(hazard: HazardZone): hazard is HazardZone & {
   height: number;
 } {
   return "width" in hazard && "height" in hazard;
+}
+
+function vectorLengthSquared(vector: Vector2): number {
+  return vector.x * vector.x + vector.y * vector.y;
+}
+
+function normalizeVector(vector: Vector2, fallback: Vector2): Vector2 {
+  const lengthSq = vectorLengthSquared(vector);
+  if (lengthSq <= 0.0001) {
+    return fallback;
+  }
+
+  const length = Math.sqrt(lengthSq);
+  return {
+    x: vector.x / length,
+    y: vector.y / length,
+  };
+}
+
+function addUpwardBias(direction: Vector2): Vector2 {
+  return normalizeVector(
+    {
+      x: direction.x,
+      y: Math.min(direction.y, 0) - 0.38,
+    },
+    { x: 0, y: -1 },
+  );
+}
+
+function fallbackImpactDirection(
+  previousSnapshot: PlayerSnapshot,
+  nextSnapshot: PlayerSnapshot,
+): Vector2 {
+  const deltaVelocity = {
+    x: nextSnapshot.velocity.x - previousSnapshot.velocity.x,
+    y: nextSnapshot.velocity.y - previousSnapshot.velocity.y,
+  };
+  if (vectorLengthSquared(deltaVelocity) > 0.3) {
+    return addUpwardBias(normalizeVector(deltaVelocity, { x: 1, y: 0 }));
+  }
+
+  if (vectorLengthSquared(nextSnapshot.velocity) > 0.3) {
+    return addUpwardBias(normalizeVector(nextSnapshot.velocity, { x: 1, y: 0 }));
+  }
+
+  return previousSnapshot.direction === "left"
+    ? { x: -0.74, y: -0.46 }
+    : { x: 0.74, y: -0.46 };
 }
 
 function getOrCreatePlayerName(): string {
@@ -219,17 +356,6 @@ function formatKillFeedEntry(
   }
 }
 
-function formatRespawnCountdown(respawnAt: number | null): string {
-  if (respawnAt === null) {
-    return "중";
-  }
-  const remainingMs = respawnAt - Date.now();
-  if (remainingMs <= 0) {
-    return "곧";
-  }
-  return `${Math.ceil(remainingMs / 1000)}s`;
-}
-
 function killFeedColorForCause(kind: KillFeedEntry["cause"]["kind"]): string {
   switch (kind) {
     case "fall_zone":
@@ -253,6 +379,9 @@ class MainScene extends Phaser.Scene {
   private matchOverlayBg!: Phaser.GameObjects.Rectangle;
   private matchOverlayText!: Phaser.GameObjects.Text;
   private cameraConfigured = false;
+  private debugLayer: VisibilityControlledObject[] = [];
+  private deathEchoes: DeathEcho[] = [];
+  private hitParticles: HitParticle[] = [];
   private renderedPlayers = new Map<string, RenderedPlayer>();
   private renderedWeaponPickups = new Map<string, RenderedWeaponPickup>();
   private renderedItemPickups = new Map<string, RenderedItemPickup>();
@@ -266,9 +395,12 @@ class MainScene extends Phaser.Scene {
     }
   >();
   private dismissedKillFeedIds = new Map<string, number>();
+  private dismissedDamageEventIds = new Map<string, number>();
   private playerName = getOrCreatePlayerName();
   // 미래 계정 연동용 — 현재는 로컬 저장만 하고 서버에 아직 전달하지 않음
   private readonly _playerId = getOrCreatePlayerId();
+  private readonly debugAccess = resolveOpsAccess();
+  private debugEnabled = resolveInitialDebugVisible(this.debugAccess);
   private localPlayerId: string | null = null;
   private latestTick = 0;
   private sequence = 0;
@@ -291,10 +423,165 @@ class MainScene extends Phaser.Scene {
     super("MainScene");
   }
 
+  private addDebugObject<T extends VisibilityControlledObject>(object: T): T {
+    object.setVisible(this.debugEnabled);
+    this.debugLayer.push(object);
+    return object;
+  }
+
+  private setDebugVisible(visible: boolean) {
+    this.debugEnabled = this.debugAccess && visible;
+    writeStoredFlag(DEBUG_VISIBLE_STORAGE_KEY, this.debugEnabled);
+
+    for (const object of this.debugLayer) {
+      object.setVisible(this.debugEnabled);
+    }
+
+    for (const [, rendered] of this.renderedPlayers) {
+      rendered.collider.setVisible(
+        this.debugEnabled && rendered.snapshot.state !== "respawning",
+      );
+    }
+  }
+
+  private toggleDebugVisible() {
+    this.setDebugVisible(!this.debugEnabled);
+  }
+
+  private spawnDeathEcho(
+    rendered: RenderedPlayer,
+    previousSnapshot: PlayerSnapshot,
+    nextSnapshot: PlayerSnapshot,
+  ) {
+    const cause = nextSnapshot.lastDeathCause;
+    if (!cause || cause.kind === "instant_kill_hazard") {
+      return;
+    }
+
+    const sprite = this.add
+      .image(
+        rendered.root.x,
+        rendered.root.y,
+        hamsterTextureForSnapshot(previousSnapshot, this.time.now),
+      )
+      .setDepth(5)
+      .setAlpha(0.78);
+    sprite.setFlipX(previousSnapshot.direction === "left");
+
+    if (cause.kind === "fall_zone") {
+      const spinDirection = previousSnapshot.direction === "left" ? -1 : 1;
+      this.deathEchoes.push({
+        sprite,
+        velocityX: previousSnapshot.velocity.x * 0.06,
+        velocityY: Math.max(previousSnapshot.velocity.y * 0.18, 1.6) + 2.8,
+        angularVelocity: spinDirection * 0.16,
+        gravity: 0.56,
+        fadeAt: this.time.now + 260,
+        destroyAt: this.time.now + 860,
+        baseAlpha: 0.78,
+      });
+      return;
+    }
+
+    const recentImpactDirection =
+      rendered.lastImpactDirection &&
+      this.time.now - rendered.lastImpactAt <= 700
+        ? rendered.lastImpactDirection
+        : null;
+    const recoilOppositeDirection = recentImpactDirection
+      ? {
+          x: -recentImpactDirection.x,
+          y: -recentImpactDirection.y,
+        }
+      : normalizeVector(
+          {
+            x: -previousSnapshot.velocity.x,
+            y: -previousSnapshot.velocity.y,
+          },
+          previousSnapshot.direction === "left"
+            ? { x: 1, y: -0.2 }
+            : { x: -1, y: -0.2 },
+        );
+    const launchDirection = addUpwardBias(recoilOppositeDirection);
+
+    this.deathEchoes.push({
+      sprite,
+      velocityX: previousSnapshot.velocity.x * 0.05 + launchDirection.x * 1.2,
+      velocityY:
+        Math.min(previousSnapshot.velocity.y * 0.06, 0) + launchDirection.y * 1.45 - 1.35,
+      angularVelocity: launchDirection.x * 0.016,
+      gravity: 0.22,
+      fadeAt: this.time.now + 620,
+      destroyAt: this.time.now + 1460,
+      baseAlpha: 0.78,
+    });
+  }
+
+  private updateDeathEchoes(now: number) {
+    for (let index = this.deathEchoes.length - 1; index >= 0; index -= 1) {
+      const echo = this.deathEchoes[index];
+      echo.sprite.x += echo.velocityX;
+      echo.sprite.y += echo.velocityY;
+      echo.velocityY += echo.gravity;
+      echo.sprite.rotation += echo.angularVelocity;
+
+      if (now >= echo.fadeAt) {
+        const fadeWindow = echo.destroyAt - echo.fadeAt;
+        const remaining = Math.max(0, echo.destroyAt - now);
+        const ratio = fadeWindow <= 0 ? 0 : remaining / fadeWindow;
+        echo.sprite.setAlpha(echo.baseAlpha * ratio);
+      }
+
+      if (now >= echo.destroyAt || echo.sprite.y > GAME_HEIGHT + 160) {
+        echo.sprite.destroy();
+        this.deathEchoes.splice(index, 1);
+      }
+    }
+  }
+
+  private clearDeathEchoes() {
+    for (const echo of this.deathEchoes) {
+      echo.sprite.destroy();
+    }
+    this.deathEchoes = [];
+  }
+
+  private clearHitParticles() {
+    for (const particle of this.hitParticles) {
+      particle.node.destroy();
+    }
+    this.hitParticles = [];
+  }
+
+  private updateHitParticles(now: number) {
+    for (let index = this.hitParticles.length - 1; index >= 0; index -= 1) {
+      const particle = this.hitParticles[index];
+      particle.node.x += particle.velocityX;
+      particle.node.y += particle.velocityY;
+      particle.velocityX *= 0.96;
+      particle.velocityY += 0.16;
+      particle.node.rotation += particle.angularVelocity;
+
+      if (now >= particle.fadeAt) {
+        const fadeWindow = particle.destroyAt - particle.fadeAt;
+        const remaining = Math.max(0, particle.destroyAt - now);
+        const ratio = fadeWindow <= 0 ? 0 : remaining / fadeWindow;
+        particle.node.setAlpha(particle.baseAlpha * ratio);
+      }
+
+      if (now >= particle.destroyAt) {
+        particle.node.destroy();
+        this.hitParticles.splice(index, 1);
+      }
+    }
+  }
+
   create() {
     this.cameras.main.setBackgroundColor("#111827");
     ensureHamsterPlaceholderTextures(this);
+    ensureWeaponPickupTextures(this);
     this.drawStage();
+    this.setDebugVisible(this.debugEnabled);
 
     this.statusText = this.add
       .text(24, 20, "Battle Hamsters", {
@@ -379,6 +666,16 @@ class MainScene extends Phaser.Scene {
       e: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E),
       space: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
     };
+    if (this.debugAccess) {
+      keyboard.on("keydown-D", (event: KeyboardEvent) => {
+        if (!event.altKey || !event.shiftKey) {
+          return;
+        }
+
+        event.preventDefault();
+        this.toggleDebugVisible();
+      });
+    }
     this.keys.e.on("down", () => {
       this.queuedPickupWeapon = true;
     });
@@ -392,8 +689,16 @@ class MainScene extends Phaser.Scene {
       callback: () => this.sendLatestInput(),
     });
 
-    this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => this.socket?.close());
-    this.events.on(Phaser.Scenes.Events.DESTROY, () => this.socket?.close());
+    this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.clearDeathEchoes();
+      this.clearHitParticles();
+      this.socket?.close();
+    });
+    this.events.on(Phaser.Scenes.Events.DESTROY, () => {
+      this.clearDeathEchoes();
+      this.clearHitParticles();
+      this.socket?.close();
+    });
     this.input.on("pointerdown", () => {
       this.queuedClickAttack = true;
     });
@@ -443,7 +748,7 @@ class MainScene extends Phaser.Scene {
       );
     }
 
-    const debug = this.add.graphics().setDepth(2);
+    const debug = this.addDebugObject(this.add.graphics().setDepth(2));
     for (const primitive of COLLISION_PRIMITIVES) {
       if (primitive.type === "floor") {
         debug.lineStyle(2, 0x22c55e, 0.9);
@@ -504,22 +809,26 @@ class MainScene extends Phaser.Scene {
       } => primitive.type === "one_way_platform",
     );
     if (oneWayPlatform) {
-      this.add.text(
-        oneWayPlatform.leftX,
-        oneWayPlatform.topY - 24,
-        "원웨이 플랫폼",
-        {
-          fontSize: "12px",
-          color: "#93c5fd",
-        },
+      this.addDebugObject(
+        this.add.text(
+          oneWayPlatform.leftX,
+          oneWayPlatform.topY - 24,
+          "원웨이 플랫폼",
+          {
+            fontSize: "12px",
+            color: "#93c5fd",
+          },
+        ),
       );
     }
 
     if (PRIMARY_FLOOR) {
-      this.add.text(24, PRIMARY_FLOOR.topY + 12, "바닥 충돌면", {
-        fontSize: "12px",
-        color: "#d1d5db",
-      });
+      this.addDebugObject(
+        this.add.text(24, PRIMARY_FLOOR.topY + 12, "바닥 충돌면", {
+          fontSize: "12px",
+          color: "#d1d5db",
+        }),
+      );
     }
 
     const instantKillHazard = HAZARDS.find(
@@ -532,40 +841,46 @@ class MainScene extends Phaser.Scene {
       } => hazard.type === "instant_kill_hazard" && isRectHazard(hazard),
     );
     if (instantKillHazard) {
-      this.add.text(
-        instantKillHazard.x,
-        instantKillHazard.y - 24,
-        "즉사 함정",
-        {
-          fontSize: "12px",
-          color: "#f5d0fe",
-        },
+      this.addDebugObject(
+        this.add.text(
+          instantKillHazard.x,
+          instantKillHazard.y - 24,
+          "즉사 함정",
+          {
+            fontSize: "12px",
+            color: "#f5d0fe",
+          },
+        ),
       );
     }
 
     for (const wall of PIT_WALLS) {
-      this.add.text(wall.x - 48, wall.topY + 24, "pit wall", {
-        fontSize: "12px",
-        color: "#fed7aa",
-      });
-    }
-
-    if (PRIMARY_FALL_ZONE) {
-      this.add.text(
-        24,
-        PRIMARY_FALL_ZONE.y > GAME_HEIGHT
-          ? GAME_HEIGHT - 96
-          : PRIMARY_FALL_ZONE.y + 24,
-        "fall zone은 화면 밖 논리 영역",
-        {
+      this.addDebugObject(
+        this.add.text(wall.x - 48, wall.topY + 24, "pit wall", {
           fontSize: "12px",
-          color: "#a78bfa",
-        },
+          color: "#fed7aa",
+        }),
       );
     }
 
-    this.add
-      .text(
+    if (PRIMARY_FALL_ZONE) {
+      this.addDebugObject(
+        this.add.text(
+          24,
+          PRIMARY_FALL_ZONE.y > GAME_HEIGHT
+            ? GAME_HEIGHT - 96
+            : PRIMARY_FALL_ZONE.y + 24,
+          "fall zone은 화면 밖 논리 영역",
+          {
+            fontSize: "12px",
+            color: "#a78bfa",
+          },
+        ),
+      );
+    }
+
+    this.addDebugObject(
+      this.add.text(
         24,
         112,
         "디버그: 초록=바닥, 파랑=원웨이, 주황=벽, 분홍=hazard, 노랑=spawn",
@@ -573,8 +888,8 @@ class MainScene extends Phaser.Scene {
           fontSize: "12px",
           color: "#a5b4fc",
         },
-      )
-      .setDepth(10);
+      ).setDepth(10),
+    );
   }
 
   private connect() {
@@ -609,6 +924,9 @@ class MainScene extends Phaser.Scene {
       this.clearRenderedPlayers();
       this.clearRenderedWeaponPickups();
       this.clearRenderedItemPickups();
+      this.clearDeathEchoes();
+      this.clearHitParticles();
+      this.dismissedDamageEventIds.clear();
       this.time.delayedCall(2000, () => {
         if (!this.socket || this.socket.readyState === WebSocket.CLOSED) {
           this.connect();
@@ -664,18 +982,20 @@ class MainScene extends Phaser.Scene {
     if (message.payload.selfPlayerId) {
       this.localPlayerId = message.payload.selfPlayerId;
     }
-    this.renderPlayers(message.payload.players);
+    const damageEventMap = this.buildDamageEventMap(message.payload.damageEvents);
+    this.renderPlayers(message.payload.players, damageEventMap);
     this.renderWeaponPickups(message.payload.weaponPickups);
     this.renderItemPickups(message.payload.itemPickups);
     this.captureLocalPlayer(message.payload.players);
     this.maybeFinalizeCamera();
     this.applyKillFeed(message.payload.killFeed, message.payload.players);
-    this.updateInfoText(message.payload.players, "waiting", null, null);
+    this.updateInfoText(message.payload.players, message.payload.matchState, null, null);
   }
 
   private applyWorldSnapshot(message: WorldSnapshotMessage) {
     this.latestTick = message.payload.serverTick;
-    this.renderPlayers(message.payload.players);
+    const damageEventMap = this.buildDamageEventMap(message.payload.damageEvents);
+    this.renderPlayers(message.payload.players, damageEventMap);
     this.renderWeaponPickups(message.payload.weaponPickups);
     this.renderItemPickups(message.payload.itemPickups);
     this.captureLocalPlayer(message.payload.players);
@@ -687,6 +1007,21 @@ class MainScene extends Phaser.Scene {
       message.payload.timeRemainingMs,
       message.payload.countdownMs ?? null,
     );
+  }
+
+  private buildDamageEventMap(
+    events: DamageAppliedEvent[],
+  ): Map<string, DamageAppliedEvent[]> {
+    const byVictim = new Map<string, DamageAppliedEvent[]>();
+    for (const event of events) {
+      const existing = byVictim.get(event.victimId);
+      if (existing) {
+        existing.push(event);
+      } else {
+        byVictim.set(event.victimId, [event]);
+      }
+    }
+    return byVictim;
   }
 
   private applyKillFeed(entries: KillFeedEntry[], players: PlayerSnapshot[]) {
@@ -892,7 +1227,10 @@ class MainScene extends Phaser.Scene {
     }
   }
 
-  private renderPlayers(players: PlayerSnapshot[]) {
+  private renderPlayers(
+    players: PlayerSnapshot[],
+    damageEventMap: Map<string, DamageAppliedEvent[]>,
+  ) {
     const nextIds = new Set(players.map((player) => player.id));
 
     for (const player of players) {
@@ -905,6 +1243,7 @@ class MainScene extends Phaser.Scene {
           -2,
           hamsterTextureForSnapshot(player, this.time.now),
         );
+        const weaponOverlay = this.add.image(0, 0, "__MISSING").setVisible(false);
         const collider = this.add.rectangle(
           0,
           0,
@@ -913,12 +1252,14 @@ class MainScene extends Phaser.Scene {
           0x000000,
           0,
         );
+        collider.setVisible(this.debugEnabled);
         collider.setStrokeStyle(2, 0xffedd5, 0.95);
-        root.add([shadow, sprite, collider]);
+        root.add([shadow, sprite, weaponOverlay, collider]);
         rendered = {
           root,
           shadow,
           sprite,
+          weaponOverlay,
           collider,
           label: this.add.text(player.position.x, player.position.y - 28, player.name, {
             fontSize: "12px",
@@ -928,13 +1269,15 @@ class MainScene extends Phaser.Scene {
           targetY: player.position.y,
           isLocal: false,
           snapshot: player,
+          lastImpactDirection: null,
+          lastImpactAt: 0,
         };
         this.renderedPlayers.set(player.id, rendered);
       }
 
+      const previousSnapshot = rendered.snapshot;
       const isLocalPlayer = player.id === this.localPlayerId;
       rendered.isLocal = isLocalPlayer;
-      rendered.snapshot = player;
       rendered.collider.setStrokeStyle(
         2,
         isLocalPlayer ? 0xeafff7 : 0xffedd5,
@@ -943,8 +1286,27 @@ class MainScene extends Phaser.Scene {
       rendered.shadow.setFillStyle(isLocalPlayer ? 0x14532d : 0x020617, 0.24);
       rendered.targetX = player.position.x;
       rendered.targetY = player.position.y;
+      this.applyDamageFeedback(
+        rendered,
+        previousSnapshot,
+        player,
+        damageEventMap.get(player.id) ?? [],
+      );
       if (
-        player.state === "respawning" ||
+        previousSnapshot.state !== "respawning" &&
+        player.state === "respawning"
+      ) {
+        this.spawnDeathEcho(rendered, previousSnapshot, player);
+      }
+
+      rendered.snapshot = player;
+      const isRespawning = player.state === "respawning";
+      this.updateWeaponOverlay(rendered, player, isRespawning);
+      rendered.root.setVisible(!isRespawning);
+      rendered.label.setVisible(!isRespawning);
+      rendered.collider.setVisible(this.debugEnabled && !isRespawning);
+      if (
+        previousSnapshot.state === "respawning" ||
         shouldSnapToTarget(
           rendered.root.x,
           rendered.root.y,
@@ -955,15 +1317,13 @@ class MainScene extends Phaser.Scene {
       ) {
         rendered.root.setPosition(rendered.targetX, rendered.targetY);
       }
-      rendered.label.setText(
-        player.state === "respawning"
-          ? `${player.name} (리스폰 ${formatRespawnCountdown(player.respawnAt)})`
-          : player.name,
-      );
-      rendered.label.setPosition(
-        rendered.root.x - rendered.label.width / 2,
-        rendered.root.y - 32,
-      );
+      rendered.label.setText(player.name);
+      if (!isRespawning) {
+        rendered.label.setPosition(
+          rendered.root.x - rendered.label.width / 2,
+          rendered.root.y - 32,
+        );
+      }
     }
 
     for (const [playerId] of this.renderedPlayers) {
@@ -971,6 +1331,109 @@ class MainScene extends Phaser.Scene {
         this.removeRenderedPlayer(playerId);
       }
     }
+  }
+
+  private applyDamageFeedback(
+    rendered: RenderedPlayer,
+    previousSnapshot: PlayerSnapshot,
+    nextSnapshot: PlayerSnapshot,
+    damageEvents: DamageAppliedEvent[],
+  ) {
+    let exactDamageApplied = false;
+
+    for (const event of damageEvents) {
+      if (this.dismissedDamageEventIds.has(event.id)) {
+        continue;
+      }
+
+      this.spawnHitBurst(event.impactPoint, event.impactDirection, event.damage, true);
+      rendered.lastImpactDirection = addUpwardBias(event.impactDirection);
+      rendered.lastImpactAt = this.time.now;
+      this.dismissedDamageEventIds.set(event.id, this.time.now);
+      exactDamageApplied = true;
+    }
+
+    if (!exactDamageApplied && previousSnapshot.hp > nextSnapshot.hp) {
+      const direction = fallbackImpactDirection(previousSnapshot, nextSnapshot);
+      const impactPoint = {
+        x: nextSnapshot.position.x - direction.x * PLAYER_SIZE * 0.28,
+        y: nextSnapshot.position.y - 7 - direction.y * 3,
+      };
+      this.spawnHitBurst(
+        impactPoint,
+        direction,
+        previousSnapshot.hp - nextSnapshot.hp,
+        false,
+      );
+      rendered.lastImpactDirection = direction;
+      rendered.lastImpactAt = this.time.now;
+    }
+  }
+
+  private spawnHitBurst(
+    impactPoint: Vector2,
+    impactDirection: Vector2,
+    damage: number,
+    isExact: boolean,
+  ) {
+    const direction = addUpwardBias(normalizeVector(impactDirection, { x: 1, y: -0.2 }));
+    const count = isExact ? 7 : 5;
+    const colors = isExact
+      ? [0xfde68a, 0xfca5a5, 0xfef3c7]
+      : [0xfcd34d, 0xfde68a];
+
+    for (let index = 0; index < count; index += 1) {
+      const speed = Phaser.Math.FloatBetween(1.4, 2.8) + damage * 0.015;
+      const spreadX = Phaser.Math.FloatBetween(-0.35, 0.35);
+      const spreadY = Phaser.Math.FloatBetween(-0.25, 0.18);
+      const velocityX = (direction.x + spreadX) * speed;
+      const velocityY = (direction.y + spreadY) * speed - 0.35;
+      const node = this.add
+        .rectangle(
+          impactPoint.x + Phaser.Math.FloatBetween(-1.5, 1.5),
+          impactPoint.y + Phaser.Math.FloatBetween(-1.5, 1.5),
+          Phaser.Math.Between(3, 5),
+          Phaser.Math.Between(2, 4),
+          Phaser.Utils.Array.GetRandom(colors),
+          0.92,
+        )
+        .setDepth(8);
+      node.setAngle(Phaser.Math.FloatBetween(-35, 35));
+
+      this.hitParticles.push({
+        node,
+        velocityX,
+        velocityY,
+        angularVelocity: Phaser.Math.FloatBetween(-0.08, 0.08),
+        fadeAt: this.time.now + (isExact ? 160 : 120),
+        destroyAt: this.time.now + (isExact ? 430 : 320),
+        baseAlpha: 0.92,
+      });
+    }
+  }
+
+  private updateWeaponOverlay(
+    rendered: RenderedPlayer,
+    snapshot: PlayerSnapshot,
+    isRespawning: boolean,
+  ) {
+    const presentation = resolveWeaponEquipPresentation(snapshot.equippedWeaponId);
+    const visible = presentation.textureKey !== null && !isRespawning;
+
+    if (presentation.textureKey !== null) {
+      rendered.weaponOverlay.setTexture(presentation.textureKey);
+      rendered.weaponOverlay.setPosition(
+        snapshot.direction === "left"
+          ? -presentation.offsetX
+          : presentation.offsetX,
+        presentation.offsetY,
+      );
+      rendered.weaponOverlay.setFlipX(
+        presentation.flipWithDirection && snapshot.direction === "left",
+      );
+    }
+
+    rendered.weaponOverlay.setVisible(visible);
   }
 
   private removeRenderedPlayer(playerId: string) {
@@ -992,8 +1455,7 @@ class MainScene extends Phaser.Scene {
 
   private clearRenderedWeaponPickups() {
     for (const [pickupId, rendered] of this.renderedWeaponPickups) {
-      rendered.body.destroy();
-      rendered.label.destroy();
+      rendered.root.destroy();
       this.renderedWeaponPickups.delete(pickupId);
     }
   }
@@ -1013,26 +1475,57 @@ class MainScene extends Phaser.Scene {
       let rendered = this.renderedWeaponPickups.get(pickup.id);
       const weaponName =
         weaponDefinitionById[pickup.weaponId]?.name ?? pickup.weaponId;
+      const presentation = resolveWeaponPickupPresentation(pickup.weaponId);
+      const accentColor = weaponPickupAccentColor(pickup.source);
 
       if (!rendered) {
-        rendered = {
-          body: this.add.ellipse(
-            pickup.position.x,
-            pickup.position.y,
-            22,
-            14,
-            pickup.source === "spawn" ? 0x38bdf8 : 0xf97316,
-            0.95,
-          ),
-          label: this.add.text(
-            pickup.position.x,
-            pickup.position.y - 18,
-            weaponName,
+        const shadow = this.add.ellipse(0, 12, 30, 10, 0x020617, 0.26);
+        const body =
+          presentation.textureKey !== null
+            ? this.add.image(0, 0, presentation.textureKey)
+            : this.add.ellipse(0, 0, 22, 14, accentColor, 0.95);
+        const accent = this.add.rectangle(
+          0,
+          presentation.textureKey !== null ? 12 : 10,
+          presentation.textureKey !== null ? 34 : 18,
+          6,
+          accentColor,
+          0.98,
+        );
+        const codeText = this.add
+          .text(
+            0,
+            presentation.textureKey !== null ? 12 : 0,
+            presentation.code,
             {
-              fontSize: "11px",
-              color: "#f8fafc",
+              fontSize: presentation.textureKey !== null ? "11px" : "10px",
+              color: presentation.textureKey !== null ? "#0f172a" : "#e2e8f0",
+              fontStyle: "bold",
             },
-          ),
+          )
+          .setOrigin(0.5);
+        const detailText = this.add
+          .text(0, presentation.textureKey !== null ? 26 : -18, "", {
+            fontSize: "10px",
+            color: "#cbd5e1",
+          })
+          .setOrigin(0.5);
+        const root = this.add
+          .container(pickup.position.x, pickup.position.y, [
+            shadow,
+            body,
+            accent,
+            codeText,
+            detailText,
+          ])
+          .setDepth(6);
+
+        rendered = {
+          root,
+          body,
+          accent,
+          codeText,
+          detailText,
           targetX: pickup.position.x,
           targetY: pickup.position.y,
         };
@@ -1043,30 +1536,32 @@ class MainScene extends Phaser.Scene {
       rendered.targetY = pickup.position.y;
       if (
         shouldSnapToTarget(
-          rendered.body.x,
-          rendered.body.y,
+          rendered.root.x,
+          rendered.root.y,
           rendered.targetX,
           rendered.targetY,
           PICKUP_SNAP_DISTANCE,
         )
       ) {
-        rendered.body.setPosition(rendered.targetX, rendered.targetY);
+        rendered.root.setPosition(rendered.targetX, rendered.targetY);
       }
-      rendered.body.setFillStyle(
-        pickup.source === "spawn" ? 0x38bdf8 : 0xf97316,
-        0.95,
-      );
-      rendered.label.setText(`${weaponName} (${pickup.resourceRemaining})`);
-      rendered.label.setPosition(
-        rendered.body.x - rendered.label.width / 2,
-        rendered.body.y - 20,
+      if (rendered.body instanceof Phaser.GameObjects.Ellipse) {
+        rendered.body.setFillStyle(accentColor, 0.95);
+      }
+      rendered.accent.setFillStyle(accentColor, 0.98);
+      rendered.codeText.setText(presentation.code);
+      rendered.detailText.setText(
+        presentation.showNameLabel
+          ? `${weaponName} (${pickup.resourceRemaining})`
+          : pickup.source === "spawn"
+            ? ""
+            : `${pickup.resourceRemaining}`,
       );
     }
 
     for (const [pickupId, rendered] of this.renderedWeaponPickups) {
       if (!nextIds.has(pickupId)) {
-        rendered.body.destroy();
-        rendered.label.destroy();
+        rendered.root.destroy();
         this.renderedWeaponPickups.delete(pickupId);
       }
     }
@@ -1172,7 +1667,13 @@ class MainScene extends Phaser.Scene {
     const attackPressed =
       this.queuedClickAttack || (attackHeld && !this.attackWasDown);
     if (attackPressed) {
-      this.showAttackFlash(originX, originY, aim.x, aim.y);
+      this.showAttackFlash(
+        localPlayer?.snapshot.equippedWeaponId ?? "paws",
+        originX,
+        originY,
+        aim.x,
+        aim.y,
+      );
     }
     this.attackWasDown = attackHeld;
     const pickupWeaponPressed =
@@ -1204,12 +1705,52 @@ class MainScene extends Phaser.Scene {
   }
 
   private showAttackFlash(
+    weaponId: string,
     originX: number,
     originY: number,
     aimX: number,
     aimY: number,
   ) {
     this.attackFlash.clear();
+    const fireStyle = resolveWeaponFireStyle(weaponId);
+    const muzzleX = originX + aimX * 15;
+    const muzzleY = originY + aimY * 15;
+
+    if (fireStyle === "muzzle_flash") {
+      const tracerEndX = muzzleX + aimX * 62;
+      const tracerEndY = muzzleY + aimY * 62;
+      const sideX = -aimY;
+      const sideY = aimX;
+
+      this.attackFlash.lineStyle(2, 0xfde68a, 0.9);
+      this.attackFlash.lineBetween(muzzleX, muzzleY, tracerEndX, tracerEndY);
+
+      this.attackFlash.fillStyle(0xf59e0b, 0.96);
+      this.attackFlash.fillTriangle(
+        muzzleX + aimX * 11,
+        muzzleY + aimY * 11,
+        muzzleX - sideX * 3,
+        muzzleY - sideY * 3,
+        muzzleX + sideX * 3,
+        muzzleY + sideY * 3,
+      );
+      this.attackFlash.fillStyle(0xfef3c7, 0.92);
+      this.attackFlash.fillCircle(muzzleX, muzzleY, 3.5);
+      this.attackFlashUntil = this.time.now + 70;
+      return;
+    }
+
+    if (fireStyle === "paws_pulse") {
+      const pulseX = originX + aimX * 24;
+      const pulseY = originY + aimY * 24;
+      this.attackFlash.lineStyle(3, 0xfef08a, 0.95);
+      this.attackFlash.strokeCircle(pulseX, pulseY, 12);
+      this.attackFlash.lineStyle(2, 0xfcd34d, 0.8);
+      this.attackFlash.strokeCircle(pulseX, pulseY, 20);
+      this.attackFlashUntil = this.time.now + 90;
+      return;
+    }
+
     this.attackFlash.lineStyle(3, 0xfef08a, 0.95);
     this.attackFlash.lineBetween(
       originX,
@@ -1228,6 +1769,9 @@ class MainScene extends Phaser.Scene {
 
   update() {
     this.pruneKillFeed(this.time.now);
+    this.pruneDismissedDamageEvents(this.time.now);
+    this.updateDeathEchoes(this.time.now);
+    this.updateHitParticles(this.time.now);
 
     if (this.attackFlashUntil !== 0 && this.time.now > this.attackFlashUntil) {
       this.attackFlash.clear();
@@ -1242,24 +1786,27 @@ class MainScene extends Phaser.Scene {
         hamsterTextureForSnapshot(rendered.snapshot, this.time.now),
       );
       rendered.sprite.setFlipX(rendered.snapshot.direction === "left");
+      if (rendered.snapshot.state === "respawning") {
+        rendered.root.setAlpha(1);
+        continue;
+      }
       rendered.label.setPosition(
         rendered.root.x - rendered.label.width / 2,
         rendered.root.y - 32,
       );
-      if (rendered.snapshot.state === "respawning") {
-        const pulse = 0.28 + (Math.sin(this.time.now / 120) + 1) * 0.12;
-        rendered.root.setAlpha(pulse);
-      } else {
-        rendered.root.setAlpha(1);
-      }
+      rendered.root.setAlpha(1);
     }
 
     for (const [, rendered] of this.renderedWeaponPickups) {
-      rendered.body.x = Phaser.Math.Linear(rendered.body.x, rendered.targetX, PICKUP_LERP);
-      rendered.body.y = Phaser.Math.Linear(rendered.body.y, rendered.targetY, PICKUP_LERP);
-      rendered.label.setPosition(
-        rendered.body.x - rendered.label.width / 2,
-        rendered.body.y - 20,
+      rendered.root.x = Phaser.Math.Linear(
+        rendered.root.x,
+        rendered.targetX,
+        PICKUP_LERP,
+      );
+      rendered.root.y = Phaser.Math.Linear(
+        rendered.root.y,
+        rendered.targetY,
+        PICKUP_LERP,
       );
     }
 
@@ -1273,8 +1820,16 @@ class MainScene extends Phaser.Scene {
     }
 
     this.statusText.setText(
-      `Battle Hamsters  |  server tick ${this.latestTick}  |  room ${ROOM_ID}`,
+      `Battle Hamsters  |  server tick ${this.latestTick}  |  room ${ROOM_ID}${this.debugEnabled ? "  |  DEBUG" : ""}`,
     );
+  }
+
+  private pruneDismissedDamageEvents(now: number) {
+    for (const [id, receivedAt] of this.dismissedDamageEventIds) {
+      if (now - receivedAt >= DAMAGE_EVENT_DISMISSED_RETENTION_MS) {
+        this.dismissedDamageEventIds.delete(id);
+      }
+    }
   }
 }
 

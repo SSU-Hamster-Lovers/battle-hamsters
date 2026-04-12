@@ -6,6 +6,8 @@ on:
     paths:
       - 'apps/game/**'
       - 'packages/shared/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
       - '.github/workflows/game-deploy-cloudflare.yml'
   workflow_dispatch:
 
@@ -28,8 +30,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

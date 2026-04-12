@@ -4,7 +4,8 @@
 
 ## 최신 기준
 
-기준 브랜치: `develop`
+- 기준 브랜치: `develop`
+- 마지막 동기화 기준: 2026-04-12
 
 ## 현재 구현된 것
 
@@ -12,133 +13,181 @@
 
 - map / item / weapon / snapshot / protocol 타입 존재
 - 서버와 클라이언트가 같은 메시지 계약을 참조 가능
-- 맵 `collision`을 `floor / one_way_platform / solid_wall`, `hazards`를 `fall_zone / instant_kill_hazard`로 구분하는 타입이 추가되었다.
+- 맵 `collision`을 `floor / one_way_platform / solid_wall`, `hazards`를 `fall_zone / instant_kill_hazard`로 구분한다.
 - `boundaryPolicy`, `cameraPolicy`, `visualBounds`, `gameplayBounds`, `deathBounds`를 포함한 `MapDefinition` 타입이 정리되었다.
-- `packages/shared/maps/training-arena.json` 공통 테스트 맵 파일과 `trainingArenaMap` export가 추가되었다.
+- `packages/shared/maps/training-arena.json` 공통 테스트 맵 파일과 `trainingArenaMap` export가 있다.
+- `PlayerSnapshot`에는 `kills`, `deaths`, `lastDeathCause`가 포함되어 매치 점수와 최근 사망 원인을 함께 전달한다.
 
 ### Server
 
 - Rust + Actix-web 서버 동작
-- `/health`, `/hello`, `/ws` 엔드포인트 존재
-- 단일 in-memory room loop 존재
-- `20 TPS` world snapshot 브로드캐스트
+- 시작 시 `.env`, `.env.local`, `server/.env`, `server/.env.local` 을 읽어 `API_HOST`, `API_PORT` 를 적용한다.
+- `/health`, `/hello`, `/ws`, `POST /rooms`, `GET /rooms`, `GET /rooms/free` 엔드포인트 존재
 - `welcome`, `join_room`, `room_snapshot`, `world_snapshot` 흐름 구현
-- 플랫폼 이동 테스트 맵에서 좌우 바닥, 원웨이 플랫폼, pit 내부 wall 충돌, fall zone, instant kill hazard를 따로 판정한다.
-- 테스트 맵 충돌 / hazard / spawn 위치를 이제 `packages/shared/maps/training-arena.json`에서 읽는다.
-- 테스트 맵 `weaponSpawns`를 실제 월드 pickup 상태로 올리고, spawn/드롭 무기 despawn/respawn 1차를 처리한다.
-- 테스트 맵 `itemSpawns`를 실제 월드 pickup 상태로 올리고, spawn/respawn 1차를 처리한다.
-- `spawnStyle`에 따라 떠 있는 스폰(`fade_in`)과 중력 낙하 스폰(`airdrop`)을 구분하기 시작했다.
-- `random_candidates` + `spawnGroupId`를 통해 후보 지점 집합 중 한 곳에서만 spawn되는 구조를 처리하기 시작했다.
-- `jump_boost_small`, `health_pack_small` 아이템 정의를 shared JSON에서 읽어 효과를 적용한다.
-- `Acorn Blaster` 히트스캔 발사, 상대 넉백, 자기 반동(`self recoil`), 탄 소모, 빈 무기 폐기까지 1차 구현이 들어갔다.
-- 서버 리팩토링 1차로 런타임 데이터 로딩은 `server/src/game_data.rs`, room의 spawn/pickup 관리는 `server/src/room_pickups.rs`, 전투/사망 리셋 로직은 `server/src/room_combat.rs`, room loop / movement orchestration은 `server/src/room_runtime.rs`, ws/session 처리는 `server/src/ws_runtime.rs`로 분리하기 시작했다.
-- 룸은 이제 `RoomGameplayConfig`를 가져 기본 HP / 시작 생명 / 기본 점프 수 / 최대 점프 수 상한 / 시간 제한을 자체 값으로 가질 수 있다.
+- `20 TPS` authoritative room loop와 world snapshot 브로드캐스트 구현
+- 테스트 맵 충돌 / hazard / spawn 위치를 `packages/shared/maps/training-arena.json`에서 읽는다.
+- 플랫폼 이동 1차:
+  - 좌우 이동
+  - 점프
+  - 중력
+  - 착지
+  - 플랫폼 내려오기
+  - 공중 급강하
+  - pit 내부 wall 충돌
+  - fall zone 낙사
+  - instant kill hazard
+  - 사망 후 3초 리스폰
+- 룸은 `RoomGameplayConfig`를 가져 기본 HP / 시작 생명 / 기본 점프 수 / 최대 점프 수 상한 / 시간 제한을 자체 값으로 가진다.
+- 다중 룸 시스템:
+  - `AppState` 가 `HashMap<RoomId, RoomState>` + `HashMap<code, RoomId>` 를 보관
+  - 서버 시작 시 자유맵(`free_play`) 1개 자동 생성
+  - `POST /rooms` 로 매치룸 생성 → 4자리 코드 발급
+  - `WS join_room` 에서 4자리 숫자 코드는 자동으로 roomId 로 변환
+  - 빈 매치룸은 10분 후 코드와 함께 자동 제거
+- 매치 흐름 1차:
+  - 매치룸은 `Waiting -> Running -> Finished`
+  - 2명 이상이면 5초 카운트다운 후 시작
+  - 시간 소진 시 `Finished`
+  - 자동 재시작은 제거했고, 플레이어가 떠날 때까지 `Finished` 유지
+  - 킬/데스 점수 집계 포함
+  - 자유맵은 항상 `Running`
+- 무기 / 아이템 런타임 1차:
+  - 테스트 맵 `weaponSpawns`를 실제 월드 pickup 상태로 올리고 spawn/드롭 무기 despawn/respawn 처리
+  - 테스트 맵 `itemSpawns`를 실제 월드 pickup 상태로 올리고 spawn/respawn 처리
+  - `spawnStyle`에 따라 `fade_in`, `airdrop` 구분
+  - `random_candidates` + `spawnGroupId` 구조 처리
+  - `jump_boost_small`, `health_pack_small` 아이템 정의를 shared JSON에서 읽어 적용
+- 전투 1차:
+  - `Acorn Blaster` 히트스캔 발사
+  - 상대 넉백
+  - 자기 반동(`self recoil`)
+  - 탄 소모
+  - 빈 무기 폐기
+  - 킬 귀속 1차(`last_hit_by` TTL 5초)
+- 사망/리스폰 처리:
+  - `PlayerSnapshot.lastDeathCause` 에 최근 사망 원인을 싣는다.
+  - `room_snapshot` / `world_snapshot` 은 짧은 TTL의 `damageEvents` 배열을 함께 싣는다.
+  - 리스폰 대기 플레이어를 바닥 아래 임의 좌표로 순간이동시키지 않는다.
+- 서버 리팩토링 1차:
+  - 런타임 데이터 로딩: `server/src/game_data.rs`
+  - spawn/pickup 관리: `server/src/room_pickups.rs`
+  - 전투/사망 리셋: `server/src/room_combat.rs`
+  - room loop / movement orchestration: `server/src/room_runtime.rs`
+  - ws/session 처리: `server/src/ws_runtime.rs`
 - pit wall / fall zone / instant kill hazard 판정을 검증하는 단위 테스트가 있다.
-- 다중 룸 시스템: `AppState` 가 `HashMap<RoomId, RoomState>` + `HashMap<code, RoomId>` 를 보관한다. 서버 시작 시 자유맵(`free_play`) 1개 자동 생성. `POST /rooms` 로 매치룸 생성 → 4자리 코드 발급, `GET /rooms` 활성 룸 목록, `GET /rooms/free` 자유맵 조회. `WS join_room` 에서 4자리 숫자 코드는 자동으로 roomId 로 변환된다. 매치룸은 빈 상태 10분 후 코드와 함께 자동 제거. CORS 허용.
 
 ### Game Client
 
 - Phaser 클라이언트에서 WebSocket 연결 가능
-- `join_room` 전송 가능
-- `room_snapshot`, `world_snapshot` 수신 가능
-- 플레이어를 사각형 placeholder로 렌더링 가능
-- 키 입력을 `player_input`으로 전송 가능
+- `pnpm dev` 기본 실행은 `GAME_HOST` / `GAME_PORT` 를 읽어 LAN/Tailscale 접근 가능한 개발 서버로 뜬다.
+- `join_room`, `room_snapshot`, `world_snapshot` 처리 가능
+- URL 파라미터(`?room=&name=&pid=`)를 파싱해 Portal 로비에서 전달된 정보로 바로 접속한다.
+- 파라미터가 없으면 자유맵으로 자동 입장한다.
+- 닉네임/플레이어 ID 는 `localStorage` 에 저장되어 재접속 시 동일 신원 유지
 - 테스트 맵용 바닥 / 플랫폼 / pit wall / hazard / spawn 위치를 `trainingArenaMap` 공통 데이터에서 읽어 렌더링한다.
-- 월드 무기 pickup을 간단한 도형/라벨로 렌더링한다.
+- 플레이어는 코드 기반 임시 텍스처로 만든 캐주얼 햄스터 silhouette로 렌더링되며, `idle / run / jump / fall / respawning` 상태를 기본 구분한다.
+- remote player / local player / pickup 에 1차 보간을 적용했다.
+- 월드 무기 pickup은 기본 fallback 도형/라벨을 유지하되, `Acorn Blaster` 는 1차 전용 pickup sprite + `AB` glyph + source accent 로 렌더링한다.
 - 월드 아이템 pickup을 간단한 다이아몬드 도형/라벨로 렌더링한다.
-- HUD 텍스트에 현재 장착 무기와 탄 수, HP, 최대 점프 수를 표시한다.
-- 발사 시 로컬 보조용 muzzle flash를 짧게 표시한다.
-- remote player와 world pickup은 클라이언트에서 1차 위치 보간을 적용해 시각적 튐을 줄이기 시작했다.
-- local player도 과도한 위치 차이가 아닐 때는 더 빠른 계수로 최소 보간을 적용한다.
-- 플레이어는 이제 코드 기반 임시 텍스처로 만든 캐주얼 햄스터 silhouette로 렌더링되며, idle / run / jump / fall / respawning 상태를 기본 구분한다.
-- 우상단에 킬로그 스택을 렌더링한다. 서버에서 `world_snapshot.killFeed` / `room_snapshot.killFeed` 로 내려오는 엔트리를 수신해 `{killer} → {무기} → {victim}` / `{victim} → 낙사` / `{victim} → 함정` / `{victim} → 자살` 형식으로 표시하며, 수신 3초 후 로컬에서 제거한다. 재접속/늦합류 클라이언트는 첫 `room_snapshot` 으로 현재 버퍼를 복원한다.
-- 리스폰 중인 플레이어 라벨에 남은 카운트다운(초) 을 함께 표시한다.
+- `Acorn Blaster` 장착 시 손 앞에 1차 무기 overlay 를 렌더링한다.
+- HUD 텍스트에 현재 장착 무기, 탄 수, HP, 킬/데스, 생명, 남은 시간을 표시한다.
+- 발사 시 로컬 보조용 무기별 연출 1차를 적용한다.
+  - `Acorn Blaster`: 총구 화염 + 짧은 tracer
+  - `Paws`: 원형 pulse
+  - 그 외: 기존 선형 fallback
+- 피격 연출 1차/2차를 적용한다.
+  - `damageEvents` 가 있으면 정확한 `impactPoint` / `impactDirection` 기준으로 작은 파편 파티클을 생성한다.
+  - 정확 이벤트가 없을 때는 `hp` 감소와 넉백 방향으로 fallback 파티클을 생성한다.
+- 우상단에 킬로그 스택을 렌더링한다.
+- 매치 상태별 UI:
+  - `Waiting`: 대기 / 카운트다운 오버레이
+  - `Running`: 기존 플레이 + 남은 시간
+  - `Finished`: 점수판 오버레이
+- `room_snapshot.matchState`를 실제 값으로 해석한다.
+- 사망 연출 1차:
+  - `fall_zone` 사망 시 더 빠르게 아래로 가속하며 회전하는 낙사 echo 를 렌더링한다.
+  - `instant_kill_hazard` 사망 시 본체를 즉시 숨긴다.
+  - `weapon`, `self` 사망 시 마지막 피격 반대 방향으로 짧은 임시 중력 더미를 렌더링한다.
+  - 후속 단계에서 실제 래그돌/더미 시스템으로 확장 예정
+- 디버그 오버레이는 기본 OFF다.
+  - `?ops=1` 로 ops 접근을 로컬에 저장할 수 있다.
+  - ops 접근이 있을 때만 `Alt + Shift + D` 로 디버그를 토글할 수 있다.
+  - 지형 충돌선 / spawn 표식 / 플레이어 collider outline 을 숨기고 켤 수 있다.
 - `MAP_DEFINITION.visualBounds` 를 `camera.setBounds` 로 적용해 카메라가 시각 울타리 밖을 보여주지 않도록 했다.
 - `MAP_DEFINITION.cameraPolicy === "follow"` 일 때 로컬 플레이어를 중심으로 감쇠 추적(lerp 0.10) 하는 follow 카메라를 적용한다.
-- 캔버스(뷰포트) 크기는 `VIEWPORT_WIDTH = 800 / VIEWPORT_HEIGHT = 600` 으로 고정 분리하고, 맵 월드 크기(`MAP_DEFINITION.size`) 와 독립적으로 관리한다. HUD 요소는 `setScrollFactor(0)` 으로 화면에 고정된다.
-- 테스트 맵(`training-arena.json`)을 1600×900 으로 확장하고 `cameraPolicy: "follow"` 로 설정해 카메라가 실제로 스크롤되는 것을 검증했다. 바닥 3개 구간, 플랫폼 3개, 피트 벽(fall zone 끝까지 연장), 즉사 함정 구조를 유지한다.
-- URL 파라미터(`?room=&name=&pid=`)를 파싱해 Portal 로비에서 전달된 정보로 바로 접속할 수 있다. 파라미터가 없으면 자유맵으로 자동 입장. 닉네임/플레이어 ID 는 `localStorage` 에 저장되어 재접속 시 동일 신원 유지.
-- Cloudflare Pages 에 정적 빌드(`apps/game/dist`)로 배포되며 GitHub Actions 가 자동 처리한다. Oracle 서버는 Nginx + Let's Encrypt 로 `https://api-battlehamster.cuteshrew.com` 도메인에서 HTTPS/WSS 를 제공한다.
+- 캔버스(뷰포트) 크기는 `800x600` 으로 고정하고, 맵 월드 크기와 분리해 관리한다.
+- 테스트 맵(`training-arena.json`)은 1600×900, `cameraPolicy: "follow"` 기준으로 동작한다.
 
 ### Portal
 
 - Next.js 정적 포털 페이지가 Cloudflare Pages에 배포되어 있다.
-- Cloudflare Pages 에 배포된 Next.js 정적 로비. 닉네임 입력(localStorage), 자유맵 입장, 방 만들기(4자리 코드 표시), 코드로 입장 흐름을 제공한다.
-- 닉네임/플레이어 ID 는 `localStorage` 에 저장되어 새로고침 후에도 유지된다. 플레이어 ID 는 익명 UUID 로 자동 발급되며, 미래 계정 인증 추가 시 그대로 검증 레이어만 끼워 넣을 수 있도록 설계됐다.
+- `pnpm dev` 기본 실행은 `PORTAL_HOST` / `PORTAL_PORT` 를 읽어 LAN/Tailscale 접근 가능한 개발 서버로 뜬다.
+- 루트 `portal` 개발 실행 스크립트는 시작 전에 `apps/portal/.next` 를 정리해 stale chunk 캐시 충돌을 줄인다.
+- 닉네임 입력(localStorage), 자유맵 입장, 방 만들기(4자리 코드 표시), 코드로 입장 흐름을 제공한다.
+- 플레이어 ID 는 익명 UUID 로 자동 발급된다.
 - 게임 클라이언트로 이동 시 `?room=&name=&pid=` 파라미터를 URL 로 전달한다.
+- 현재 Portal URL에 `ops`, `debug` 파라미터가 있으면 게임 URL로 그대로 전달한다.
 
 ### 배포
 
-- Portal은 Cloudflare Pages direct upload 경로를 통해 실제 배포 성공을 확인했다.
-- Server는 Oracle Cloud 자동 배포 경로를 준비했고, SSH 접속 / 디렉터리 생성 / compose 실행 / production 이미지 빌드까지는 확인했다.
-- Oracle 배포 스크립트는 이제 `API_PORT`를 컨테이너 내부/외부에 동일하게 적용하고, Postgres 18 볼륨을 `/var/lib/postgresql`에 마운트하며, 배포 직후 `127.0.0.1:${API_PORT}/health`를 확인한 뒤 실패 시 compose 로그를 출력한다.
-- 2026-04-10 기준 최신 Oracle 배포에서는 외부 `http://161.118.216.248:8082/health` 응답 `200 {"status":"ok","version":"0.1.0"}`까지 확인했다.
+- 현재 워크플로 기준 production 자동 배포 트리거는 `main` push 이다.
+- `develop` 은 통합 브랜치이며 자동 배포는 없다.
+- `workflow_dispatch` 로 수동 배포는 가능하다.
+- Portal:
+  - Cloudflare Pages direct upload 방식
+  - 최신 성공 production 배포: 2026-04-11 `main` (`6f285d6`)
+- Game:
+  - Cloudflare Pages direct upload 방식
+  - 최신 성공 production 배포: 2026-04-12 `main` (`06ba3e8`)
+- Server:
+  - Oracle Cloud + Docker Compose + health check 방식
+  - 2026-04-12 `main` push 자동 배포는 `Configure SSH` 단계에서 실패
+  - 같은 날 `develop` (`195c73e`) 기준 `workflow_dispatch` 수동 배포는 성공
+- Oracle 서버는 Nginx + Let's Encrypt 로 `https://api-battlehamster.cuteshrew.com` 에서 HTTPS/WSS 를 제공한다.
 
-## 최근까지 완료한 핵심 범위
+### 로컬 실행
 
-### 플랫폼 이동 / 충돌 1차
-
-- 좌우 이동
-- 점프
-- 중력
-- 착지
-- 플랫폼 내려오기
-- 공중 급강하
-- fall zone 낙사
-- instant kill hazard
-- pit 좌우 wall 충돌
-- 사망 후 3초 리스폰
-- 테스트용 생명 99
+- 루트 `pnpm dev`, `pnpm dev:web`, `pnpm dev:server`, `pnpm dev:portal`, `pnpm dev:game` 스크립트가 있다.
+- 루트 실행 스크립트는 `API_PORT` 기준으로 프런트의 API/WS 주소를 함께 맞춘다.
 
 ## 현재 임시 구현
 
 ### 이동
 
-- 서버 authoritative 플랫폼 이동 1차 구현이 들어간 상태다.
-- 좌우 이동, 점프, 중력, 착지, 급강하, 원웨이 플랫폼 내려오기 규칙을 1차로 처리한다.
-- pit 내부 좌우 wall 충돌을 별도 primitive처럼 처리하고, 현재는 wall을 화면 아래 바깥의 `fall zone` 시작 지점까지 연장해 벽에 붙어 복귀하는 경로를 막는다.
-- `fall zone`은 현재 화면 아래 바깥(`600px` 화면 기준 `y=700`)에서 시작해서, 중앙 구멍으로 내려간 뒤 충분히 떨어졌을 때만 낙사 처리된다.
-- `instant kill hazard`에 닿거나 `fall zone` 깊이까지 떨어지면 3초 뒤 상공에서 리스폰한다.
+- 서버 authoritative 플랫폼 이동 1차 구현이다.
+- pit 내부 좌우 wall 은 현재 fall zone 시작 지점까지 연장해 복귀 루트를 막는다.
 - 현재 테스트용 생명 수는 99다.
 - 현재 기본 room gameplay config는 시작 HP 100, 생명 99, 기본 점프 1, 최대 점프 상한 3, 5분 제한이다.
-- 기본 점프 횟수는 다시 1로 두고, 아이템으로 room의 최대 점프 상한까지 올릴 수 있다.
-- 죽으면 점프 증가와 이동 관련 일반 전투 상태는 기본값으로 초기화된다.
 
 ### 렌더링
 
-- 플레이어는 사각형 placeholder로 표시된다.
-- 바닥, 원웨이 플랫폼, pit wall, instant kill hazard를 계약 기준(top surface / segment / rect)에 맞춰 표시한다.
-- 디버그 오버레이로 바닥 충돌선, 원웨이 플랫폼 윗면, wall 선, instant kill hazard, spawn 위치를 확인할 수 있다.
-- `fall zone`은 현재 화면 밖 낙사 판정용이라 클라이언트에 블록으로 표시하지 않는다.
-- 플레이어 사각형에는 collider outline이 표시된다.
-- remote player와 pickup은 1차 lerp 기반 보간을 적용해 이전보다 덜 거칠게 보인다.
-- 서버와 클라이언트는 같은 테스트 맵 JSON 원본을 공유한다.
-- item pickup은 `spawnStyle`에 따라 색이 달라지고, `airdrop` item은 실제로 아래로 떨어져 착지한다.
-- random candidate group으로 묶인 무기/아이템은 그룹당 하나만 활성화된다.
+- 플레이어 / 무기 / 아이템 / 맵은 placeholder 또는 코드 생성 텍스처 기반이다.
+- 디버그 오버레이는 운영자용 숨김 토글 방식 1차다.
+- `weapon/self` 사망 시 더미 연출은 임시 구현이며, 실제 래그돌 물리/애니메이션은 아직 없다.
 
 ### 전투
 
-- `Acorn Blaster` 1종에 한해 실제 발사/피격/넉백/자기 반동/탄 소모/빈 무기 폐기를 처리한다.
+- `Acorn Blaster` 1종만 실제 발사/피격/넉백/자기 반동/탄 소모/빈 무기 폐기를 처리한다.
 - 월드 무기는 `E`로 명시적으로 획득하고 `Q`로 드롭한다.
 - 월드 아이템은 닿으면 자동으로 획득한다.
 - `jump_boost_small`은 `maxJumpCount`를 `1..3` 범위에서 증가시키고, `health_pack_small`은 HP를 최대치까지 회복한다.
-- 드롭한 무기는 즉시 재pickup되지 않도록 짧은 본인 pickup 차단 시간이 있다.
-- 사망 시 장착 무기는 초기화되어 맨손(`paws`)으로 리스폰한다.
-- 사망 시 점프 증가와 속도 랭크업도 함께 초기화된다.
-- beam/grab/throwable, speed rank/extra life 아이템, 다중 무기 밸런싱은 아직 미구현이다.
-- 킬 어사인먼트 1차: 피격 시 `PlayerRuntime.last_hit_by` 에 (killer_id, weapon_id, hit_at_ms) 를 기록한다. 낙사/즉사 함정 사망 시 TTL(5초) 이내 마지막 타격자가 있으면 `DeathCause::Weapon` 으로 귀속해 킬피드에 `A → 무기 → B` 로 표시한다. TTL 초과 시 기존 `FallZone` / `InstantKillHazard` 로 표시한다. 리스폰 시 `last_hit_by` 초기화.
+- beam / grab / throwable, speed rank / extra life 아이템, 다중 무기 밸런싱은 아직 미구현이다.
 
 ## 다음 구현 우선순위
 
-1. 매치 흐름 1차 — `Waiting → Running → Finished` 전환, 점수 집계, 결과 화면 (자유맵은 항상 Running 으로 유지)
-2. 하단 플레이어 상태 HUD 실제 배치 (hazard-feedback v1 미니 스펙에서는 구조 정의만 남겨 둠)
-3. 킬로그 카드 + 아이콘 레이아웃
-4. 실제 아트 atlas/spritesheet 기반 햄스터/무기/아이템 교체
+1. 하단 플레이어 상태 HUD 실제 배치
+2. 킬로그 카드 + 아이콘 레이아웃
+3. 무기별 피격 파티클 차별화
+4. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체
+5. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
+6. `develop` preview / staging 배포 전략 분리
 
 ## 참고
 
-- 맵 경계/카메라 정책 설계 배경은 `docs/technical/mini-spec-map-boundaries-camera.md` 참조.
+- 맵 경계/카메라 정책 설계 배경은 `docs/technical/mini-spec-map-boundaries-camera.md` 참조
 - 카메라 구현 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-camera-visual-bounds-v1.md`
-- 이번 브랜치 작업 미니 스펙은 `docs/technical/mini-spec-hamster-rendering-v1.md`에 정리한다.
-- 점프 아이템 세부 규칙 후속은 `docs/technical/mini-spec-jump-item-integration-v1.md`에 정리한다.
-- 구현을 바꿀 때는 이 문서도 같이 갱신한다.
+- 문서 동기화 + 배포 전략 미니 스펙: `docs/archive/mini-specs/mini-spec-doc-sync-deploy-strategy-v1.md`
+- 사망 연출 + 디버그 토글 미니 스펙: `docs/archive/mini-specs/mini-spec-death-feedback-debug-toggle-v1.md`
+- 로컬 개발 환경 정리 미니 스펙: `docs/archive/mini-specs/mini-spec-local-dev-env-runner-v1.md`
+- 점프 아이템 세부 규칙 후속은 `docs/technical/mini-spec-jump-item-integration-v1.md` 참조
+- 전투 표현 polish 후속은 `docs/technical/mini-spec-combat-presentation-polish-v0.md` 참조

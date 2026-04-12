@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::game_data::{ground_top_y, runtime_map_data, world_width, HazardKind};
+use crate::game_data::{runtime_map_data, world_width, HazardKind};
 use crate::room_combat::{respawn_player, trigger_respawn};
 use crate::{
     DeathCause, MatchState, PlayerRuntime, PlayerSnapshot, PlayerState, RoomState, RoomType,
@@ -16,6 +16,7 @@ impl RoomState {
     pub(crate) fn tick(&mut self, now_ms: u64) -> WorldSnapshotPayload {
         self.server_tick += 1;
         self.cleanup_kill_feed(now_ms);
+        self.cleanup_damage_events(now_ms);
 
         // 매치 상태 전환 (Match 룸만)
         if self.room_type == RoomType::Match {
@@ -64,6 +65,7 @@ impl RoomState {
             item_pickups: self.item_pickup_snapshots(),
             time_remaining_ms: self.time_remaining_ms,
             kill_feed: self.kill_feed_snapshot(),
+            damage_events: self.damage_event_snapshot(),
         }
     }
 
@@ -108,6 +110,7 @@ impl RoomState {
             player.snapshot.position = spawn_position(player.spawn_index);
             player.snapshot.state = PlayerState::Alive;
             player.snapshot.respawn_at = None;
+            player.snapshot.last_death_cause = None;
         }
 
         // 무기/아이템 초기화
@@ -118,6 +121,7 @@ impl RoomState {
         self.spawn_initial_weapons(now_ms);
         self.spawn_initial_items(now_ms);
         self.kill_feed.clear();
+        self.damage_events.clear();
     }
 
     fn reset_match(&mut self, now_ms: u64) {
@@ -134,6 +138,7 @@ impl RoomState {
             player.snapshot.position = spawn_position(player.spawn_index);
             player.snapshot.state = PlayerState::Alive;
             player.snapshot.respawn_at = None;
+            player.snapshot.last_death_cause = None;
         }
 
         self.weapon_pickups.clear();
@@ -143,6 +148,7 @@ impl RoomState {
         self.spawn_initial_weapons(now_ms);
         self.spawn_initial_items(now_ms);
         self.kill_feed.clear();
+        self.damage_events.clear();
         self.time_remaining_ms = self.gameplay_config.time_limit_ms;
     }
 
@@ -204,9 +210,9 @@ impl RoomState {
                 victim.snapshot.deaths += 1;
             }
 
-            self.push_kill_feed(player_id.clone(), cause, now_ms);
+            self.push_kill_feed(player_id.clone(), cause.clone(), now_ms);
             if let Some(player) = self.players.get_mut(&player_id) {
-                trigger_respawn(player, now_ms, ground_top_y(), &self.gameplay_config);
+                trigger_respawn(player, now_ms, cause, &self.gameplay_config);
             }
         }
     }
@@ -215,17 +221,12 @@ impl RoomState {
         if self.match_state != MatchState::Waiting {
             return None;
         }
-        self.countdown_start_ms.map(|start| {
-            MATCH_COUNTDOWN_MS.saturating_sub(now_ms.saturating_sub(start))
-        })
+        self.countdown_start_ms
+            .map(|start| MATCH_COUNTDOWN_MS.saturating_sub(now_ms.saturating_sub(start)))
     }
 }
 
-fn hazard_death_cause(
-    player: &PlayerRuntime,
-    kind: HazardKind,
-    now_ms: u64,
-) -> DeathCause {
+fn hazard_death_cause(player: &PlayerRuntime, kind: HazardKind, now_ms: u64) -> DeathCause {
     if let Some(ref hit) = player.last_hit_by {
         if now_ms.saturating_sub(hit.hit_at_ms) <= LAST_HIT_TTL_MS {
             return DeathCause::Weapon {

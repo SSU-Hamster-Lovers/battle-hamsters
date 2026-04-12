@@ -24,6 +24,15 @@ function getOrCreateId(): string {
 
 function buildGameUrl(roomId: string, name: string, pid: string): string {
   const params = new URLSearchParams({ room: roomId, name, pid });
+  if (typeof window !== "undefined") {
+    const currentParams = new URLSearchParams(window.location.search);
+    for (const key of ["ops", "debug"]) {
+      const value = currentParams.get(key);
+      if (value !== null) {
+        params.set(key, value);
+      }
+    }
+  }
   return `${GAME_URL}?${params.toString()}`;
 }
 
