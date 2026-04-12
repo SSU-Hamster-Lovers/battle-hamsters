@@ -118,6 +118,8 @@ export interface PlayerSnapshot {
   equippedWeaponResource: number | null;
   grabState: GrabState | null;
   state: PlayerState;
+  kills: number;
+  deaths: number;
 }
 
 export interface RoomConfig {
@@ -145,6 +147,7 @@ export interface MatchSnapshot {
   weaponPickups: WorldWeaponPickup[];
   itemPickups: WorldItemPickup[];
   timeRemainingMs: number;
+  countdownMs: number | null;
   killFeed: KillFeedEntry[];
 }
 

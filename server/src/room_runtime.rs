@@ -3,7 +3,8 @@ use std::collections::HashSet;
 use crate::game_data::{ground_top_y, runtime_map_data, world_width, HazardKind};
 use crate::room_combat::{respawn_player, trigger_respawn};
 use crate::{
-    DeathCause, PlayerRuntime, PlayerSnapshot, PlayerState, RoomState, Vector2, LAST_HIT_TTL_MS,
+    DeathCause, MatchState, PlayerRuntime, PlayerSnapshot, PlayerState, RoomState, RoomType,
+    Vector2, LAST_HIT_TTL_MS, MATCH_COUNTDOWN_MS, MATCH_MIN_PLAYERS, MATCH_RESULT_DISPLAY_MS,
     PLAYER_HALF_SIZE,
 };
 use crate::{
@@ -14,17 +15,138 @@ use crate::{
 impl RoomState {
     pub(crate) fn tick(&mut self, now_ms: u64) -> WorldSnapshotPayload {
         self.server_tick += 1;
-        self.time_remaining_ms = self
-            .time_remaining_ms
-            .saturating_sub(crate::TICK_INTERVAL_MS);
         self.cleanup_kill_feed(now_ms);
-        self.cleanup_expired_pickups(now_ms);
-        self.refresh_weapon_spawns(now_ms);
-        self.refresh_item_spawns(now_ms);
-        self.step_weapon_pickups();
-        self.step_item_pickups();
-        self.cull_out_of_world_pickups(now_ms);
 
+        // 매치 상태 전환 (Match 룸만)
+        if self.room_type == RoomType::Match {
+            self.tick_match_state(now_ms);
+        }
+
+        // Running (또는 FreePlay) 상태에서만 게임 물리 진행
+        let is_gameplay_active =
+            self.match_state == MatchState::Running || self.room_type == RoomType::FreePlay;
+
+        if is_gameplay_active {
+            self.time_remaining_ms = self
+                .time_remaining_ms
+                .saturating_sub(crate::TICK_INTERVAL_MS);
+
+            self.cleanup_expired_pickups(now_ms);
+            self.refresh_weapon_spawns(now_ms);
+            self.refresh_item_spawns(now_ms);
+            self.step_weapon_pickups();
+            self.step_item_pickups();
+            self.cull_out_of_world_pickups(now_ms);
+
+            self.tick_gameplay(now_ms);
+
+            // 매치룸에서 시간 소진 → Finished
+            if self.room_type == RoomType::Match
+                && self.match_state == MatchState::Running
+                && self.time_remaining_ms == 0
+            {
+                self.match_state = MatchState::Finished;
+                self.result_display_until_ms = Some(now_ms + MATCH_RESULT_DISPLAY_MS);
+            }
+        }
+
+        let countdown_ms = self.countdown_remaining_ms(now_ms);
+
+        WorldSnapshotPayload {
+            version: 1,
+            room_id: self.room_id.clone(),
+            match_state: self.match_state,
+            countdown_ms,
+            server_tick: self.server_tick,
+            players: self.player_snapshots(),
+            projectiles: vec![],
+            weapon_pickups: self.weapon_pickup_snapshots(),
+            item_pickups: self.item_pickup_snapshots(),
+            time_remaining_ms: self.time_remaining_ms,
+            kill_feed: self.kill_feed_snapshot(),
+        }
+    }
+
+    fn tick_match_state(&mut self, now_ms: u64) {
+        match self.match_state {
+            MatchState::Waiting => {
+                let alive_count = self.sessions.len();
+                if alive_count >= MATCH_MIN_PLAYERS {
+                    if self.countdown_start_ms.is_none() {
+                        self.countdown_start_ms = Some(now_ms);
+                    }
+                    if let Some(start) = self.countdown_start_ms {
+                        if now_ms.saturating_sub(start) >= MATCH_COUNTDOWN_MS {
+                            self.start_match(now_ms);
+                        }
+                    }
+                } else {
+                    self.countdown_start_ms = None;
+                }
+            }
+            MatchState::Running => {
+                // 시간 소진 체크는 tick() 본체에서 처리
+            }
+            MatchState::Finished => {
+                // 자동 재시작 안 함 — 방은 Finished 상태로 유지.
+                // 모든 플레이어가 나가면 유령 방 정리(10분)에 의해 제거됨.
+            }
+        }
+    }
+
+    fn start_match(&mut self, now_ms: u64) {
+        self.match_state = MatchState::Running;
+        self.countdown_start_ms = None;
+        self.time_remaining_ms = self.gameplay_config.time_limit_ms;
+
+        // 모든 플레이어 점수 리셋 + 리스폰
+        for player in self.players.values_mut() {
+            player.snapshot.kills = 0;
+            player.snapshot.deaths = 0;
+            crate::room_combat::reset_general_combat_state(player, &self.gameplay_config);
+            player.snapshot.hp = self.gameplay_config.start_hp;
+            player.snapshot.position = spawn_position(player.spawn_index);
+            player.snapshot.state = PlayerState::Alive;
+            player.snapshot.respawn_at = None;
+        }
+
+        // 무기/아이템 초기화
+        self.weapon_pickups.clear();
+        self.item_pickups.clear();
+        self.next_spawn_respawn_at.clear();
+        self.next_item_spawn_respawn_at.clear();
+        self.spawn_initial_weapons(now_ms);
+        self.spawn_initial_items(now_ms);
+        self.kill_feed.clear();
+    }
+
+    fn reset_match(&mut self, now_ms: u64) {
+        self.match_state = MatchState::Waiting;
+        self.result_display_until_ms = None;
+        self.countdown_start_ms = None;
+
+        // 플레이어 점수 리셋 + 리스폰
+        for player in self.players.values_mut() {
+            player.snapshot.kills = 0;
+            player.snapshot.deaths = 0;
+            crate::room_combat::reset_general_combat_state(player, &self.gameplay_config);
+            player.snapshot.hp = self.gameplay_config.start_hp;
+            player.snapshot.position = spawn_position(player.spawn_index);
+            player.snapshot.state = PlayerState::Alive;
+            player.snapshot.respawn_at = None;
+        }
+
+        self.weapon_pickups.clear();
+        self.item_pickups.clear();
+        self.next_spawn_respawn_at.clear();
+        self.next_item_spawn_respawn_at.clear();
+        self.spawn_initial_weapons(now_ms);
+        self.spawn_initial_items(now_ms);
+        self.kill_feed.clear();
+        self.time_remaining_ms = self.gameplay_config.time_limit_ms;
+    }
+
+    fn tick_gameplay(&mut self, now_ms: u64) {
         let player_ids = self.players.keys().cloned().collect::<Vec<_>>();
         let mut deaths: Vec<(String, DeathCause)> = Vec::new();
         let mut dying_this_tick: HashSet<String> = HashSet::new();
@@ -72,24 +194,30 @@ impl RoomState {
         }
 
         for (player_id, cause) in deaths {
+            // 점수 추적: killer +1 kill, victim +1 death
+            if let DeathCause::Weapon { ref killer_id, .. } = cause {
+                if let Some(killer) = self.players.get_mut(killer_id) {
+                    killer.snapshot.kills += 1;
+                }
+            }
+            if let Some(victim) = self.players.get_mut(&player_id) {
+                victim.snapshot.deaths += 1;
+            }
+
             self.push_kill_feed(player_id.clone(), cause, now_ms);
             if let Some(player) = self.players.get_mut(&player_id) {
                 trigger_respawn(player, now_ms, ground_top_y(), &self.gameplay_config);
             }
         }
+    }
 
-        WorldSnapshotPayload {
-            version: 1,
-            room_id: self.room_id.clone(),
-            match_state: crate::MatchState::Running,
-            server_tick: self.server_tick,
-            players: self.player_snapshots(),
-            projectiles: vec![],
-            weapon_pickups: self.weapon_pickup_snapshots(),
-            item_pickups: self.item_pickup_snapshots(),
-            time_remaining_ms: self.time_remaining_ms,
-            kill_feed: self.kill_feed_snapshot(),
+    fn countdown_remaining_ms(&self, now_ms: u64) -> Option<u64> {
+        if self.match_state != MatchState::Waiting {
+            return None;
         }
+        self.countdown_start_ms.map(|start| {
+            MATCH_COUNTDOWN_MS.saturating_sub(now_ms.saturating_sub(start))
+        })
     }
 }
 
