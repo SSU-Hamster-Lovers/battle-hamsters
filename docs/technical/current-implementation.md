@@ -21,6 +21,7 @@
 ### Server
 
 - Rust + Actix-web 서버 동작
+- 시작 시 `.env`, `.env.local`, `server/.env`, `server/.env.local` 을 읽어 `API_HOST`, `API_PORT` 를 적용한다.
 - `/health`, `/hello`, `/ws`, `POST /rooms`, `GET /rooms`, `GET /rooms/free` 엔드포인트 존재
 - `welcome`, `join_room`, `room_snapshot`, `world_snapshot` 흐름 구현
 - `20 TPS` authoritative room loop와 world snapshot 브로드캐스트 구현
@@ -77,6 +78,7 @@
 ### Game Client
 
 - Phaser 클라이언트에서 WebSocket 연결 가능
+- `pnpm dev` 기본 실행은 `GAME_HOST` / `GAME_PORT` 를 읽어 LAN/Tailscale 접근 가능한 개발 서버로 뜬다.
 - `join_room`, `room_snapshot`, `world_snapshot` 처리 가능
 - URL 파라미터(`?room=&name=&pid=`)를 파싱해 Portal 로비에서 전달된 정보로 바로 접속한다.
 - 파라미터가 없으면 자유맵으로 자동 입장한다.
@@ -110,6 +112,7 @@
 ### Portal
 
 - Next.js 정적 포털 페이지가 Cloudflare Pages에 배포되어 있다.
+- `pnpm dev` 기본 실행은 `PORTAL_HOST` / `PORTAL_PORT` 를 읽어 LAN/Tailscale 접근 가능한 개발 서버로 뜬다.
 - 닉네임 입력(localStorage), 자유맵 입장, 방 만들기(4자리 코드 표시), 코드로 입장 흐름을 제공한다.
 - 플레이어 ID 는 익명 UUID 로 자동 발급된다.
 - 게임 클라이언트로 이동 시 `?room=&name=&pid=` 파라미터를 URL 로 전달한다.
@@ -131,6 +134,11 @@
   - 2026-04-12 `main` push 자동 배포는 `Configure SSH` 단계에서 실패
   - 같은 날 `develop` (`195c73e`) 기준 `workflow_dispatch` 수동 배포는 성공
 - Oracle 서버는 Nginx + Let's Encrypt 로 `https://api-battlehamster.cuteshrew.com` 에서 HTTPS/WSS 를 제공한다.
+
+### 로컬 실행
+
+- 루트 `pnpm dev`, `pnpm dev:web`, `pnpm dev:server`, `pnpm dev:portal`, `pnpm dev:game` 스크립트가 있다.
+- 루트 실행 스크립트는 `API_PORT` 기준으로 프런트의 API/WS 주소를 함께 맞춘다.
 
 ## 현재 임시 구현
 
