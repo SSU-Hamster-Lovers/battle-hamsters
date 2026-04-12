@@ -111,19 +111,42 @@ impl RoomState {
         }
 
         if let Some(target_id) = target_id {
-            let target = self
+            let target_position = self
                 .players
-                .get_mut(&target_id)
-                .expect("target should exist");
-            target.external_velocity.x += aim_direction.x * weapon.knockback;
-            target.external_velocity.y += aim_direction.y * weapon.knockback;
-            target.snapshot.hp = target.snapshot.hp.saturating_sub(weapon.damage);
-            target.last_hit_by = Some(LastHitInfo {
-                killer_id: player_id.to_string(),
-                weapon_id: weapon_id.clone(),
-                hit_at_ms: now_ms,
-            });
-            if target.snapshot.hp == 0 && dying_this_tick.insert(target_id.clone()) {
+                .get(&target_id)
+                .expect("target should exist")
+                .snapshot
+                .position
+                .clone();
+            let impact_point = Vector2 {
+                x: target_position.x - aim_direction.x * PLAYER_HALF_SIZE * 0.65,
+                y: target_position.y - 6.0 - aim_direction.y * PLAYER_HALF_SIZE * 0.35,
+            };
+            let target_hp_after_hit = {
+                let target = self
+                    .players
+                    .get_mut(&target_id)
+                    .expect("target should exist");
+                target.external_velocity.x += aim_direction.x * weapon.knockback;
+                target.external_velocity.y += aim_direction.y * weapon.knockback;
+                target.snapshot.hp = target.snapshot.hp.saturating_sub(weapon.damage);
+                target.last_hit_by = Some(LastHitInfo {
+                    killer_id: player_id.to_string(),
+                    weapon_id: weapon_id.clone(),
+                    hit_at_ms: now_ms,
+                });
+                target.snapshot.hp
+            };
+            self.push_damage_event(
+                target_id.clone(),
+                player_id.to_string(),
+                weapon_id.clone(),
+                weapon.damage,
+                aim_direction.clone(),
+                impact_point,
+                now_ms,
+            );
+            if target_hp_after_hit == 0 && dying_this_tick.insert(target_id.clone()) {
                 deaths.push((
                     target_id,
                     DeathCause::Weapon {

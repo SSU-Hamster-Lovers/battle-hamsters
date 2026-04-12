@@ -525,7 +525,8 @@
   "itemPickups": [],
   "countdownMs": null,
   "timeRemainingMs": 284000,
-  "killFeed": []
+  "killFeed": [],
+  "damageEvents": []
 }
 ```
 
@@ -535,6 +536,32 @@
 - 최적화 전에는 delta-compression을 도입하지 않는다.
 - `serverTick`은 클라이언트 보간 기준점으로 사용한다.
 - 빔 무기도 동일 스냅샷 구조 안에서 처리하되, 필요 시 별도 이펙트 이벤트를 추가한다.
+
+## 피격 이벤트 포맷
+
+`world_snapshot.damageEvents` 와 `room_snapshot.damageEvents` 는 동일 구조를 공유한다.
+
+```json
+[
+  {
+    "id": "dmg_128_3",
+    "occurredAt": 1712600001150,
+    "victimId": "player_2",
+    "attackerId": "player_1",
+    "weaponId": "acorn_blaster",
+    "damage": 12,
+    "impactDirection": { "x": 1, "y": 0 },
+    "impactPoint": { "x": 486, "y": 312 }
+  }
+]
+```
+
+### 피격 이벤트 규칙
+
+- `impactDirection` 은 공격이 진행된 방향이다.
+- `impactPoint` 는 몸통 근처의 근사 피격 지점이다.
+- 현재 클라이언트는 이를 파티클 분산 방향과 사망 더미 launch 보정에 사용한다.
+- 서버는 짧은 TTL 버퍼만 유지하고, 클라이언트는 `id` 로 중복 렌더를 막는다.
 
 ## 킬로그 포맷
 

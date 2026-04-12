@@ -66,6 +66,7 @@
   - 킬 귀속 1차(`last_hit_by` TTL 5초)
 - 사망/리스폰 처리:
   - `PlayerSnapshot.lastDeathCause` 에 최근 사망 원인을 싣는다.
+  - `room_snapshot` / `world_snapshot` 은 짧은 TTL의 `damageEvents` 배열을 함께 싣는다.
   - 리스폰 대기 플레이어를 바닥 아래 임의 좌표로 순간이동시키지 않는다.
 - 서버 리팩토링 1차:
   - 런타임 데이터 로딩: `server/src/game_data.rs`
@@ -86,10 +87,17 @@
 - 테스트 맵용 바닥 / 플랫폼 / pit wall / hazard / spawn 위치를 `trainingArenaMap` 공통 데이터에서 읽어 렌더링한다.
 - 플레이어는 코드 기반 임시 텍스처로 만든 캐주얼 햄스터 silhouette로 렌더링되며, `idle / run / jump / fall / respawning` 상태를 기본 구분한다.
 - remote player / local player / pickup 에 1차 보간을 적용했다.
-- 월드 무기 pickup을 간단한 도형/라벨로 렌더링한다.
+- 월드 무기 pickup은 기본 fallback 도형/라벨을 유지하되, `Acorn Blaster` 는 1차 전용 pickup sprite + `AB` glyph + source accent 로 렌더링한다.
 - 월드 아이템 pickup을 간단한 다이아몬드 도형/라벨로 렌더링한다.
+- `Acorn Blaster` 장착 시 손 앞에 1차 무기 overlay 를 렌더링한다.
 - HUD 텍스트에 현재 장착 무기, 탄 수, HP, 킬/데스, 생명, 남은 시간을 표시한다.
-- 발사 시 로컬 보조용 muzzle flash를 짧게 표시한다.
+- 발사 시 로컬 보조용 무기별 연출 1차를 적용한다.
+  - `Acorn Blaster`: 총구 화염 + 짧은 tracer
+  - `Paws`: 원형 pulse
+  - 그 외: 기존 선형 fallback
+- 피격 연출 1차/2차를 적용한다.
+  - `damageEvents` 가 있으면 정확한 `impactPoint` / `impactDirection` 기준으로 작은 파편 파티클을 생성한다.
+  - 정확 이벤트가 없을 때는 `hp` 감소와 넉백 방향으로 fallback 파티클을 생성한다.
 - 우상단에 킬로그 스택을 렌더링한다.
 - 매치 상태별 UI:
   - `Waiting`: 대기 / 카운트다운 오버레이
@@ -97,8 +105,9 @@
   - `Finished`: 점수판 오버레이
 - `room_snapshot.matchState`를 실제 값으로 해석한다.
 - 사망 연출 1차:
-  - `fall_zone`, `instant_kill_hazard` 사망 시 본체를 즉시 숨긴다.
-  - `weapon`, `self` 사망 시 짧은 임시 중력 더미를 렌더링한다.
+  - `fall_zone` 사망 시 더 빠르게 아래로 가속하며 회전하는 낙사 echo 를 렌더링한다.
+  - `instant_kill_hazard` 사망 시 본체를 즉시 숨긴다.
+  - `weapon`, `self` 사망 시 마지막 피격 반대 방향으로 짧은 임시 중력 더미를 렌더링한다.
   - 후속 단계에서 실제 래그돌/더미 시스템으로 확장 예정
 - 디버그 오버레이는 기본 OFF다.
   - `?ops=1` 로 ops 접근을 로컬에 저장할 수 있다.
@@ -113,6 +122,7 @@
 
 - Next.js 정적 포털 페이지가 Cloudflare Pages에 배포되어 있다.
 - `pnpm dev` 기본 실행은 `PORTAL_HOST` / `PORTAL_PORT` 를 읽어 LAN/Tailscale 접근 가능한 개발 서버로 뜬다.
+- 루트 `portal` 개발 실행 스크립트는 시작 전에 `apps/portal/.next` 를 정리해 stale chunk 캐시 충돌을 줄인다.
 - 닉네임 입력(localStorage), 자유맵 입장, 방 만들기(4자리 코드 표시), 코드로 입장 흐름을 제공한다.
 - 플레이어 ID 는 익명 UUID 로 자동 발급된다.
 - 게임 클라이언트로 이동 시 `?room=&name=&pid=` 파라미터를 URL 로 전달한다.
@@ -151,7 +161,7 @@
 
 ### 렌더링
 
-- 플레이어 / 무기 / 아이템 / 맵은 모두 placeholder 또는 코드 생성 텍스처 기반이다.
+- 플레이어 / 무기 / 아이템 / 맵은 placeholder 또는 코드 생성 텍스처 기반이다.
 - 디버그 오버레이는 운영자용 숨김 토글 방식 1차다.
 - `weapon/self` 사망 시 더미 연출은 임시 구현이며, 실제 래그돌 물리/애니메이션은 아직 없다.
 
@@ -167,9 +177,10 @@
 
 1. 하단 플레이어 상태 HUD 실제 배치
 2. 킬로그 카드 + 아이콘 레이아웃
-3. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체
-4. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
-5. `develop` preview / staging 배포 전략 분리
+3. 무기별 피격 파티클 차별화
+4. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체
+5. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
+6. `develop` preview / staging 배포 전략 분리
 
 ## 참고
 
@@ -179,3 +190,4 @@
 - 사망 연출 + 디버그 토글 미니 스펙: `docs/archive/mini-specs/mini-spec-death-feedback-debug-toggle-v1.md`
 - 로컬 개발 환경 정리 미니 스펙: `docs/archive/mini-specs/mini-spec-local-dev-env-runner-v1.md`
 - 점프 아이템 세부 규칙 후속은 `docs/technical/mini-spec-jump-item-integration-v1.md` 참조
+- 전투 표현 polish 후속은 `docs/technical/mini-spec-combat-presentation-polish-v0.md` 참조

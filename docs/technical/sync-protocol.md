@@ -103,7 +103,8 @@
     "weaponPickups": [],
     "itemPickups": [],
     "matchState": "waiting",
-    "killFeed": []
+    "killFeed": [],
+    "damageEvents": []
   }
 }
 ```
@@ -120,7 +121,8 @@
     "projectiles": [],
     "weaponPickups": [],
     "itemPickups": [],
-    "killFeed": []
+    "killFeed": [],
+    "damageEvents": []
   }
 }
 ```
@@ -130,8 +132,31 @@
 - `world_snapshot.players[].lastDeathCause` 는 최근 사망 원인을 담는다.
 - 목적은 클라이언트가 리스폰 대기 중 연출을 분기하기 위함이다.
 - 현재 1차 클라이언트 해석:
-  - `fall_zone`, `instant_kill_hazard`: 본체를 즉시 숨김
-  - `weapon`, `self`: 짧은 임시 중력 더미를 표시
+  - `fall_zone`: 더 빠르게 아래로 가속하며 회전하는 낙사 echo 를 표시
+  - `instant_kill_hazard`: 본체를 즉시 숨김
+  - `weapon`, `self`: 마지막 피격 반대 방향으로 짧은 임시 중력 더미를 표시
+
+#### 피격 연출 보조 필드
+
+- `room_snapshot` / `world_snapshot` 은 `damageEvents` 배열을 포함할 수 있다.
+- 목적은 클라이언트가 정확한 피격 방향과 위치로 파티클/히트 반응을 표시하기 위함이다.
+- 이벤트 타입:
+  ```ts
+  interface DamageAppliedEvent {
+    id: EntityId;
+    occurredAt: TimestampMs;
+    victimId: EntityId;
+    attackerId: EntityId;
+    weaponId: EntityId;
+    damage: number;
+    impactDirection: Vector2;
+    impactPoint: Vector2;
+  }
+  ```
+- 현재 2차 클라이언트 해석:
+  - `impactPoint` 기준으로 작은 파편 파티클 생성
+  - `impactDirection` 기준으로 파편 분산 방향과 사망 더미 launch 방향 보정
+- 정확 이벤트가 없을 때는 클라이언트가 `hp` 감소와 넉백 방향으로 fallback 추정을 적용한다.
 
 #### 킬로그 (`killFeed`) 규칙
 
@@ -189,7 +214,6 @@ MVP에서는 아래 정책을 사용한다.
 - `grab_ended`
 - `beam_started`
 - `beam_stopped`
-- `damage_applied`
 - `player_respawned`
 - `score_updated`
 
