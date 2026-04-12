@@ -451,6 +451,9 @@
   "equippedWeaponId": "paws",
   "equippedWeaponResource": null,
   "grabState": null,
+  "lastDeathCause": null,
+  "kills": 0,
+  "deaths": 0,
   "state": "alive"
 }
 ```
@@ -467,6 +470,16 @@
 - `dropThroughUntil`: 플랫폼 내려오기 충돌 무시 종료 시각
 - `respawnAt`: 리스폰 예정 시각
 - `grabState`: grab 중이면 대상/남은 시간 정보 포함 가능
+- `lastDeathCause`: 최근 사망 원인. 살아 있는 동안에는 보통 `null`
+- `kills`: 현재 매치 누적 킬 수
+- `deaths`: 현재 매치 누적 데스 수
+
+### `lastDeathCause` 용도
+
+- `state === "respawning"` 인 동안 클라이언트가 최근 사망 원인을 보고 연출을 다르게 적용할 수 있도록 둔 필드다.
+- 현재 1차 구현 기준:
+  - `fall_zone`, `instant_kill_hazard`: 본체 즉시 숨김
+  - `weapon`, `self`: 짧은 임시 중력 더미 연출
 
 ## 룸 설정 포맷
 
@@ -510,6 +523,7 @@
   "projectiles": [],
   "weaponPickups": [],
   "itemPickups": [],
+  "countdownMs": null,
   "timeRemainingMs": 284000,
   "killFeed": []
 }

@@ -5,27 +5,31 @@
 - 프론트엔드(Portal): **Cloudflare Pages**
 - 백엔드(Server): **Oracle Cloud 인스턴스**
 
-## 현재 상태 요약 (2026-04-10)
+## 현재 상태 요약 (2026-04-12)
 
 ### Portal
-- Cloudflare Pages direct upload 배포는 성공했다.
+- Cloudflare Pages direct upload 배포는 성공 상태다.
 - 현재 방식은 GitHub Actions가 `apps/portal/out`을 `wrangler pages deploy`로 직접 업로드한다.
+- 최신 성공 production 배포는 `main` 기준 2026-04-11 (`6f285d6`) 이다.
+
+### Game
+- Cloudflare Pages direct upload 배포는 성공 상태다.
+- 최신 성공 production 배포는 `main` 기준 2026-04-12 (`06ba3e8`) 이다.
 
 ### Server
-- Oracle Cloud 자동 배포는 다음 단계까지 확인됐다.
+- Oracle Cloud 배포 워크플로는 아래 단계를 수행한다.
   1. GitHub Actions → Oracle SSH 접속
   2. 배포 디렉터리 생성
   3. compose 실행
   4. production Docker 이미지 빌드
-  5. DB 컨테이너 기동
-  6. 배포 후 `127.0.0.1:${API_PORT}/health` 확인 및 실패 시 compose 로그 출력
-- 최신 실패 지점은 아래다.
+  5. 배포 후 `127.0.0.1:${API_PORT}/health` 확인 및 실패 시 compose 로그 출력
+- 2026-04-12 `main` push 자동 배포는 `Configure SSH` 단계에서 실패했다.
+- 같은 날 `develop` 헤드(`195c73e`) 기준 `workflow_dispatch` 수동 배포는 성공했다.
+- 즉, 최신 Oracle 성공 배포는 존재하지만, **자동 production 배포가 안정적으로 성공한 마지막 경로**와 **수동 검증 배포 경로**를 구분해서 봐야 한다.
 - 기존 배포에서는 `API_PORT=8082`처럼 외부 포트를 바꾸면 컨테이너 내부는 계속 `8081`에 publish되어 서버 헬스체크가 어긋날 수 있었다.
 - `postgres:18` 이미지는 데이터 볼륨을 `/var/lib/postgresql` 기준으로 다루므로, 기존 `/var/lib/postgresql/data` 마운트는 재시작 루프를 만들 수 있었다.
 - 이 저장소는 이제 Oracle compose에서 `API_PORT`를 내부/외부에 동일하게 적용한다.
 - Oracle compose의 Postgres 볼륨 마운트도 `postgres:18` 권장 경로에 맞췄다.
-- 그래도 가장 최근 실제 production 실행 결과는 `api` 컨테이너 unhealthy 로 끝났고, 다음 배포에서 수정 효과를 재검증해야 한다.
-  - 외부 `http://<OCI_HOST>:8082/health` 응답은 아직 실패
 
 ### 다음 디버깅 시작점
 Oracle 인스턴스에서 아래 순서로 확인하면 된다.
@@ -39,6 +43,17 @@ cat .env
 ```
 
 ## 배포 전략
+
+### 브랜치별 해석
+
+- `main`
+  - production 자동 배포 기준 브랜치
+  - Portal / Game / Server deploy workflow 의 `push.branches` 기준은 현재 모두 `main`
+- `develop`
+  - 통합 브랜치
+  - 자동 배포는 없음
+  - 필요 시 `workflow_dispatch` 로 같은 운영 대상에 수동 배포 가능
+- 즉, 현재 저장소에서 “develop에 merge됐다”와 “develop이 자동 배포된다”는 같은 뜻이 아니다.
 
 ### Portal
 - 현재 Portal은 정적 페이지 기준으로 작성되어 있다.

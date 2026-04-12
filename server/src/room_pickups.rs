@@ -185,9 +185,7 @@ impl RoomState {
         let weapon_ids: Vec<String> = self
             .weapon_pickups
             .iter()
-            .filter_map(|(id, pickup)| {
-                pickup_out_of_world(&pickup.position).then_some(id.clone())
-            })
+            .filter_map(|(id, pickup)| pickup_out_of_world(&pickup.position).then_some(id.clone()))
             .collect();
 
         for pickup_id in weapon_ids {
@@ -204,9 +202,7 @@ impl RoomState {
         let item_ids: Vec<String> = self
             .item_pickups
             .iter()
-            .filter_map(|(id, pickup)| {
-                pickup_out_of_world(&pickup.position).then_some(id.clone())
-            })
+            .filter_map(|(id, pickup)| pickup_out_of_world(&pickup.position).then_some(id.clone()))
             .collect();
 
         for pickup_id in item_ids {

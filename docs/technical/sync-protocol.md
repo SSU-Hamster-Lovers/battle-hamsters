@@ -125,6 +125,14 @@
 }
 ```
 
+#### 리스폰 연출 보조 필드
+
+- `world_snapshot.players[].lastDeathCause` 는 최근 사망 원인을 담는다.
+- 목적은 클라이언트가 리스폰 대기 중 연출을 분기하기 위함이다.
+- 현재 1차 클라이언트 해석:
+  - `fall_zone`, `instant_kill_hazard`: 본체를 즉시 숨김
+  - `weapon`, `self`: 짧은 임시 중력 더미를 표시
+
 #### 킬로그 (`killFeed`) 규칙
 
 - `room_snapshot` 과 `world_snapshot` 모두 현재 유효한 킬로그 엔트리 배열을 포함한다.

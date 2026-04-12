@@ -8,8 +8,8 @@ mod room_pickups;
 mod room_runtime;
 mod ws_runtime;
 use game_data::{
-    ground_top_y, pit_left_x, pit_right_x, primary_fall_zone, primary_instant_kill_hazard,
-    room_id, runtime_map_data, weapon_definition, world_height, HazardKind,
+    ground_top_y, pit_left_x, pit_right_x, primary_fall_zone, primary_instant_kill_hazard, room_id,
+    runtime_map_data, weapon_definition, world_height, HazardKind,
 };
 use room_combat::{respawn_player, trigger_respawn};
 use room_config::RoomGameplayConfig;
@@ -49,9 +49,9 @@ const KILL_FEED_TTL_MS: u64 = 3_500;
 const KILL_FEED_MAX_ENTRIES: usize = 16;
 const FREE_PLAY_ROOM_ID: &str = "free_play";
 const EMPTY_ROOM_TTL_MS: u64 = 600_000; // 10분, 빈 매치룸 자동 제거
-const MATCH_COUNTDOWN_MS: u64 = 5_000;   // 매치 시작 카운트다운
+const MATCH_COUNTDOWN_MS: u64 = 5_000; // 매치 시작 카운트다운
 const MATCH_RESULT_DISPLAY_MS: u64 = 5_000; // 결과 화면 유지 시간
-const MATCH_MIN_PLAYERS: usize = 2;      // 카운트다운 시작 최소 인원
+const MATCH_MIN_PLAYERS: usize = 2; // 카운트다운 시작 최소 인원
 
 #[derive(Serialize)]
 struct HealthResponse {
@@ -201,7 +201,12 @@ impl RoomState {
     }
 
     fn with_gameplay_config(gameplay_config: RoomGameplayConfig) -> Self {
-        let mut room = Self::create(room_id().to_string(), RoomType::Match, None, gameplay_config);
+        let mut room = Self::create(
+            room_id().to_string(),
+            RoomType::Match,
+            None,
+            gameplay_config,
+        );
         room.match_state = MatchState::Running;
         room
     }
@@ -209,16 +214,26 @@ impl RoomState {
     pub(crate) fn new_free_play() -> Self {
         let config = RoomGameplayConfig {
             start_hp: 100,
-            stock_lives: 255,          // 사실상 무제한
+            stock_lives: 255, // 사실상 무제한
             base_jump_count: 1,
             max_jump_count_limit: 3,
-            time_limit_ms: u64::MAX,   // 시간 제한 없음
+            time_limit_ms: u64::MAX, // 시간 제한 없음
         };
-        Self::create(FREE_PLAY_ROOM_ID.to_string(), RoomType::FreePlay, None, config)
+        Self::create(
+            FREE_PLAY_ROOM_ID.to_string(),
+            RoomType::FreePlay,
+            None,
+            config,
+        )
     }
 
     pub(crate) fn new_match(room_id: String, code: String) -> Self {
-        Self::create(room_id, RoomType::Match, Some(code), RoomGameplayConfig::default())
+        Self::create(
+            room_id,
+            RoomType::Match,
+            Some(code),
+            RoomGameplayConfig::default(),
+        )
     }
 
     fn create(
@@ -267,12 +282,7 @@ impl RoomState {
             .collect()
     }
 
-    pub(crate) fn push_kill_feed(
-        &mut self,
-        victim_id: String,
-        cause: DeathCause,
-        now_ms: u64,
-    ) {
+    pub(crate) fn push_kill_feed(&mut self, victim_id: String, cause: DeathCause, now_ms: u64) {
         self.next_kill_feed_seq += 1;
         let entry = KillFeedEntry {
             id: format!("kf_{}_{}", self.server_tick, self.next_kill_feed_seq),
@@ -324,6 +334,7 @@ impl RoomState {
             equipped_weapon_id: "paws".to_string(),
             equipped_weapon_resource: None,
             grab_state: None,
+            last_death_cause: None,
             state: PlayerState::Alive,
             kills: 0,
             deaths: 0,
@@ -581,6 +592,7 @@ struct PlayerSnapshot {
     equipped_weapon_id: String,
     equipped_weapon_resource: Option<u32>,
     grab_state: Option<GrabState>,
+    last_death_cause: Option<DeathCause>,
     state: PlayerState,
     kills: u32,
     deaths: u32,
@@ -768,6 +780,7 @@ mod tests {
                 equipped_weapon_id: "paws".to_string(),
                 equipped_weapon_resource: None,
                 grab_state: None,
+                last_death_cause: None,
                 state: PlayerState::Alive,
                 kills: 0,
                 deaths: 0,
@@ -858,7 +871,8 @@ mod tests {
     #[test]
     fn instant_kill_hazard_is_separate_from_fall_zone() {
         let ikh = primary_instant_kill_hazard();
-        let player_on_spikes = test_player(ikh.x + ikh.width / 2.0, ground_top_y() - PLAYER_HALF_SIZE);
+        let player_on_spikes =
+            test_player(ikh.x + ikh.width / 2.0, ground_top_y() - PLAYER_HALF_SIZE);
         let player_in_pit = test_player(
             (pit_left_x() + pit_right_x()) / 2.0,
             primary_fall_zone().y + PLAYER_HALF_SIZE + 1.0,
@@ -1067,6 +1081,7 @@ mod tests {
                 equipped_weapon_id: "acorn_blaster".to_string(),
                 equipped_weapon_resource: Some(1),
                 grab_state: None,
+                last_death_cause: None,
                 state: PlayerState::Alive,
                 kills: 0,
                 deaths: 0,
@@ -1108,6 +1123,7 @@ mod tests {
                 equipped_weapon_id: "paws".to_string(),
                 equipped_weapon_resource: None,
                 grab_state: None,
+                last_death_cause: None,
                 state: PlayerState::Alive,
                 kills: 0,
                 deaths: 0,
@@ -1169,7 +1185,10 @@ mod tests {
         trigger_respawn(
             &mut player,
             1000,
-            ground_top_y(),
+            DeathCause::Weapon {
+                killer_id: "enemy".to_string(),
+                weapon_id: "acorn_blaster".to_string(),
+            },
             &RoomGameplayConfig::default(),
         );
 
@@ -1181,6 +1200,12 @@ mod tests {
         assert!(!player.attack_queued);
         assert!(!player.attack_was_down);
         assert_eq!(player.next_attack_at, 0);
+        assert!(matches!(
+            player.snapshot.last_death_cause,
+            Some(DeathCause::Weapon { .. })
+        ));
+        assert_eq!(player.snapshot.position.x, 140.0);
+        assert_eq!(player.snapshot.position.y, 120.0);
     }
 
     #[test]
@@ -1194,7 +1219,7 @@ mod tests {
 
         let gameplay_config = RoomGameplayConfig::default();
         let respawn_position = spawn_position(player.spawn_index);
-        trigger_respawn(&mut player, 1000, ground_top_y(), &gameplay_config);
+        trigger_respawn(&mut player, 1000, DeathCause::FallZone, &gameplay_config);
         respawn_player(&mut player, respawn_position, &gameplay_config);
 
         assert_eq!(player.snapshot.state, PlayerState::Alive);
@@ -1203,6 +1228,7 @@ mod tests {
         assert_eq!(player.snapshot.jump_count_used, 0);
         assert_eq!(player.snapshot.equipped_weapon_id, "paws");
         assert_eq!(player.snapshot.equipped_weapon_resource, None);
+        assert!(player.snapshot.last_death_cause.is_none());
         assert_eq!(player.snapshot.hp, MAX_HP);
     }
 
@@ -1327,10 +1353,7 @@ mod tests {
 
         // Victim starts at very low HP, already inside the pit fall_zone.
         let pit_center_x = (pit_left_x() + pit_right_x()) / 2.0;
-        let mut victim = test_player(
-            pit_center_x,
-            primary_fall_zone().y + PLAYER_HALF_SIZE + 2.0,
-        );
+        let mut victim = test_player(pit_center_x, primary_fall_zone().y + PLAYER_HALF_SIZE + 2.0);
         victim.snapshot.id = "victim".to_string();
         victim.snapshot.hp = 1;
 
@@ -1493,7 +1516,12 @@ mod tests {
         player.snapshot.hp = 1;
 
         let respawn_position = spawn_position(player.spawn_index);
-        trigger_respawn(&mut player, 1000, ground_top_y(), &gameplay_config);
+        trigger_respawn(
+            &mut player,
+            1000,
+            DeathCause::InstantKillHazard,
+            &gameplay_config,
+        );
         respawn_player(&mut player, respawn_position, &gameplay_config);
 
         assert_eq!(player.snapshot.hp, gameplay_config.start_hp);
@@ -1509,10 +1537,7 @@ mod tests {
         let pit_center_x = (pit_left_x() + pit_right_x()) / 2.0;
 
         // Place victim already in the fall zone with a recent last_hit_by.
-        let mut victim = test_player(
-            pit_center_x,
-            primary_fall_zone().y + PLAYER_HALF_SIZE + 2.0,
-        );
+        let mut victim = test_player(pit_center_x, primary_fall_zone().y + PLAYER_HALF_SIZE + 2.0);
         victim.snapshot.id = "victim".to_string();
         victim.last_hit_by = Some(crate::LastHitInfo {
             killer_id: "shooter".to_string(),
@@ -1546,17 +1571,14 @@ mod tests {
         let mut room = RoomState::new();
         let pit_center_x = (pit_left_x() + pit_right_x()) / 2.0;
 
-        let mut victim = test_player(
-            pit_center_x,
-            primary_fall_zone().y + PLAYER_HALF_SIZE + 2.0,
-        );
+        let mut victim = test_player(pit_center_x, primary_fall_zone().y + PLAYER_HALF_SIZE + 2.0);
         victim.snapshot.id = "victim_stale".to_string();
         victim.last_hit_by = Some(crate::LastHitInfo {
             killer_id: "old_shooter".to_string(),
             weapon_id: "acorn_blaster".to_string(),
             hit_at_ms: 0, // 2s before tick time 2_000 — BUT 5s TTL → still within? No: 2000-0=2000 < 5000
-            // Let's use hit_at_ms that exceeds TTL: now_ms 2_000, hit 6_001ms ago → hit_at_ms = MAX or negative won't work
-            // Use a fresh tick time far in the future so TTL is exceeded
+                          // Let's use hit_at_ms that exceeds TTL: now_ms 2_000, hit 6_001ms ago → hit_at_ms = MAX or negative won't work
+                          // Use a fresh tick time far in the future so TTL is exceeded
         });
         // Override with a hit_at_ms that guarantees expiry: tick at 10_000, hit at 0 → delta 10_000 > 5_000
         room.players.insert("victim_stale".to_string(), victim);
@@ -1565,10 +1587,7 @@ mod tests {
         let snapshot = room.tick(10_000);
 
         assert_eq!(snapshot.kill_feed.len(), 1);
-        assert!(matches!(
-            snapshot.kill_feed[0].cause,
-            DeathCause::FallZone
-        ));
+        assert!(matches!(snapshot.kill_feed[0].cause, DeathCause::FallZone));
     }
 
     #[test]
@@ -1581,8 +1600,11 @@ mod tests {
         });
 
         let gameplay_config = RoomGameplayConfig::default();
-        trigger_respawn(&mut player, 2_000, ground_top_y(), &gameplay_config);
+        trigger_respawn(&mut player, 2_000, DeathCause::FallZone, &gameplay_config);
 
-        assert!(player.last_hit_by.is_none(), "last_hit_by must be cleared on respawn");
+        assert!(
+            player.last_hit_by.is_none(),
+            "last_hit_by must be cleared on respawn"
+        );
     }
 }

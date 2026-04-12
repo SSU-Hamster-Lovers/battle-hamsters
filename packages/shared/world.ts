@@ -117,6 +117,7 @@ export interface PlayerSnapshot {
   equippedWeaponId: EntityId;
   equippedWeaponResource: number | null;
   grabState: GrabState | null;
+  lastDeathCause: DeathCause | null;
   state: PlayerState;
   kills: number;
   deaths: number;

@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::game_data::{ground_top_y, runtime_map_data, world_width, HazardKind};
+use crate::game_data::{runtime_map_data, world_width, HazardKind};
 use crate::room_combat::{respawn_player, trigger_respawn};
 use crate::{
     DeathCause, MatchState, PlayerRuntime, PlayerSnapshot, PlayerState, RoomState, RoomType,
@@ -108,6 +108,7 @@ impl RoomState {
             player.snapshot.position = spawn_position(player.spawn_index);
             player.snapshot.state = PlayerState::Alive;
             player.snapshot.respawn_at = None;
+            player.snapshot.last_death_cause = None;
         }
 
         // 무기/아이템 초기화
@@ -134,6 +135,7 @@ impl RoomState {
             player.snapshot.position = spawn_position(player.spawn_index);
             player.snapshot.state = PlayerState::Alive;
             player.snapshot.respawn_at = None;
+            player.snapshot.last_death_cause = None;
         }
 
         self.weapon_pickups.clear();
@@ -204,9 +206,9 @@ impl RoomState {
                 victim.snapshot.deaths += 1;
             }
 
-            self.push_kill_feed(player_id.clone(), cause, now_ms);
+            self.push_kill_feed(player_id.clone(), cause.clone(), now_ms);
             if let Some(player) = self.players.get_mut(&player_id) {
-                trigger_respawn(player, now_ms, ground_top_y(), &self.gameplay_config);
+                trigger_respawn(player, now_ms, cause, &self.gameplay_config);
             }
         }
     }
@@ -215,17 +217,12 @@ impl RoomState {
         if self.match_state != MatchState::Waiting {
             return None;
         }
-        self.countdown_start_ms.map(|start| {
-            MATCH_COUNTDOWN_MS.saturating_sub(now_ms.saturating_sub(start))
-        })
+        self.countdown_start_ms
+            .map(|start| MATCH_COUNTDOWN_MS.saturating_sub(now_ms.saturating_sub(start)))
     }
 }
 
-fn hazard_death_cause(
-    player: &PlayerRuntime,
-    kind: HazardKind,
-    now_ms: u64,
-) -> DeathCause {
+fn hazard_death_cause(player: &PlayerRuntime, kind: HazardKind, now_ms: u64) -> DeathCause {
     if let Some(ref hit) = player.last_hit_by {
         if now_ms.saturating_sub(hit.hit_at_ms) <= LAST_HIT_TTL_MS {
             return DeathCause::Weapon {

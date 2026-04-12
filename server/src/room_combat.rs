@@ -2,7 +2,8 @@ use std::collections::HashSet;
 
 use crate::{
     room_config::RoomGameplayConfig, weapon_definition, DeathCause, Direction, FireMode, HitType,
-    LastHitInfo, PlayerRuntime, PlayerState, RoomState, Vector2, PLAYER_HALF_SIZE, RESPAWN_DELAY_MS,
+    LastHitInfo, PlayerRuntime, PlayerState, RoomState, Vector2, PLAYER_HALF_SIZE,
+    RESPAWN_DELAY_MS,
 };
 
 impl RoomState {
@@ -196,7 +197,7 @@ pub(crate) fn reset_general_combat_state(
 pub(crate) fn trigger_respawn(
     player: &mut PlayerRuntime,
     now_ms: u64,
-    ground_top_y: f64,
+    cause: DeathCause,
     gameplay_config: &RoomGameplayConfig,
 ) {
     if player.snapshot.lives > 0 {
@@ -206,8 +207,8 @@ pub(crate) fn trigger_respawn(
     player.snapshot.hp = 0;
     player.snapshot.state = PlayerState::Respawning;
     player.snapshot.respawn_at = Some(now_ms + RESPAWN_DELAY_MS);
+    player.snapshot.last_death_cause = Some(cause);
     reset_general_combat_state(player, gameplay_config);
-    player.snapshot.position.y = ground_top_y + 80.0;
 }
 
 pub(crate) fn respawn_player(
@@ -219,6 +220,7 @@ pub(crate) fn respawn_player(
     reset_general_combat_state(player, gameplay_config);
     player.snapshot.hp = gameplay_config.start_hp;
     player.snapshot.respawn_at = None;
+    player.snapshot.last_death_cause = None;
     player.snapshot.state = PlayerState::Alive;
 }
 
