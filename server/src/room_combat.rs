@@ -25,9 +25,77 @@ impl RoomState {
         }
 
         let weapon_id = shooter_view.snapshot.equipped_weapon_id.clone();
-        if weapon_id == "paws" {
+
+        // Melee weapons (infinite resource, cone-based hit detection)
+        if matches!(weapon_definition(&weapon_id).hit_type, HitType::Melee) {
+            let weapon = weapon_definition(&weapon_id);
+            let shooter_position = shooter_view.snapshot.position.clone();
+            let aim_direction = normalize_or_fallback(
+                shooter_view.latest_input.aim.clone(),
+                shooter_view.snapshot.direction,
+            );
+            // shooter_view is no longer used below this line
+
             if let Some(shooter) = self.players.get_mut(player_id) {
+                shooter.next_attack_at = now_ms + weapon.attack_interval_ms;
                 shooter.attack_queued = false;
+            }
+
+            let target_id = self.find_melee_target(
+                player_id,
+                &shooter_position,
+                &aim_direction,
+                weapon.range,
+                dying_this_tick,
+            );
+
+            if let Some(target_id) = target_id {
+                let target_position = self
+                    .players
+                    .get(&target_id)
+                    .expect("target should exist")
+                    .snapshot
+                    .position
+                    .clone();
+                let impact_point = Vector2 {
+                    x: target_position.x - aim_direction.x * PLAYER_HALF_SIZE * 0.5,
+                    y: target_position.y - aim_direction.y * PLAYER_HALF_SIZE * 0.5,
+                };
+                let weapon_damage = weapon.damage;
+                let weapon_knockback = weapon.knockback;
+                let target_hp_after_hit = {
+                    let target = self
+                        .players
+                        .get_mut(&target_id)
+                        .expect("target should exist");
+                    target.external_velocity.x += aim_direction.x * weapon_knockback;
+                    target.external_velocity.y += aim_direction.y * weapon_knockback;
+                    target.snapshot.hp = target.snapshot.hp.saturating_sub(weapon_damage);
+                    target.last_hit_by = Some(LastHitInfo {
+                        killer_id: player_id.to_string(),
+                        weapon_id: weapon_id.clone(),
+                        hit_at_ms: now_ms,
+                    });
+                    target.snapshot.hp
+                };
+                self.push_damage_event(
+                    target_id.clone(),
+                    player_id.to_string(),
+                    weapon_id.clone(),
+                    weapon_damage,
+                    aim_direction,
+                    impact_point,
+                    now_ms,
+                );
+                if target_hp_after_hit == 0 && dying_this_tick.insert(target_id.clone()) {
+                    deaths.push((
+                        target_id,
+                        DeathCause::Weapon {
+                            killer_id: player_id.to_string(),
+                            weapon_id: weapon_id.clone(),
+                        },
+                    ));
+                }
             }
             return;
         }
@@ -156,6 +224,52 @@ impl RoomState {
                 ));
             }
         }
+    }
+
+    fn find_melee_target(
+        &self,
+        attacker_id: &str,
+        attacker_position: &Vector2,
+        aim_direction: &Vector2,
+        range: f64,
+        dying_this_tick: &HashSet<String>,
+    ) -> Option<String> {
+        // Truncated cone: starts at PLAYER_HALF_SIZE (body edge) from attacker center,
+        // ends at PLAYER_HALF_SIZE + range. Half-width grows linearly from
+        // PLAYER_HALF_SIZE * 0.5 (narrow) to PLAYER_HALF_SIZE * 1.5 (wide).
+        let hit_start = PLAYER_HALF_SIZE;
+        let hit_end = PLAYER_HALF_SIZE + range;
+        let near_half_w = PLAYER_HALF_SIZE * 0.5;
+        let far_half_w = PLAYER_HALF_SIZE * 1.5;
+
+        self.players
+            .iter()
+            .filter(|(id, target)| {
+                id.as_str() != attacker_id
+                    && target.snapshot.state == PlayerState::Alive
+                    && !dying_this_tick.contains(id.as_str())
+            })
+            .filter_map(|(id, target)| {
+                let to_target = Vector2 {
+                    x: target.snapshot.position.x - attacker_position.x,
+                    y: target.snapshot.position.y - attacker_position.y,
+                };
+                let d_forward = dot(&to_target, aim_direction);
+                if !(hit_start..=hit_end).contains(&d_forward) {
+                    return None;
+                }
+                // 2D cross product magnitude = perpendicular distance to aim axis
+                let d_perp =
+                    (to_target.x * aim_direction.y - to_target.y * aim_direction.x).abs();
+                let t = (d_forward - hit_start) / range;
+                let max_half_w = near_half_w + (far_half_w - near_half_w) * t;
+                if d_perp > max_half_w {
+                    return None;
+                }
+                Some((id.clone(), d_forward))
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(id, _)| id)
     }
 
     fn find_hitscan_target(
