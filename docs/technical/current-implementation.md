@@ -90,15 +90,22 @@
 - 월드 무기 pickup은 기본 fallback 도형/라벨을 유지하되, `Acorn Blaster` 는 1차 전용 pickup sprite + `AB` glyph + source accent 로 렌더링한다.
 - 월드 아이템 pickup을 간단한 다이아몬드 도형/라벨로 렌더링한다.
 - `Acorn Blaster` 장착 시 손 앞에 1차 무기 overlay 를 렌더링한다.
-- HUD 텍스트에 현재 장착 무기, 탄 수, HP, 킬/데스, 생명, 남은 시간을 표시한다.
-- 발사 시 로컬 보조용 무기별 연출 1차를 적용한다.
+- 하단 고정 HUD 바 (y=512~600, 88px):
+  - 좌측: 로컬 플레이어 카드 (수직 HP 바 4구간 세그먼트, 생명 씨앗 아이콘, 킬 skull 아이콘, 햄스터 얼굴 플레이스홀더, 닉네임/무기/탄 수)
+  - 중앙: 타이머 (10초 이하 적색 강조)
+  - 우측: 상대 카드 (킬 최다 플레이어, 없으면 빈 카드)
+  - 기존 텍스트 HUD는 debug 모드에서만 표시
+- 무기 아이콘 레지스트리: `getWeaponHudTextureKey(weaponId)` → `RenderTexture` 코드 생성 아이콘 (`paws`, `acorn_blaster`, fallback)
+- 발사 시 로컬 보조용 무기별 연출을 적용한다.
   - `Acorn Blaster`: 총구 화염 + 짧은 tracer
-  - `Paws`: 원형 pulse
+  - `Paws`: 에임 방향으로 내지르는 사다리꼴 원뿔(truncated cone) flash
   - 그 외: 기존 선형 fallback
 - 피격 연출 1차/2차를 적용한다.
   - `damageEvents` 가 있으면 정확한 `impactPoint` / `impactDirection` 기준으로 작은 파편 파티클을 생성한다.
   - 정확 이벤트가 없을 때는 `hp` 감소와 넉백 방향으로 fallback 파티클을 생성한다.
-- 우상단에 킬로그 스택을 렌더링한다.
+- 우상단에 킬로그 스택을 `Container` 기반 카드로 렌더링한다.
+  - `weapon` 킬: 공격자명 | 무기 아이콘(HUD 아이콘 재사용) | 피해자명
+  - 낙사/함정/자살: 텍스트 카드
 - 매치 상태별 UI:
   - `Waiting`: 대기 / 카운트다운 오버레이
   - `Running`: 기존 플레이 + 남은 시간
@@ -167,7 +174,9 @@
 
 ### 전투
 
-- `Acorn Blaster` 1종만 실제 발사/피격/넉백/자기 반동/탄 소모/빈 무기 폐기를 처리한다.
+- `Acorn Blaster`, `Paws` 두 무기에 대해 서버 판정을 구현한다.
+- `Paws` 근접 판정: 에임 방향 원뿔(hit_start=14px, hit_end=56px, near_half_w=7px, far_half_w=21px), 가장 가까운 단일 타겟, damage=8, knockback=3, cooldown=350ms.
+- `Acorn Blaster` 히트스캔 발사
 - 월드 무기는 `E`로 명시적으로 획득하고 `Q`로 드롭한다.
 - 월드 아이템은 닿으면 자동으로 획득한다.
 - `jump_boost_small`은 `maxJumpCount`를 `1..3` 범위에서 증가시키고, `health_pack_small`은 HP를 최대치까지 회복한다.
