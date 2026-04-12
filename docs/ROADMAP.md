@@ -91,9 +91,10 @@
 
 1. 하단 플레이어 상태 HUD 실제 배치
 2. 킬로그 카드 + 아이콘 레이아웃
-3. 사망 더미를 실제 래그돌/시체 연출로 확장
-4. PostgreSQL 스키마 및 마이그레이션 구조 정의
-5. `develop` preview / staging 배포 전략 분리
+3. 무기별 피격 파티클 차별화
+4. 사망 더미를 실제 래그돌/시체 연출로 확장
+5. PostgreSQL 스키마 및 마이그레이션 구조 정의
+6. `develop` preview / staging 배포 전략 분리
 
 ### 나중에 할 일
 
@@ -108,6 +109,8 @@
    - `docs/technical/mini-spec-lobby-channel-system.md`
    - `docs/technical/mini-spec-spawn-modes-v1.md`
    - `docs/technical/mini-spec-weapon-presentation-v1.md`
+   - `docs/technical/mini-spec-impact-feedback-v1.md`
+   - `docs/technical/mini-spec-combat-presentation-polish-v0.md`
 
 ---
 
