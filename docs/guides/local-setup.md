@@ -25,17 +25,45 @@ pnpm install
 
 ### 3. 개발 서버 실행
 
-현재는 루트 `pnpm dev` 스크립트가 없으므로, 필요한 앱만 개별 실행합니다.
+기본 권장 방식은 루트 스크립트를 사용하는 것이다.
 
 ```bash
-# Portal
-cd apps/portal && pnpm dev
+# Server + Portal + Game 동시 실행
+pnpm dev
 
-# Game
-cd apps/game && pnpm dev
+# Portal + Game 만 실행
+pnpm dev:web
 
-# Server (recommended)
-cd server && docker compose up --build
+# 개별 실행
+pnpm dev:server
+pnpm dev:portal
+pnpm dev:game
+```
+
+루트 스크립트는 `server/.env`, `server/.env.local`, 루트 `.env`, 루트 `.env.local` 을 읽고 아래 값을 맞춰서 사용한다.
+
+- `API_HOST`, `API_PORT`
+- `PORTAL_HOST`, `PORTAL_PORT`
+- `GAME_HOST`, `GAME_PORT`
+- `PUBLIC_SERVER_HOST`
+- `PUBLIC_GAME_HOST`
+
+프런트는 위 값을 바탕으로 아래 주소를 자동 구성한다.
+
+- `NEXT_PUBLIC_SERVER_API_URL=http://{PUBLIC_SERVER_HOST}:{API_PORT}`
+- `NEXT_PUBLIC_GAME_URL=http://{PUBLIC_GAME_HOST}:{GAME_PORT}`
+- `VITE_SERVER_WS_URL=ws://{PUBLIC_SERVER_HOST}:{API_PORT}/ws`
+
+같은 PC에서만 개발하면 기본값으로 충분하다.
+다른 기기나 Tailscale 에서 붙으려면 `PUBLIC_SERVER_HOST`, `PUBLIC_GAME_HOST` 를 실제 접속 가능한 IP 또는 DNS 로 맞춘다.
+
+예시:
+
+```bash
+cat <<'EOF' > .env.local
+PUBLIC_SERVER_HOST=100.113.188.126
+PUBLIC_GAME_HOST=100.113.188.126
+EOF
 ```
 
 ## 프로젝트 구조
@@ -78,8 +106,7 @@ pnpm typecheck    # TypeScript 검사
 권장 방식:
 
 ```bash
-cd server
-docker compose up --build  # DB + API 서버 실행
+pnpm dev:server
 ```
 
 대안:
@@ -89,6 +116,14 @@ cd server
 docker compose up -d db    # PostgreSQL 실행
 cargo run                  # 서버 실행
 cargo test                 # 테스트
+```
+
+서버는 시작 시 `.env` / `.env.local` 을 읽고 `API_HOST`, `API_PORT` 를 적용한다.
+예를 들어 `server/.env.local` 에 아래처럼 두면 된다.
+
+```bash
+API_HOST=0.0.0.0
+API_PORT=18081
 ```
 
 ## 문서 우선 원칙

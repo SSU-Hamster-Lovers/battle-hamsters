@@ -722,8 +722,14 @@ fn serialize_message<T: Serialize>(
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    let _ = dotenvy::from_filename(".env");
+    let _ = dotenvy::from_filename_override(".env.local");
+    let _ = dotenvy::from_filename_override("server/.env");
+    let _ = dotenvy::from_filename_override("server/.env.local");
+
     env_logger::init_from_env(env_logger::Env::default().default_filter_or("info"));
 
+    let api_host = std::env::var("API_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
     let api_port: u16 = std::env::var("API_PORT")
         .unwrap_or_else(|_| "8081".to_string())
         .parse()
@@ -732,7 +738,11 @@ async fn main() -> std::io::Result<()> {
     let app_state = web::Data::new(AppState::new());
     start_room_loop(app_state.clone());
 
-    log::info!("Starting Battle Hamsters Server on port {}", api_port);
+    log::info!(
+        "Starting Battle Hamsters Server on {}:{}",
+        api_host,
+        api_port
+    );
 
     HttpServer::new(move || {
         let cors = Cors::default()
@@ -751,7 +761,7 @@ async fn main() -> std::io::Result<()> {
             .route("/rooms/free", web::get().to(free_room))
             .route("/ws", web::get().to(ws_handler))
     })
-    .bind(("0.0.0.0", api_port))?
+    .bind((api_host.as_str(), api_port))?
     .run()
     .await
 }

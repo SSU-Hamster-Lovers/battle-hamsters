@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host ${GAME_HOST:-0.0.0.0} --port ${GAME_PORT:-5173}",
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"

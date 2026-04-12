@@ -1,0 +1,12 @@
+{
+  "name": "battle-hamsters-workspace",
+  "private": true,
+  "packageManager": "pnpm@8.15.8",
+  "scripts": {
+    "dev": "bash scripts/dev-all.sh",
+    "dev:web": "bash scripts/dev-web.sh",
+    "dev:server": "bash scripts/dev-server.sh",
+    "dev:portal": "bash scripts/dev-portal.sh",
+    "dev:game": "bash scripts/dev-game.sh"
+  }
+}
