@@ -285,7 +285,17 @@
 - **클라이언트**: `pine_sniper` pickup 스프라이트 (72×40, 긴 금속 총신 + 솔방울 개머리판 + 스코프) + equip 오버레이 (52×16) + HUD 아이콘 (24×24).
 - **클라이언트**: `WeaponFireStyle: "sniper_flash"`. 길고 얇은 흰색 트레이서(500px, 2px 두께) + muzzle 섬광(반지름 5) + 스코프 시안 글린트. 지속 80ms.
 - **단위 테스트 2개 추가**: `pine_sniper_hits_target_in_range`, `pine_sniper_consumes_resource_per_shot`.
-- **맵 스폰 포인트 미포함**: `training-arena.json` 수정은 map-rework-v2 브랜치에서 처리.
+- **맵 스폰**: `training-arena.json` 우측 고지대(x=1400, y=343) 고정 스폰. map-rework-v2와 함께 반영.
+
+### 훈련 아레나 맵 리워크 (feat/map-rework-v2 완료)
+
+- **맵 레이아웃**: 지상(680) → 저층(570) → 중층(460) → 고지대(350) 4단 구조. 단일 점프로 인접 층 이동 가능.
+- **플랫폼 재배치**: 좌/우 벙커(상·하층) + 좌/우 mid-lane + 중앙 테라스 + 좌/우/중앙 고지대 3개.
+- **pit wall** 제거, `solid_wall` 경계는 좌/우 맵 끝에만 유지.
+- **무기 스폰 재배치**: 좌측 벙커(acorn) / 좌측 지상(ember) / 중앙 고지대(walnut_cannon, airdrop) / 우측 벙커(seed) / 우측 고지대(pine_sniper, airdrop) / 좌우 mid-lane 랜덤 후보군.
+- **스폰포인트 7개**: 상단 3 + 중층 2 + 저층 2.
+- **클라이언트**: `instant_kill_hazard`를 단색 사각형 대신 상향 가시 strip으로 렌더링.
+- **서버 테스트 갱신**: 스폰 카운트 7, 새 좌표 기준 어설션, 플랫폼 이름 갱신.
 
 ### 원웨이 플랫폼 하강 (fix/one-way-drop-through-v1 완료)
 
@@ -295,7 +305,7 @@
 
 ## 다음 구현 우선순위
 
-1. 무기 추가 계속 (목표 16~20종) — 현재 6종 구현
+1. 무기 추가 계속 (목표 16~20종) — 현재 6종 구현 (map-rework-v2 이후 pine_sniper 맵 등재 포함)
 2. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체 (투사체 texture hookup 포함)
 3. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
 4. `develop` preview / staging 배포 전략 분리
@@ -328,4 +338,5 @@
 - 픽업 소멸 VFX 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-pickup-despawn-vfx-v1.md`
 - 불씨 뿌리개(flamethrower) 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-flamethrower-v1.md`
 - 솔방울 저격총(pine sniper) 완료 미니 스펙: `docs/technical/mini-spec-pine-sniper-v1.md`
+- 훈련 아레나 맵 리워크 v2 완료 미니 스펙: `docs/technical/mini-spec-map-rework-v2.md`
 - 씨앗 샷건 + 호두 대포 스프라이트 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-weapon-sprites-v2.md`

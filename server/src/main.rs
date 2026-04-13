@@ -1107,8 +1107,8 @@ mod tests {
     #[test]
     fn room_starts_with_spawned_weapon_pickup() {
         let room = RoomState::new();
-        // 좌/우 random 후보 각 1개 + 고정 4개(acorn/walnut/ember/seed) = 6개
-        assert_eq!(room.weapon_pickups.len(), 6);
+        // 좌/우 random 후보 각 1개 + 고정 5개(acorn/walnut/ember/seed/pine_sniper) = 7개
+        assert_eq!(room.weapon_pickups.len(), 7);
 
         let pickups: Vec<_> = room.weapon_pickups.values().collect();
 
@@ -1145,6 +1145,11 @@ mod tests {
             pickups
                 .iter()
                 .any(|p| p.weapon_id == "seed_shotgun" && p.position.x as u32 == 1370)
+        );
+        assert!(
+            pickups
+                .iter()
+                .any(|p| p.weapon_id == "pine_sniper" && p.position.x as u32 == 1400)
         );
     }
 

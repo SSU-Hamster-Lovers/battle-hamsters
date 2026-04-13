@@ -319,6 +319,17 @@
       "spawnStyle": "fade_in",
       "despawnStyle": "shrink_pop",
       "mode": "fixed"
+    },
+    {
+      "id": "weapon_highground_right_pine",
+      "weaponId": "pine_sniper",
+      "x": 1400,
+      "y": 343,
+      "respawnMs": 15000,
+      "despawnAfterMs": 10000,
+      "spawnStyle": "airdrop",
+      "despawnStyle": "shrink_pop",
+      "mode": "fixed"
     }
   ],
   "itemSpawns": [
