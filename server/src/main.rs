@@ -194,6 +194,9 @@ struct PlayerRuntime {
     attack_was_down: bool,
     last_hit_by: Option<LastHitInfo>,
     active_burn: Option<BurnEffect>,
+    /// 현재 drop-through 중인 source 플랫폼 ID. 이 ID의 플랫폼만 착지 판정에서 제외한다.
+    /// 서버 런타임 전용 — 스냅샷에 포함하지 않는다.
+    drop_through_platform_id: Option<String>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -458,6 +461,7 @@ impl RoomState {
                 attack_was_down: false,
                 last_hit_by: None,
                 active_burn: None,
+                drop_through_platform_id: None,
             },
         );
 
@@ -939,6 +943,7 @@ mod tests {
             attack_was_down: false,
             last_hit_by: None,
             active_burn: None,
+            drop_through_platform_id: None,
         }
     }
 
@@ -1102,8 +1107,8 @@ mod tests {
     #[test]
     fn room_starts_with_spawned_weapon_pickup() {
         let room = RoomState::new();
-        // weapon_group 후보 1개 + 중앙 hand_cannon 1개 + 좌측 armory 3개 = 5개
-        assert_eq!(room.weapon_pickups.len(), 5);
+        // weapon_group 후보 1개 + 중앙 hand_cannon 1개 + 좌측 armory 4개(acorn/seed/hand/ember) = 6개
+        assert_eq!(room.weapon_pickups.len(), 6);
 
         let pickups: Vec<_> = room.weapon_pickups.values().collect();
 
@@ -1128,6 +1133,7 @@ mod tests {
         assert!(pickups.iter().any(|p| p.weapon_id == "acorn_blaster" && p.position.x as u32 == 130));
         assert!(pickups.iter().any(|p| p.weapon_id == "seed_shotgun" && p.position.x as u32 == 250));
         assert!(pickups.iter().any(|p| p.weapon_id == "hand_cannon" && p.position.x as u32 == 370));
+        assert!(pickups.iter().any(|p| p.weapon_id == "ember_sprinkler" && p.position.x as u32 == 490));
     }
 
     #[test]
@@ -1334,6 +1340,7 @@ mod tests {
             attack_was_down: true,
             last_hit_by: None,
             active_burn: None,
+            drop_through_platform_id: None,
         };
 
         let target = PlayerRuntime {
@@ -1369,6 +1376,7 @@ mod tests {
             attack_was_down: false,
             last_hit_by: None,
             active_burn: None,
+            drop_through_platform_id: None,
         };
 
         room.players.insert("shooter".to_string(), shooter);
@@ -2191,6 +2199,164 @@ mod tests {
         assert!(
             player.last_hit_by.is_none(),
             "last_hit_by must be cleared on respawn"
+        );
+    }
+
+    // platform_left: topY=480, x=180-560
+    // armory_shelf_lower: topY=520, x=80-420
+    // x=300 은 두 플랫폼 x 범위 모두에 포함되고, 수직 간격은 40px.
+    // 버그 조건: 기존 전역 시간 무시(drop_active)는 armory_shelf_lower까지 함께 건너뜀 → 두 플랫폼을 한 번에 통과
+    // 수정 후: source 플랫폼(platform_left)만 무시하고 armory_shelf_lower에 정상 착지해야 함
+    #[test]
+    fn drop_through_skips_only_source_platform_not_adjacent_platform_below() {
+        let platform_left_top_y = 480.0;
+        let armory_shelf_lower_top_y = 520.0;
+        let test_x = 300.0;
+
+        let mut player = test_player(test_x, platform_left_top_y - PLAYER_HALF_SIZE);
+        player.snapshot.grounded = true;
+
+        // Tick 0: jump + down → drop-through 트리거
+        player.latest_input.jump = true;
+        player.latest_input.movement = Vector2 { x: 0.0, y: 1.0 };
+        step_player(&mut player, 0);
+
+        assert!(!player.snapshot.grounded, "drop 직후에는 공중이어야 함");
+        assert!(
+            player.snapshot.drop_through_until.is_some(),
+            "drop_through_until이 설정되어 있어야 함"
+        );
+
+        // Tick 1~8: down 유지(급강하), jump 해제
+        player.latest_input.jump = false;
+        for i in 1..=8u64 {
+            let now = i * 50;
+            step_player(&mut player, now);
+            if player.snapshot.grounded {
+                break;
+            }
+        }
+
+        assert!(
+            player.snapshot.grounded,
+            "armory_shelf_lower에 착지해야 함 (두 플랫폼을 한 번에 통과하면 안 됨)"
+        );
+        assert_approx_eq(
+            player.snapshot.position.y,
+            armory_shelf_lower_top_y - PLAYER_HALF_SIZE,
+        );
+    }
+
+    // 버튼을 계속 누르고 있을 때 쿨다운이 만료되면 자동으로 재발사되어야 한다.
+    // 기존 버그: attack_queued는 attack_pressed(edge trigger)에서만 설정되므로,
+    // 버튼을 누르고 있어도 쿨다운 후 자동 재발사가 이루어지지 않았음.
+    #[test]
+    fn held_attack_auto_requeues_after_cooldown_expires() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(140.0, 120.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "seed_shotgun".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(4);
+        shooter.latest_input.sequence = 1;
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.latest_input.attack = true; // 버튼 누르고 있음 (held)
+        shooter.latest_input.attack_pressed = false; // 처음 누른 순간이 아님
+        shooter.attack_queued = false; // 이전 발사 후 queued 해제됨
+        shooter.attack_was_down = true; // 버튼 계속 누르고 있음
+        shooter.next_attack_at = 500; // 쿨다운 만료 (now_ms=1000 > 500)
+
+        room.players.insert("shooter".to_string(), shooter);
+
+        room.tick(1000);
+
+        // auto-requeue로 발사되었어야 함
+        assert!(
+            !room.projectiles.is_empty(),
+            "버튼을 누르고 있는 동안 쿨다운이 만료되면 자동으로 재발사되어야 함"
+        );
+        let shooter_after = room.players.get("shooter").unwrap();
+        assert_eq!(
+            shooter_after.snapshot.equipped_weapon_resource,
+            Some(3),
+            "발사 시 resource가 소비되어야 함"
+        );
+    }
+
+    // ember_sprinkler: 맞은 대상에게 Burn DoT가 적용되어야 한다.
+    // 현재 JSON은 specialEffect: none이므로 이 테스트는 RED 상태.
+    #[test]
+    fn ember_sprinkler_applies_burn_on_hit() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(140.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "ember_sprinkler".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(100);
+        shooter.latest_input.sequence = 1;
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        // 사정거리(170px) 안쪽에 있는 대상
+        let mut target = test_player(250.0, 300.0);
+        target.snapshot.id = "target".to_string();
+        target.snapshot.name = "target".to_string();
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let target_after = room.players.get("target").unwrap();
+        assert!(
+            target_after.active_burn.is_some(),
+            "ember_sprinkler 명중 시 Burn DoT가 적용되어야 함"
+        );
+    }
+
+    // ember_sprinkler: 넓은 cone이므로 Paws 범위 밖에 있는 대상도 맞아야 한다.
+    #[test]
+    fn ember_sprinkler_wider_cone_hits_target_outside_paws_range() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(140.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "ember_sprinkler".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(100);
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        // 사거리 안쪽(120px)이지만 aim 축에서 35px 옆에 위치 → Paws cone(far_half_w=21)은 빗나감
+        // ember_sprinkler cone(far_half_w=60)은 맞아야 함
+        let mut target = test_player(260.0, 265.0);
+        target.snapshot.id = "target".to_string();
+        target.snapshot.name = "target".to_string();
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let target_after = room.players.get("target").unwrap();
+        assert!(
+            target_after.snapshot.hp < 100,
+            "ember_sprinkler 넓은 cone으로 인해 옆에 있는 대상도 맞아야 함 (hp={})",
+            target_after.snapshot.hp
         );
     }
 }

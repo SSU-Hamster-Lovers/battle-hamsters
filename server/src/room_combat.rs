@@ -37,11 +37,36 @@ impl RoomState {
                 shooter_view.latest_input.aim.clone(),
                 shooter_view.snapshot.direction,
             );
+            // magazine 모델 근접 무기: 탄약 잔량을 여기서 읽어 둔다 (shooter_view 마지막 사용)
+            let melee_resource_before = shooter_view.snapshot.equipped_weapon_resource;
             // shooter_view is no longer used below this line
+
+            // 탄약 부족 시 공격 취소
+            if weapon.resource_per_shot > 0 {
+                let resource = melee_resource_before.unwrap_or(0);
+                if resource < weapon.resource_per_shot {
+                    if let Some(shooter) = self.players.get_mut(player_id) {
+                        shooter.attack_queued = false;
+                    }
+                    return;
+                }
+            }
 
             if let Some(shooter) = self.players.get_mut(player_id) {
                 shooter.next_attack_at = now_ms + weapon.attack_interval_ms;
                 shooter.attack_queued = false;
+                // 탄 소모 (magazine 모델 근접 무기)
+                if weapon.resource_per_shot > 0 {
+                    if let Some(res) = melee_resource_before {
+                        let remaining = res.saturating_sub(weapon.resource_per_shot);
+                        if remaining == 0 && weapon.discard_on_empty {
+                            shooter.snapshot.equipped_weapon_id = "paws".to_string();
+                            shooter.snapshot.equipped_weapon_resource = None;
+                        } else {
+                            shooter.snapshot.equipped_weapon_resource = Some(remaining);
+                        }
+                    }
+                }
             }
 
             let target_id = self.find_melee_target(
@@ -49,6 +74,8 @@ impl RoomState {
                 &shooter_position,
                 &aim_direction,
                 weapon.range,
+                weapon.melee_cone_near_half_width,
+                weapon.melee_cone_far_half_width,
                 dying_this_tick,
             );
 
@@ -292,15 +319,17 @@ impl RoomState {
         attacker_position: &Vector2,
         aim_direction: &Vector2,
         range: f64,
+        near_half_width: Option<f64>,
+        far_half_width: Option<f64>,
         dying_this_tick: &HashSet<String>,
     ) -> Option<String> {
         // Truncated cone: starts at PLAYER_HALF_SIZE (body edge) from attacker center,
-        // ends at PLAYER_HALF_SIZE + range. Half-width grows linearly from
-        // PLAYER_HALF_SIZE * 0.5 (narrow) to PLAYER_HALF_SIZE * 1.5 (wide).
+        // ends at PLAYER_HALF_SIZE + range. Half-width grows linearly from near to far.
+        // Weapon JSON can override near/far half-widths; otherwise uses Paws defaults.
         let hit_start = PLAYER_HALF_SIZE;
         let hit_end = PLAYER_HALF_SIZE + range;
-        let near_half_w = PLAYER_HALF_SIZE * 0.5;
-        let far_half_w = PLAYER_HALF_SIZE * 1.5;
+        let near_half_w = near_half_width.unwrap_or(PLAYER_HALF_SIZE * 0.5);
+        let far_half_w = far_half_width.unwrap_or(PLAYER_HALF_SIZE * 1.5);
 
         self.players
             .iter()
@@ -496,8 +525,21 @@ pub(crate) fn apply_or_refresh_burn(
     tick_interval_ms: u64,
 ) {
     let expires_at = now_ms + duration_ms;
-    let next_tick_at = now_ms + tick_interval_ms;
 
+    if let Some(existing) = player.active_burn.as_mut() {
+        // 지속시간만 연장한다. next_tick_at은 유지하여 연속 공격 중에도 틱이 정상 발동한다.
+        // (매 hit마다 next_tick_at을 리셋하면 연속 공격 시 틱이 영원히 미뤄지는 버그 발생)
+        existing.expires_at = expires_at;
+        existing.killer_id = killer_id.clone();
+        existing.weapon_id = weapon_id.clone();
+        if let Some(effect) = player.snapshot.effects.iter_mut().find(|e| e.kind == "burn") {
+            effect.expires_at = expires_at;
+        }
+        return;
+    }
+
+    // 신규 번 효과: next_tick_at 초기화
+    let next_tick_at = now_ms + tick_interval_ms;
     player.active_burn = Some(BurnEffect {
         killer_id: killer_id.clone(),
         weapon_id: weapon_id.clone(),
@@ -506,7 +548,6 @@ pub(crate) fn apply_or_refresh_burn(
         tick_damage,
         tick_interval_ms,
     });
-
     player.snapshot.effects.clear();
     player.snapshot.effects.push(StatusEffectSnapshot {
         kind: "burn",

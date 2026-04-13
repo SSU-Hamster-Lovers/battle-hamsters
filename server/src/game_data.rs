@@ -257,6 +257,10 @@ pub(crate) struct RuntimeWeaponDefinition {
     pub(crate) aim_profile: Option<RuntimeWeaponAimProfile>,
     #[serde(default)]
     pub(crate) projectile_gravity_per_sec2: f64,
+    #[serde(rename = "meleeConeNearHalfWidth")]
+    pub(crate) melee_cone_near_half_width: Option<f64>,
+    #[serde(rename = "meleeConeFarHalfWidth")]
+    pub(crate) melee_cone_far_half_width: Option<f64>,
 }
 
 #[allow(dead_code)]
@@ -417,6 +421,8 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
         let acorn_raw = include_str!("../../packages/shared/weapons/acorn-blaster.json");
         let seed_shotgun_raw = include_str!("../../packages/shared/weapons/seed-shotgun.json");
         let hand_cannon_raw = include_str!("../../packages/shared/weapons/hand-cannon.json");
+        let ember_sprinkler_raw =
+            include_str!("../../packages/shared/weapons/ember-sprinkler.json");
 
         let paws: RuntimeWeaponDefinition =
             serde_json::from_str(paws_raw).expect("paws JSON should deserialize");
@@ -426,12 +432,15 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
             serde_json::from_str(seed_shotgun_raw).expect("seed shotgun JSON should deserialize");
         let hand_cannon: RuntimeWeaponDefinition =
             serde_json::from_str(hand_cannon_raw).expect("hand cannon JSON should deserialize");
+        let ember_sprinkler: RuntimeWeaponDefinition = serde_json::from_str(ember_sprinkler_raw)
+            .expect("ember sprinkler JSON should deserialize");
 
         HashMap::from([
             (paws.id.clone(), paws),
             (acorn.id.clone(), acorn),
             (seed_shotgun.id.clone(), seed_shotgun),
             (hand_cannon.id.clone(), hand_cannon),
+            (ember_sprinkler.id.clone(), ember_sprinkler),
         ])
     })
 }

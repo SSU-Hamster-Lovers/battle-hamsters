@@ -208,6 +208,17 @@
       "spawnStyle": "fade_in",
       "despawnStyle": "shrink_pop",
       "mode": "fixed"
+    },
+    {
+      "id": "weapon_armory_ember",
+      "weaponId": "ember_sprinkler",
+      "x": 490,
+      "y": 333,
+      "respawnMs": 5000,
+      "despawnAfterMs": 8000,
+      "spawnStyle": "fade_in",
+      "despawnStyle": "shrink_pop",
+      "mode": "fixed"
     }
   ],
   "itemSpawns": [
