@@ -448,6 +448,8 @@ class MainScene extends Phaser.Scene {
   private hudLeftStatText!: Phaser.GameObjects.Text;
   private hudRightNameText!: Phaser.GameObjects.Text;
   private hudRightStatText!: Phaser.GameObjects.Text;
+  private hudLeftWeaponIcon!: Phaser.GameObjects.Image;
+  private hudRightWeaponIcon!: Phaser.GameObjects.Image;
   private hudTimerText!: Phaser.GameObjects.Text;
   private hudTimerSubText!: Phaser.GameObjects.Text;
   private dismissedKillFeedIds = new Map<string, number>();
@@ -1358,6 +1360,11 @@ class MainScene extends Phaser.Scene {
       .text(0, 0, "", textStyle)
       .setDepth(textDepth)
       .setScrollFactor(0);
+    this.hudLeftWeaponIcon = this.add
+      .image(0, 0, getWeaponHudTextureKey("paws"))
+      .setDepth(textDepth)
+      .setScrollFactor(0)
+      .setScale(1.05);
 
     // 우측 카드 텍스트
     this.hudRightNameText = this.add
@@ -1368,6 +1375,11 @@ class MainScene extends Phaser.Scene {
       .text(0, 0, "", textStyle)
       .setDepth(textDepth)
       .setScrollFactor(0);
+    this.hudRightWeaponIcon = this.add
+      .image(0, 0, getWeaponHudTextureKey("paws"))
+      .setDepth(textDepth)
+      .setScrollFactor(0)
+      .setScale(1.05);
 
     // 타이머 (중앙)
     this.hudTimerText = this.add
@@ -1406,6 +1418,7 @@ class MainScene extends Phaser.Scene {
       this.hudLeftGraphics,
       this.hudLeftNameText,
       this.hudLeftStatText,
+      this.hudLeftWeaponIcon,
       HUD_LEFT_CARD_X,
       HUD_BAR_Y + HUD_CARD_PAD_Y,
       localPlayer,
@@ -1416,6 +1429,7 @@ class MainScene extends Phaser.Scene {
       this.hudRightGraphics,
       this.hudRightNameText,
       this.hudRightStatText,
+      this.hudRightWeaponIcon,
       HUD_RIGHT_CARD_X,
       HUD_BAR_Y + HUD_CARD_PAD_Y,
       opponent,
@@ -1486,6 +1500,7 @@ class MainScene extends Phaser.Scene {
     g: Phaser.GameObjects.Graphics,
     nameText: Phaser.GameObjects.Text,
     statText: Phaser.GameObjects.Text,
+    weaponIcon: Phaser.GameObjects.Image,
     cardX: number,
     cardY: number,
     player: PlayerSnapshot | null,
@@ -1499,23 +1514,37 @@ class MainScene extends Phaser.Scene {
       g.fillRoundedRect(cardX, cardY, HUD_CARD_W, HUD_CARD_H, 8);
       g.lineStyle(1, 0x5c3d1e, 0.28);
       g.strokeRoundedRect(cardX, cardY, HUD_CARD_W, HUD_CARD_H, 6);
-      nameText.setText("").setVisible(false);
-      statText.setText("").setVisible(false);
+      nameText
+        .setPosition(cardX + 16, cardY + 16)
+        .setText(isLocal ? "PLAYER SLOT OFFLINE" : "WAITING FOR RIVAL")
+        .setColor("#7d6651")
+        .setVisible(true);
+      statText
+        .setPosition(cardX + 16, cardY + 36)
+        .setText(isLocal ? "입장 중..." : "상대 플레이어가 아직 없습니다")
+        .setColor("#6f5a48")
+        .setVisible(true);
+      weaponIcon.setVisible(false);
       return;
     }
 
     nameText.setVisible(true);
     statText.setVisible(true);
+    weaponIcon.setVisible(true);
 
     // ── 카드 배경 ──
     g.fillStyle(0x1a120e, 0.96);
     g.fillRoundedRect(cardX, cardY, HUD_CARD_W, HUD_CARD_H, 8);
     g.fillStyle(isLocal ? 0x8c5a30 : 0x56463c, 0.9);
-    g.fillRoundedRect(cardX + 1, cardY + 1, 6, HUD_CARD_H - 2, 6);
-    g.fillStyle(0x2a1c14, 0.75);
+    g.fillRoundedRect(cardX + 1, cardY + 1, 8, HUD_CARD_H - 2, 6);
+    g.fillStyle(0x2a1c14, 0.85);
     g.fillRoundedRect(cardX + 10, cardY + 8, HUD_CARD_W - 20, 20, 6);
+    g.fillStyle(0x120c09, 0.42);
+    g.fillRoundedRect(cardX + 60, cardY + 34, HUD_CARD_W - 72, 28, 6);
     g.lineStyle(1.5, 0x6b4427, 1);
     g.strokeRoundedRect(cardX, cardY, HUD_CARD_W, HUD_CARD_H, 8);
+    g.lineStyle(1, 0x342118, 0.85);
+    g.lineBetween(cardX + 60, cardY + 66, cardX + HUD_CARD_W - 12, cardY + 66);
 
     // ── HP 바 (수직) ──
     const hpBarX = cardX + HUD_HP_BAR_OFFSET_X;
@@ -1548,30 +1577,17 @@ class MainScene extends Phaser.Scene {
     g.lineStyle(1, 0x5c3d1e, 0.8);
     g.strokeRoundedRect(hpBarX, hpBarY, HUD_HP_BAR_W, hpBarH, 3);
 
-    // ── 생명 씨앗 아이콘 (HP 바 위에 오버레이) ──
-    const maxSeedDisplay = 8;
-    const seedCount = Math.min(player.lives, maxSeedDisplay);
-    if (seedCount > 0) {
-      const seedSizeW = 6;
-      const seedSizeH = 8;
-      const seedSpacingH = Math.min((hpBarH - 4) / seedCount, 10);
-      for (let i = 0; i < seedCount; i++) {
-        const seedX = hpBarX + HUD_HP_BAR_W / 2;
-        const seedY = hpBarY + 3 + i * seedSpacingH;
-        g.fillStyle(0xf5c518, 0.95);
-        g.fillEllipse(seedX, seedY, seedSizeW, seedSizeH);
-      }
-    }
-    if (player.lives > maxSeedDisplay) {
-      // 초과 표시: 점 하나 + 숫자 텍스트는 statText에서 처리
-    }
-
     // ── 햄스터 얼굴 (플레이스홀더) ──
     const faceR = HUD_FACE_SIZE / 2;
     const faceX = cardX + HUD_FACE_OFFSET_X + HUD_HP_BAR_W + 4 + faceR;
     const faceY = cardY + HUD_CARD_H / 2;
     const bodyColor = isLocal ? 0xc8874a : 0x4a4a4a;
     const earColor = isLocal ? 0xd4a574 : 0x5a5a5a;
+
+    g.fillStyle(0x120c09, 0.55);
+    g.fillCircle(faceX, faceY, faceR + 4);
+    g.lineStyle(1.2, isLocal ? 0x9d6a3e : 0x6b5a4d, 0.9);
+    g.strokeCircle(faceX, faceY, faceR + 4);
 
     // 귀
     g.fillStyle(earColor, 1);
@@ -1599,28 +1615,41 @@ class MainScene extends Phaser.Scene {
     g.lineStyle(1, 0x5c3d1e, 0.5);
     g.strokeCircle(faceX, faceY, faceR);
 
-    // ── 킬 스컬 아이콘 ──
-    const textBaseX = cardX + HUD_TEXT_OFFSET_X + 6;
-    const skullAreaY = cardY + HUD_CARD_H - 20;
-    const maxSkullDisplay = 10;
+    const infoBaseX = cardX + HUD_TEXT_OFFSET_X + 6;
+    const livesLabelY = cardY + 51;
+    const killsLabelY = cardY + 68;
+    const maxSeedDisplay = 4;
+    const seedCount = Math.min(player.lives, maxSeedDisplay);
+    const seedSpacing = 10;
+    g.fillStyle(0xb08a5c, 1);
+    for (let i = 0; i < seedCount; i++) {
+      const seedX = infoBaseX + 34 + i * seedSpacing;
+      g.fillStyle(0xf5c518, 0.95);
+      g.fillEllipse(seedX, livesLabelY, 6, 8);
+    }
+    if (player.lives > maxSeedDisplay) {
+      g.fillStyle(0xd6c0a4, 1);
+      g.fillCircle(infoBaseX + 34 + maxSeedDisplay * seedSpacing + 4, livesLabelY, 1.5);
+    }
+
+    const maxSkullDisplay = 5;
     const visibleKills = Math.min(player.kills, maxSkullDisplay);
-    const skullR = 5;
-    const skullGap = skullR * 2 + 2;
+    const skullR = 4.5;
+    const skullGap = 11;
     for (let i = 0; i < visibleKills; i++) {
-      const skX = textBaseX + i * skullGap;
-      const skY = skullAreaY;
+      const skX = infoBaseX + 34 + i * skullGap;
+      const skY = killsLabelY;
       g.fillStyle(0xe87040, 0.9);
       g.fillCircle(skX, skY, skullR);
-      g.lineStyle(1.2, 0x0f0a06, 0.9);
-      // X 눈 (좌)
-      g.lineBetween(skX - 3, skY - 2.5, skX - 1, skY - 0.5);
-      g.lineBetween(skX - 1, skY - 2.5, skX - 3, skY - 0.5);
-      // X 눈 (우)
-      g.lineBetween(skX + 1, skY - 2.5, skX + 3, skY - 0.5);
-      g.lineBetween(skX + 3, skY - 2.5, skX + 1, skY - 0.5);
+      g.lineStyle(1.1, 0x0f0a06, 0.9);
+      g.lineBetween(skX - 2.6, skY - 2.2, skX - 0.6, skY - 0.4);
+      g.lineBetween(skX - 0.6, skY - 2.2, skX - 2.6, skY - 0.4);
+      g.lineBetween(skX + 0.6, skY - 2.2, skX + 2.6, skY - 0.4);
+      g.lineBetween(skX + 2.6, skY - 2.2, skX + 0.6, skY - 0.4);
     }
     if (player.kills > maxSkullDisplay) {
-      // 초과 시 +N 표시 (statText에서 처리)
+      g.fillStyle(0xd6c0a4, 1);
+      g.fillCircle(infoBaseX + 34 + maxSkullDisplay * skullGap + 4, killsLabelY, 1.5);
     }
 
     // ── 텍스트 업데이트 ──
@@ -1639,15 +1668,25 @@ class MainScene extends Phaser.Scene {
       player.equippedWeaponResource !== undefined
         ? String(player.equippedWeaponResource)
         : "∞";
-    const livesExtra = player.lives > maxSeedDisplay ? `+${player.lives - maxSeedDisplay}` : "";
-    const killsExtra = player.kills > maxSkullDisplay ? `+${player.kills - maxSkullDisplay}` : "";
-    const statParts = [`${weaponName} [${ammo}]`];
-    if (killsExtra) statParts.push(`kills ${killsExtra}`);
-    if (livesExtra) statParts.push(`lives ${livesExtra}`);
+    const livesExtra = player.lives > maxSeedDisplay ? ` +${player.lives - maxSeedDisplay}` : "";
+    const killsExtra = player.kills > maxSkullDisplay ? ` +${player.kills - maxSkullDisplay}` : "";
+    const weaponIconKey = getWeaponHudTextureKey(player.equippedWeaponId);
+    if (this.textures.exists(weaponIconKey)) {
+      weaponIcon.setTexture(weaponIconKey);
+    }
+    weaponIcon.setPosition(cardX + HUD_CARD_W - 24, cardY + 18);
     statText
       .setPosition(nickX, nickY + 20)
       .setColor("#cdb498")
-      .setText(statParts.join("  "));
+      .setText(
+        `${weaponName} [${ammo}]\nHP ${player.hp}   LIFE ${player.lives}${livesExtra}   KILL ${player.kills}${killsExtra}`,
+      );
+
+    // Graphics로 텍스트를 직접 그릴 수 없으므로 기존 statText에 수치 요약을 두고,
+    // 아래 탭은 LIFE / KILL 구간을 나누는 시각 구분선 역할만 한다.
+    g.fillStyle(0x352319, 0.9);
+    g.fillRoundedRect(infoBaseX - 2, livesLabelY - 7, 28, 10, 4);
+    g.fillRoundedRect(infoBaseX - 2, killsLabelY - 7, 28, 10, 4);
   }
 
   private updateMatchOverlay(
