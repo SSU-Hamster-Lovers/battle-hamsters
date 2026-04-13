@@ -1,9 +1,11 @@
 use std::collections::HashSet;
 
 use crate::{
-    room_config::RoomGameplayConfig, weapon_definition, DeathCause, Direction, FireMode, HitType,
-    LastHitInfo, PlayerRuntime, PlayerState, RoomState, Vector2, PLAYER_HALF_SIZE,
-    RESPAWN_DELAY_MS,
+    game_data::RuntimeWeaponSpecialEffect,
+    room_config::RoomGameplayConfig,
+    weapon_definition,
+    BurnEffect, DeathCause, Direction, HitType, LastHitInfo, PlayerRuntime, PlayerState,
+    RoomState, StatusEffectSnapshot, Vector2, PLAYER_HALF_SIZE, RESPAWN_DELAY_MS,
 };
 
 impl RoomState {
@@ -95,15 +97,30 @@ impl RoomState {
                             weapon_id: weapon_id.clone(),
                         },
                     ));
+                } else if let RuntimeWeaponSpecialEffect::Burn {
+                    duration_ms,
+                    tick_damage,
+                    tick_interval_ms,
+                } = weapon.special_effect
+                {
+                    if let Some(target) = self.players.get_mut(&target_id) {
+                        apply_or_refresh_burn(
+                            target,
+                            weapon_id.clone(),
+                            Some(player_id.to_string()),
+                            now_ms,
+                            duration_ms,
+                            tick_damage,
+                            tick_interval_ms,
+                        );
+                    }
                 }
             }
             return;
         }
 
         let weapon = weapon_definition(&weapon_id).clone();
-        if !matches!(weapon.hit_type, HitType::Hitscan)
-            || !matches!(weapon.fire_mode, FireMode::Single)
-        {
+        if !matches!(weapon.hit_type, HitType::Hitscan) {
             return;
         }
 
@@ -126,27 +143,34 @@ impl RoomState {
             shooter_view.latest_input.aim.clone(),
             shooter_view.snapshot.direction,
         );
+        let recoil_seed = shooter_view.latest_input.sequence
+            + self.server_tick
+            + shooter_position.x.to_bits();
         let recoil_direction = rotate_vector(
             Vector2 {
                 x: -aim_direction.x,
                 y: -aim_direction.y,
             },
             weapon.self_recoil_angle_deg
-                + pseudo_jitter_deg(
-                    shooter_view.latest_input.sequence
-                        + self.server_tick
-                        + shooter_position.x.to_bits(),
-                    weapon.self_recoil_angle_jitter_deg,
-                ),
-        );
-        let target_id = self.find_hitscan_target(
-            player_id,
-            &shooter_position,
-            &aim_direction,
-            weapon.range,
-            dying_this_tick,
+                + pseudo_jitter_deg(recoil_seed, weapon.self_recoil_angle_jitter_deg),
         );
 
+        // pellet_count > 1: spread_deg 범위 내 균등 분산
+        // pellet_count == 1: 기존 단일 레이 동작 유지
+        let pellet_count = weapon.pellet_count.max(1) as usize;
+        let pellet_aims: Vec<Vector2> = (0..pellet_count)
+            .map(|i| {
+                let offset_deg = if pellet_count == 1 {
+                    0.0
+                } else {
+                    -weapon.spread_deg / 2.0
+                        + weapon.spread_deg * (i as f64 / (pellet_count - 1) as f64)
+                };
+                rotate_vector(aim_direction.clone(), offset_deg)
+            })
+            .collect();
+
+        // 쿨다운·탄 소모·반동 처리 (발사 1회)
         {
             let shooter = self
                 .players
@@ -178,7 +202,20 @@ impl RoomState {
             }
         }
 
-        if let Some(target_id) = target_id {
+        // 펠릿별 독립 판정
+        for pellet_aim in &pellet_aims {
+            let target_id = self.find_hitscan_target(
+                player_id,
+                &shooter_position,
+                pellet_aim,
+                weapon.range,
+                dying_this_tick,
+            );
+
+            let Some(target_id) = target_id else {
+                continue;
+            };
+
             let target_position = self
                 .players
                 .get(&target_id)
@@ -187,16 +224,16 @@ impl RoomState {
                 .position
                 .clone();
             let impact_point = Vector2 {
-                x: target_position.x - aim_direction.x * PLAYER_HALF_SIZE * 0.65,
-                y: target_position.y - 6.0 - aim_direction.y * PLAYER_HALF_SIZE * 0.35,
+                x: target_position.x - pellet_aim.x * PLAYER_HALF_SIZE * 0.65,
+                y: target_position.y - 6.0 - pellet_aim.y * PLAYER_HALF_SIZE * 0.35,
             };
             let target_hp_after_hit = {
                 let target = self
                     .players
                     .get_mut(&target_id)
                     .expect("target should exist");
-                target.external_velocity.x += aim_direction.x * weapon.knockback;
-                target.external_velocity.y += aim_direction.y * weapon.knockback;
+                target.external_velocity.x += pellet_aim.x * weapon.knockback;
+                target.external_velocity.y += pellet_aim.y * weapon.knockback;
                 target.snapshot.hp = target.snapshot.hp.saturating_sub(weapon.damage);
                 target.last_hit_by = Some(LastHitInfo {
                     killer_id: player_id.to_string(),
@@ -210,7 +247,7 @@ impl RoomState {
                 player_id.to_string(),
                 weapon_id.clone(),
                 weapon.damage,
-                aim_direction.clone(),
+                pellet_aim.clone(),
                 impact_point,
                 now_ms,
             );
@@ -222,6 +259,23 @@ impl RoomState {
                         weapon_id: weapon_id.clone(),
                     },
                 ));
+            } else if let RuntimeWeaponSpecialEffect::Burn {
+                duration_ms,
+                tick_damage,
+                tick_interval_ms,
+            } = weapon.special_effect
+            {
+                if let Some(target) = self.players.get_mut(&target_id) {
+                    apply_or_refresh_burn(
+                        target,
+                        weapon_id.clone(),
+                        Some(player_id.to_string()),
+                        now_ms,
+                        duration_ms,
+                        tick_damage,
+                        tick_interval_ms,
+                    );
+                }
             }
         }
     }
@@ -310,6 +364,98 @@ impl RoomState {
             .min_by(|a, b| a.1.total_cmp(&b.1))
             .map(|(target_id, _)| target_id)
     }
+
+    pub(crate) fn tick_burn_effects(
+        &mut self,
+        now_ms: u64,
+        deaths: &mut Vec<(String, DeathCause)>,
+        dying_this_tick: &mut HashSet<String>,
+    ) {
+        // 번 상태 처리에 필요한 정보를 먼저 수집 (borrow 충돌 방지)
+        struct BurnTick {
+            player_id: String,
+            expired: bool,
+            should_tick: bool,
+            damage: u16,
+            next_tick_at: u64,
+            attacker_id: String,
+            weapon_id: String,
+            impact_point: Vector2,
+        }
+
+        let ticks: Vec<BurnTick> = self
+            .players
+            .iter()
+            .filter_map(|(player_id, player)| {
+                if player.snapshot.state != PlayerState::Alive {
+                    return None;
+                }
+                let burn = player.active_burn.as_ref()?;
+                let expired = now_ms >= burn.expires_at;
+                let should_tick = !expired && now_ms >= burn.next_tick_at;
+                Some(BurnTick {
+                    player_id: player_id.clone(),
+                    expired,
+                    should_tick,
+                    damage: burn.tick_damage,
+                    next_tick_at: burn.next_tick_at + burn.tick_interval_ms,
+                    attacker_id: burn
+                        .killer_id
+                        .clone()
+                        .unwrap_or_else(|| player_id.clone()),
+                    weapon_id: burn.weapon_id.clone(),
+                    impact_point: player.snapshot.position.clone(),
+                })
+            })
+            .collect();
+
+        for tick in ticks {
+            if tick.expired {
+                if let Some(player) = self.players.get_mut(&tick.player_id) {
+                    player.active_burn = None;
+                    player.snapshot.effects.clear();
+                }
+                continue;
+            }
+
+            if !tick.should_tick {
+                continue;
+            }
+
+            // 데미지 적용 + 다음 틱 갱신
+            let hp_after = {
+                let player = self
+                    .players
+                    .get_mut(&tick.player_id)
+                    .expect("player should exist");
+                player.snapshot.hp = player.snapshot.hp.saturating_sub(tick.damage);
+                if let Some(b) = player.active_burn.as_mut() {
+                    b.next_tick_at = tick.next_tick_at;
+                }
+                player.snapshot.hp
+            };
+
+            self.push_damage_event(
+                tick.player_id.clone(),
+                tick.attacker_id.clone(),
+                tick.weapon_id.clone(),
+                tick.damage,
+                Vector2 { x: 0.0, y: -1.0 },
+                tick.impact_point,
+                now_ms,
+            );
+
+            if hp_after == 0 && dying_this_tick.insert(tick.player_id.clone()) {
+                deaths.push((
+                    tick.player_id,
+                    DeathCause::Weapon {
+                        killer_id: tick.attacker_id,
+                        weapon_id: tick.weapon_id,
+                    },
+                ));
+            }
+        }
+    }
 }
 
 pub(crate) fn reset_general_combat_state(
@@ -329,6 +475,38 @@ pub(crate) fn reset_general_combat_state(
     player.attack_was_down = false;
     player.next_attack_at = 0;
     player.last_hit_by = None;
+    player.active_burn = None;
+    player.snapshot.effects.clear();
+}
+
+pub(crate) fn apply_or_refresh_burn(
+    player: &mut PlayerRuntime,
+    weapon_id: String,
+    killer_id: Option<String>,
+    now_ms: u64,
+    duration_ms: u64,
+    tick_damage: u16,
+    tick_interval_ms: u64,
+) {
+    let expires_at = now_ms + duration_ms;
+    let next_tick_at = now_ms + tick_interval_ms;
+
+    player.active_burn = Some(BurnEffect {
+        killer_id: killer_id.clone(),
+        weapon_id: weapon_id.clone(),
+        expires_at,
+        next_tick_at,
+        tick_damage,
+        tick_interval_ms,
+    });
+
+    player.snapshot.effects.clear();
+    player.snapshot.effects.push(StatusEffectSnapshot {
+        kind: "burn",
+        killer_id,
+        weapon_id,
+        expires_at,
+    });
 }
 
 pub(crate) fn trigger_respawn(

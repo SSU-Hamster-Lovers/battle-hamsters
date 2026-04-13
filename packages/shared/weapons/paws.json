@@ -24,5 +24,6 @@
   "pickupWeight": 0,
   "rarity": "common",
   "worldDespawnMs": 0,
-  "specialEffect": { "kind": "none" }
+  "specialEffect": { "kind": "burn", "durationMs": 2200, "tickDamage": 2, "tickIntervalMs": 500 },
+  "aimProfile": { "minAimDeg": -30, "maxAimDeg": 30 }
 }

@@ -15,7 +15,18 @@ export type WeaponSpecialEffect =
   | { kind: "none" }
   | { kind: "explode"; fuseMs?: number; radius?: number }
   | { kind: "grab"; grabDurationMs: number }
-  | { kind: "heal_block"; durationMs: number };
+  | { kind: "heal_block"; durationMs: number }
+  | { kind: "burn"; durationMs: number; tickDamage: number; tickIntervalMs: number };
+
+/**
+ * 무기별 허용 조준 각도 범위.
+ * 0deg = 캐릭터 정면 수평, 음수 = 위쪽, 양수 = 아래쪽.
+ * 없으면 무제한 회전 허용.
+ */
+export interface WeaponAimProfile {
+  minAimDeg: number;
+  maxAimDeg: number;
+}
 
 export interface WeaponDefinition {
   version: number;
@@ -44,6 +55,7 @@ export interface WeaponDefinition {
   rarity: WeaponRarity;
   worldDespawnMs: number;
   specialEffect: WeaponSpecialEffect | null;
+  aimProfile?: WeaponAimProfile;
 }
 
 export interface WeaponSpawnPoint {

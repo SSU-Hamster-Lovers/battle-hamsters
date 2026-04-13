@@ -155,6 +155,17 @@ struct LastHitInfo {
     hit_at_ms: u64,
 }
 
+/// 서버 내부 번 상태 — 직렬화하지 않음.
+#[derive(Clone)]
+struct BurnEffect {
+    killer_id: Option<String>,
+    weapon_id: String,
+    expires_at: u64,
+    next_tick_at: u64,
+    tick_damage: u16,
+    tick_interval_ms: u64,
+}
+
 #[derive(Clone)]
 struct PlayerRuntime {
     snapshot: PlayerSnapshot,
@@ -165,6 +176,7 @@ struct PlayerRuntime {
     attack_queued: bool,
     attack_was_down: bool,
     last_hit_by: Option<LastHitInfo>,
+    active_burn: Option<BurnEffect>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -385,6 +397,7 @@ impl RoomState {
             state: PlayerState::Alive,
             kills: 0,
             deaths: 0,
+            effects: vec![],
         }
     }
 
@@ -409,6 +422,7 @@ impl RoomState {
                 attack_queued: false,
                 attack_was_down: false,
                 last_hit_by: None,
+                active_burn: None,
             },
         );
 
@@ -638,6 +652,15 @@ struct WorldItemPickup {
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
+struct StatusEffectSnapshot {
+    kind: &'static str,
+    killer_id: Option<String>,
+    weapon_id: String,
+    expires_at: u64,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 struct PlayerSnapshot {
     id: String,
     name: String,
@@ -659,6 +682,7 @@ struct PlayerSnapshot {
     state: PlayerState,
     kills: u32,
     deaths: u32,
+    effects: Vec<StatusEffectSnapshot>,
 }
 
 #[derive(Serialize, Clone)]
@@ -857,6 +881,7 @@ mod tests {
                 state: PlayerState::Alive,
                 kills: 0,
                 deaths: 0,
+                effects: vec![],
             },
             latest_input: PlayerInputPayload::default(),
             spawn_index: 0,
@@ -865,6 +890,7 @@ mod tests {
             attack_queued: false,
             attack_was_down: false,
             last_hit_by: None,
+            active_burn: None,
         }
     }
 
@@ -964,15 +990,28 @@ mod tests {
     #[test]
     fn room_starts_with_spawned_weapon_pickup() {
         let room = RoomState::new();
-        assert_eq!(room.weapon_pickups.len(), 1);
-        let pickup = room
-            .weapon_pickups
-            .values()
-            .next()
-            .expect("spawn pickup should exist");
-        assert_eq!(pickup.weapon_id, "acorn_blaster");
-        assert_eq!(pickup.resource_remaining, 8);
-        assert!(matches!(pickup.position.x, 320.0 | 1280.0));
+        // weapon_group 후보 1개 (acorn_blaster or seed_shotgun) + hand_cannon fixed = 2개
+        assert_eq!(room.weapon_pickups.len(), 2);
+
+        let pickups: Vec<_> = room.weapon_pickups.values().collect();
+
+        // weapon_group 에서 스폰된 픽업: x=320 또는 x=1280 위치
+        let group_pickup = pickups
+            .iter()
+            .find(|p| matches!(p.position.x as u32, 320 | 1280))
+            .expect("weapon_group pickup should exist");
+        assert!(
+            group_pickup.weapon_id == "acorn_blaster"
+                || group_pickup.weapon_id == "seed_shotgun",
+            "weapon_group pickup should be acorn_blaster or seed_shotgun"
+        );
+
+        // hand_cannon fixed 스폰: x=800
+        let cannon_pickup = pickups
+            .iter()
+            .find(|p| p.weapon_id == "hand_cannon")
+            .expect("hand_cannon pickup should exist");
+        assert_eq!(cannon_pickup.position.x as u32, 800);
     }
 
     #[test]
@@ -1158,6 +1197,7 @@ mod tests {
                 state: PlayerState::Alive,
                 kills: 0,
                 deaths: 0,
+                effects: vec![],
             },
             latest_input: PlayerInputPayload {
                 sequence: 1,
@@ -1176,6 +1216,7 @@ mod tests {
             attack_queued: true,
             attack_was_down: true,
             last_hit_by: None,
+            active_burn: None,
         };
 
         let target = PlayerRuntime {
@@ -1200,6 +1241,7 @@ mod tests {
                 state: PlayerState::Alive,
                 kills: 0,
                 deaths: 0,
+                effects: vec![],
             },
             latest_input: PlayerInputPayload::default(),
             spawn_index: 1,
@@ -1208,6 +1250,7 @@ mod tests {
             attack_queued: false,
             attack_was_down: false,
             last_hit_by: None,
+            active_burn: None,
         };
 
         room.players.insert("shooter".to_string(), shooter);
