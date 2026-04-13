@@ -4,7 +4,7 @@
 
 ## 최신 기준
 
-- 기준 브랜치: `fix/fire-and-forget-v1` (투사체 무기 연속 발사 auto-requeue 반영)
+- 기준 브랜치: `feat/pickup-despawn-vfx-v1` (픽업 소멸 VFX 반영)
 - 마지막 동기화 기준: 2026-04-13
 
 ## 현재 구현된 것
@@ -162,6 +162,7 @@
   - 입장/퇴장: 시스템 알림 카드
   - 입장/퇴장 카드도 킬 카드와 같은 TTL 기준으로 자동 퇴장한다.
 - 월드 무기/아이템 pickup은 소멸 직전 3단계 점멸 연출을 적용한다.
+- 소멸 마지막 500ms 동안 점멸과 함께 블랙홀 흡수 연출을 추가로 적용한다: scale 수축(`1 - sqrt(collapseRatio)`) + X축 흔들림(`sin(t) * 5px * collapseRatio`). `resolvePickupCollapseTransform`(`apps/game/src/pickup-vfx.ts`) 순수 함수로 분리하고 단위 테스트(`src/pickup-vfx.test.ts`) 포함.
 - 매치 상태별 UI:
   - `Waiting`: 대기 / 카운트다운 오버레이
   - `Running`: 기존 플레이 + 남은 시간
@@ -266,8 +267,7 @@
 
 ## 다음 구현 우선순위
 
-1. 픽업 소멸 VFX — 점멸 + 블랙홀 흡수 연출 (흔들림 + scale 수축)
-2. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체 (투사체 texture hookup 포함)
+1. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체 (투사체 texture hookup 포함)
 3. Burn DoT를 전용 무기에 연결
 4. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
 5. `develop` preview / staging 배포 전략 분리
@@ -296,4 +296,4 @@
 - 투사체 무기 1차 미니 스펙: `docs/technical/mini-spec-projectile-weapons-v1.md`
 - 투사체 충돌 정책 v2 미니 스펙: `docs/technical/mini-spec-projectile-collision-policy-v2.md`
 - Fire & Forget 수정 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-fire-and-forget-v1.md`
-- 픽업 소멸 VFX 미니 스펙: `docs/technical/mini-spec-pickup-despawn-vfx-v1.md`
+- 픽업 소멸 VFX 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-pickup-despawn-vfx-v1.md`
