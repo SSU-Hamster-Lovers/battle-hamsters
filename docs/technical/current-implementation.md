@@ -96,7 +96,7 @@
   - `duration_ms`(2200ms) 경과 시 자동 소멸
   - Burn 사망은 기존 `DeathCause::Weapon { killer_id, weapon_id }` 재사용
   - `PlayerSnapshot.effects`로 클라이언트에 전달; Burn 중 플레이어 위에 3-레이어 파라메트릭 불꽃(Graphics, 60 FPS 재그리기) 표시
-  - 현재는 어떤 기본 무기에도 연결되어 있지 않다. 전용 무기 연결은 후속 작업이다.
+  - `ember_sprinkler` 무기에 연결 완료. `specialEffect: { kind: "burn", durationMs: 2500, tickDamage: 3, tickIntervalMs: 400 }` 설정.
 - 사망/리스폰 처리:
   - `PlayerSnapshot.lastDeathCause` 에 최근 사망 원인을 싣는다.
   - `room_snapshot` / `world_snapshot` 은 짧은 TTL의 `damageEvents` 배열을 함께 싣는다.
@@ -145,11 +145,12 @@
   - 카드형보다 얇은 `얼굴 + 가로 HP 바 + 생명 pip + 작은 무기/킬 정보` 중심 구조로 정리했다.
   - Free Play에서는 우측 카드가 `최근 공격한 대상 -> 킬 최다 상대` 우선순위로 표시된다.
 - 좌상단에는 큰 제목/room/server tick 대신 작은 `WS/ping` 상태만 표시한다.
-- 무기 아이콘 레지스트리: `getWeaponHudTextureKey(weaponId)` → `RenderTexture` 코드 생성 아이콘 (`paws`, `acorn_blaster`, fallback; `seed_shotgun`, `hand_cannon`은 자동 fallback)
+- 무기 아이콘 레지스트리: `getWeaponHudTextureKey(weaponId)` → `RenderTexture` 코드 생성 아이콘 (`paws`, `acorn_blaster`, `ember_sprinkler`는 전용 HUD 아이콘; `seed_shotgun`, `hand_cannon`은 자동 fallback)
 - `aimProfile`이 있는 무기에 대해 클라이언트 오버레이 회전 각도를 `[minAimDeg, maxAimDeg]`로 클램프하고, 서버 공격 판정도 같은 범위를 사용한다.
 - 발사 시 로컬 보조용 무기별 연출을 적용한다.
   - `Acorn Blaster`: 총구 화염 + 짧은 tracer
   - `Paws`: 에임 방향으로 내지르는 사다리꼴 원뿔(truncated cone) flash
+  - `Ember Sprinkler`: attack 버튼을 누르는 동안 50ms 틱마다 중력 영향을 받는 불꽃 파티클 2-3개를 연속 생성 (파라볼릭 아크, 4가지 화염 색 랜덤, 380-620ms 수명)
   - 그 외: 기존 선형 fallback
 - 피격 연출 1차/2차를 적용한다.
   - `damageEvents` 가 있으면 정확한 `impactPoint` / `impactDirection` 기준으로 작은 파편 파티클을 생성한다.
@@ -259,6 +260,15 @@
 - `aimProfile`의 `deadZoneBehavior: "block"` 계열 설계는 아직 없다.
 - 현재는 허용 각도를 벗어나면 clamp만 하고, 발사 차단/경고 연출은 하지 않는다.
 
+### 불씨 뿌리개 (ember_sprinkler) — feat/flamethrower-v1 완료
+
+- **서버**: `packages/shared/weapons/ember-sprinkler.json` 추가. melee cone 타입(`near_half_width: 5, far_half_width: 60`), 100ms 연사, `specialEffect: burn(2500ms/3dmg/400ms 틱)`.
+- **서버**: `find_melee_target`에 `near_half_width` / `far_half_width` 파라미터 추가. weapon JSON 값이 없으면 Paws 기본값으로 fallback.
+- **맵**: `training-arena.json` 아머리(x=490, y=333)에 고정 스폰 추가.
+- **클라이언트**: `ember_sprinkler` pickup 전용 스프라이트 (orange/red 실린더 + 화염) + HUD 아이콘.
+- **클라이언트**: `WeaponFireStyle: "flame_stream"`. attack 버튼 누르는 동안 `sendLatestInput` 50ms 틱마다 중력(0.31 px/frame²) + 퍼짐 불꽃 파티클 2-3개 생성. 기존 `hitParticles` 시스템 재사용.
+- **단위 테스트 2개 추가**: `ember_sprinkler_applies_burn_on_hit`, `ember_sprinkler_wider_cone_hits_target_outside_paws_range`.
+
 ### 원웨이 플랫폼 하강 (fix/one-way-drop-through-v1 완료)
 
 - `drop_through_platform_id`로 source 플랫폼 1개만 무시한다. 전역 시간 무시는 제거됨.
@@ -268,9 +278,8 @@
 ## 다음 구현 우선순위
 
 1. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체 (투사체 texture hookup 포함)
-3. Burn DoT를 전용 무기에 연결
-4. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
-5. `develop` preview / staging 배포 전략 분리
+2. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
+3. `develop` preview / staging 배포 전략 분리
 
 ## 참고
 
@@ -297,3 +306,4 @@
 - 투사체 충돌 정책 v2 미니 스펙: `docs/technical/mini-spec-projectile-collision-policy-v2.md`
 - Fire & Forget 수정 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-fire-and-forget-v1.md`
 - 픽업 소멸 VFX 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-pickup-despawn-vfx-v1.md`
+- 불씨 뿌리개(flamethrower) 완료 미니 스펙: `docs/technical/mini-spec-flamethrower-v1.md`

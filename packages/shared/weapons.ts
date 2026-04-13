@@ -57,6 +57,8 @@ export interface WeaponDefinition {
   worldDespawnMs: number;
   specialEffect: WeaponSpecialEffect | null;
   aimProfile?: WeaponAimProfile;
+  meleeConeNearHalfWidth?: number;
+  meleeConeFarHalfWidth?: number;
 }
 
 export interface WeaponSpawnPoint {
