@@ -2160,12 +2160,14 @@ class MainScene extends Phaser.Scene {
         presentation.offsetY + anchorYOffset,
       );
 
-      // rotation: Phaser transform 순서 = position → rotation → scale(flipX)
-      // right-facing: atan2(aim.y, aim.x)
-      // left-facing : atan2(aim.y, -aim.x) — flipX가 텍스처를 반전하므로 X 성분을 반전
+      // rotation: Phaser transform 순서 = Scale(flipX) → Rotate → Translate
+      // right-facing: 배럴 팁 (+6,0) → Rotate(a) → (6cosA, 6sinA) = aim
+      //   → a = atan2(aim.y, aim.x)
+      // left-facing : 배럴 팁 (+6,0) → flipX → (-6,0) → Rotate(a) → (-6cosA, -6sinA) = aim
+      //   → cosA = -aim.x, sinA = -aim.y → a = atan2(-aim.y, -aim.x)
       const angle =
         dir === "left"
-          ? Math.atan2(effectiveAim.y, -effectiveAim.x)
+          ? Math.atan2(-effectiveAim.y, -effectiveAim.x)
           : Math.atan2(effectiveAim.y, effectiveAim.x);
       rendered.weaponOverlay.setRotation(angle);
 
