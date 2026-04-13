@@ -9,7 +9,9 @@ import {
   hamsterTextureForSnapshot,
 } from "./hamster-visuals";
 import {
+  ensureWeaponHudTextures,
   ensureWeaponPickupTextures,
+  getWeaponHudTextureKey,
   resolveWeaponEquipPresentation,
   resolveWeaponFireStyle,
   resolveWeaponPickupPresentation,
@@ -114,13 +116,29 @@ const VIEWPORT_HEIGHT = 600;
 const MATCH_MIN_PLAYERS_DISPLAY = 2;
 const KILL_FEED_TTL_MS = 3_000;
 const KILL_FEED_DISMISSED_RETENTION_MS = 5_000;
-const KILL_FEED_LINE_HEIGHT = 18;
+const KILL_FEED_CARD_H = 22;
+const KILL_FEED_CARD_GAP = 3;
 const KILL_FEED_MARGIN_X = 24;
 const KILL_FEED_MARGIN_Y = 24;
 const KILL_FEED_SLIDE_IN_DISTANCE = 96;
+const KILL_FEED_EXIT_MS = 400;
+const KILL_FEED_EXIT_RISE = 12;
+
+// HUD 하단 바
+const HUD_BAR_HEIGHT = 88;
+const HUD_BAR_Y = VIEWPORT_HEIGHT - HUD_BAR_HEIGHT; // 512
+const HUD_CARD_W = 278;
+const HUD_CARD_H = 80;
+const HUD_CARD_PAD_Y = 4;
+const HUD_LEFT_CARD_X = 8;
+const HUD_RIGHT_CARD_X = VIEWPORT_WIDTH - 8 - HUD_CARD_W; // 514
+const HUD_HP_BAR_OFFSET_X = 4;
+const HUD_HP_BAR_W = 12;
+const HUD_FACE_SIZE = 36;
+const HUD_FACE_OFFSET_X = 20;
+const HUD_TEXT_OFFSET_X = 64;
+const HUD_MAX_HP = 100;
 const KILL_FEED_SLIDE_IN_MS = 200;
-const KILL_FEED_EXIT_RISE = 18;
-const KILL_FEED_EXIT_MS = 280;
 const DAMAGE_EVENT_DISMISSED_RETENTION_MS = 1_200;
 
 const COLLISION_PRIMITIVES: CollisionPrimitive[] = MAP_DEFINITION.collision;
@@ -336,6 +354,15 @@ function resolveWeaponName(weaponId: string): string {
   return weaponDefinitionById[weaponId]?.name ?? weaponId;
 }
 
+function resolveWeaponAbbrev(weaponId: string): string {
+  const name = weaponDefinitionById[weaponId]?.name ?? weaponId;
+  return name
+    .split(/[\s_-]+/)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
 function formatKillFeedEntry(
   entry: KillFeedEntry,
   players: PlayerSnapshot[],
@@ -388,12 +415,22 @@ class MainScene extends Phaser.Scene {
   private renderedKillFeed = new Map<
     string,
     {
-      text: Phaser.GameObjects.Text;
+      container: Phaser.GameObjects.Container;
+      cardW: number;
       receivedAt: number;
       justEntered: boolean;
       slideInTween: Phaser.Tweens.Tween | null;
     }
   >();
+  // HUD
+  private hudBgGraphics!: Phaser.GameObjects.Graphics;
+  private hudLeftGraphics!: Phaser.GameObjects.Graphics;
+  private hudRightGraphics!: Phaser.GameObjects.Graphics;
+  private hudLeftNameText!: Phaser.GameObjects.Text;
+  private hudLeftStatText!: Phaser.GameObjects.Text;
+  private hudRightNameText!: Phaser.GameObjects.Text;
+  private hudRightStatText!: Phaser.GameObjects.Text;
+  private hudTimerText!: Phaser.GameObjects.Text;
   private dismissedKillFeedIds = new Map<string, number>();
   private dismissedDamageEventIds = new Map<string, number>();
   private playerName = getOrCreatePlayerName();
@@ -580,6 +617,7 @@ class MainScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor("#111827");
     ensureHamsterPlaceholderTextures(this);
     ensureWeaponPickupTextures(this);
+    ensureWeaponHudTextures(this);
     this.drawStage();
     this.setDebugVisible(this.debugEnabled);
 
@@ -601,12 +639,15 @@ class MainScene extends Phaser.Scene {
 
     this.infoText = this.add
       .text(24, 88, "", {
-        fontSize: "14px",
-        color: "#d1d5db",
-        lineSpacing: 6,
+        fontSize: "13px",
+        color: "#9ca3af",
+        lineSpacing: 5,
+        backgroundColor: "#00000066",
+        padding: { left: 6, right: 6, top: 4, bottom: 4 },
       })
       .setDepth(10)
-      .setScrollFactor(0);
+      .setScrollFactor(0)
+      .setVisible(false); // debug 모드에서만 표시
 
     this.attackFlash = this.add.graphics().setDepth(9);
 
@@ -627,29 +668,19 @@ class MainScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setVisible(false);
 
-    this.add
-      .text(24, VIEWPORT_HEIGHT - 70, "Move: A / D or Arrow Left / Right", {
-        fontSize: "14px",
-        color: "#9ca3af",
-      })
-      .setScrollFactor(0);
-    this.add
-      .text(24, VIEWPORT_HEIGHT - 46, "Jump: W / Space / Up  |  Down: S / Down", {
-        fontSize: "14px",
-        color: "#9ca3af",
-      })
-      .setScrollFactor(0);
+    // 키 가이드 — HUD 위쪽에 배치
     this.add
       .text(
-        24,
-        VIEWPORT_HEIGHT - 22,
-        "E: Pick Up  |  Q: Drop Weapon  |  Mouse: Aim / Attack",
-        {
-          fontSize: "14px",
-          color: "#9ca3af",
-        },
+        VIEWPORT_WIDTH / 2,
+        HUD_BAR_Y - 18,
+        "WASD/방향키: 이동  |  Space: 점프  |  E: 줍기  |  Q: 버리기  |  마우스: 조준/공격",
+        { fontSize: "11px", color: "#6b7280" },
       )
-      .setScrollFactor(0);
+      .setOrigin(0.5, 1)
+      .setScrollFactor(0)
+      .setDepth(10);
+
+    this.createHud();
 
     const keyboard = this.input.keyboard;
     if (!keyboard) {
@@ -1027,28 +1058,97 @@ class MainScene extends Phaser.Scene {
   private applyKillFeed(entries: KillFeedEntry[], players: PlayerSnapshot[]) {
     const now = this.time.now;
     for (const entry of entries) {
-      if (this.renderedKillFeed.has(entry.id)) {
-        continue;
-      }
-      if (this.dismissedKillFeedIds.has(entry.id)) {
-        continue;
-      }
-      const text = this.add
-        .text(0, 0, formatKillFeedEntry(entry, players), {
-          fontSize: "13px",
-          color: killFeedColorForCause(entry.cause.kind),
-          backgroundColor: "#0b1220cc",
-          padding: { left: 8, right: 8, top: 4, bottom: 4 },
-        })
-        .setDepth(12)
+      if (this.renderedKillFeed.has(entry.id)) continue;
+      if (this.dismissedKillFeedIds.has(entry.id)) continue;
+
+      const accentColor = killFeedColorForCause(entry.cause.kind);
+      const pad = { x: 8, y: 4 };
+      const iconSize = 16;
+      const iconGap = 4;
+      const depth = 12;
+
+      // 카드 내부 요소 생성
+      const container = this.add
+        .container(0, 0)
+        .setDepth(depth)
         .setScrollFactor(0)
         .setAlpha(0);
-      this.renderedKillFeed.set(entry.id, {
-        text,
-        receivedAt: now,
-        justEntered: true,
-        slideInTween: null,
-      });
+
+      if (entry.cause.kind === "weapon") {
+        // 공격자 텍스트
+        const killerName = resolvePlayerName(entry.cause.killerId, players);
+        const victimName = resolvePlayerName(entry.victimId, players);
+        const killerText = this.add.text(0, 0, killerName, {
+          fontSize: "13px",
+          color: accentColor,
+        });
+        const iconX = killerText.width + iconGap + iconSize / 2;
+        const weaponIconKey = getWeaponHudTextureKey(entry.cause.weaponId);
+        const hasTexture = this.textures.exists(weaponIconKey);
+        let iconW = iconSize;
+        let iconObj: Phaser.GameObjects.Image | Phaser.GameObjects.Text;
+        if (hasTexture) {
+          const img = this.add
+            .image(iconX, 0, weaponIconKey)
+            .setDisplaySize(iconSize, iconSize)
+            .setOrigin(0.5, 0);
+          iconObj = img;
+        } else {
+          const abbrev = resolveWeaponAbbrev(entry.cause.weaponId);
+          const abbrText = this.add.text(iconX, 0, `[${abbrev}]`, {
+            fontSize: "13px",
+            color: "#888888",
+          });
+          iconW = abbrText.width;
+          iconObj = abbrText;
+        }
+        const victimX = iconX + iconW / 2 + iconGap;
+        const victimText = this.add.text(victimX, 0, victimName, {
+          fontSize: "13px",
+          color: accentColor,
+        });
+        const totalW = victimX + victimText.width + pad.x * 2;
+        const totalH = KILL_FEED_CARD_H;
+
+        const bg = this.add.rectangle(0, 0, totalW, totalH, 0x0b1220, 0.85);
+        bg.setOrigin(0, 0);
+        bg.setStrokeStyle(1, 0x334155, 0.6);
+
+        // 텍스트/아이콘 수직 중앙 정렬
+        const textY = pad.y;
+        killerText.setPosition(pad.x, textY);
+        iconObj.setPosition(pad.x + killerText.width + iconGap + iconW / 2, 0);
+        victimText.setPosition(victimX + pad.x, textY);
+
+        container.add([bg, killerText, iconObj, victimText]);
+        this.renderedKillFeed.set(entry.id, {
+          container,
+          cardW: totalW,
+          receivedAt: now,
+          justEntered: true,
+          slideInTween: null,
+        });
+      } else {
+        // 낙사/함정/자살 — 단순 텍스트 카드
+        const label = formatKillFeedEntry(entry, players);
+        const labelText = this.add.text(pad.x, pad.y, label, {
+          fontSize: "13px",
+          color: accentColor,
+        });
+        const totalW = labelText.width + pad.x * 2;
+        const totalH = KILL_FEED_CARD_H;
+        const bg = this.add.rectangle(0, 0, totalW, totalH, 0x0b1220, 0.85);
+        bg.setOrigin(0, 0);
+        bg.setStrokeStyle(1, 0x334155, 0.6);
+        container.add([bg, labelText]);
+        this.renderedKillFeed.set(entry.id, {
+          container,
+          cardW: totalW,
+          receivedAt: now,
+          justEntered: true,
+          slideInTween: null,
+        });
+      }
     }
     this.layoutKillFeed();
   }
@@ -1074,19 +1174,19 @@ class MainScene extends Phaser.Scene {
   }
 
   private startKillFeedExitAnimation(rendered: {
-    text: Phaser.GameObjects.Text;
+    container: Phaser.GameObjects.Container;
     slideInTween: Phaser.Tweens.Tween | null;
   }) {
     rendered.slideInTween?.stop();
     rendered.slideInTween = null;
-    const { text } = rendered;
+    const { container } = rendered;
     this.tweens.add({
-      targets: text,
-      y: text.y - KILL_FEED_EXIT_RISE,
+      targets: container,
+      y: container.y - KILL_FEED_EXIT_RISE,
       alpha: 0,
       duration: KILL_FEED_EXIT_MS,
       ease: "Sine.easeOut",
-      onComplete: () => text.destroy(),
+      onComplete: () => container.destroy(true),
     });
   }
 
@@ -1125,17 +1225,18 @@ class MainScene extends Phaser.Scene {
       (a, b) => a.receivedAt - b.receivedAt,
     );
     ordered.forEach((rendered, index) => {
-      const finalX = VIEWPORT_WIDTH - KILL_FEED_MARGIN_X - rendered.text.width;
-      const finalY = KILL_FEED_MARGIN_Y + index * KILL_FEED_LINE_HEIGHT;
+      const finalX = VIEWPORT_WIDTH - KILL_FEED_MARGIN_X - rendered.cardW;
+      const finalY =
+        KILL_FEED_MARGIN_Y + index * (KILL_FEED_CARD_H + KILL_FEED_CARD_GAP);
 
       if (rendered.justEntered) {
         rendered.justEntered = false;
-        rendered.text.setPosition(
+        rendered.container.setPosition(
           finalX - KILL_FEED_SLIDE_IN_DISTANCE,
           finalY,
         );
         rendered.slideInTween = this.tweens.add({
-          targets: rendered.text,
+          targets: rendered.container,
           x: finalX,
           alpha: 1,
           duration: KILL_FEED_SLIDE_IN_MS,
@@ -1147,11 +1248,11 @@ class MainScene extends Phaser.Scene {
         return;
       }
 
-      rendered.text.y = finalY;
+      rendered.container.y = finalY;
       if (rendered.slideInTween && rendered.slideInTween.isPlaying()) {
         rendered.slideInTween.updateTo("x", finalX, true);
       } else {
-        rendered.text.x = finalX;
+        rendered.container.x = finalX;
       }
     });
   }
@@ -1162,22 +1263,287 @@ class MainScene extends Phaser.Scene {
     timeRemainingMs: number | null,
     countdownMs: number | null,
   ) {
-    const localPlayer = players.find(
-      (player) => player.id === this.localPlayerId,
-    );
-    this.infoText.setText([
-      `room: ${ROOM_ID}`,
-      `players: ${players.length}`,
-      `match: ${matchState}`,
-      `hp: ${localPlayer?.hp ?? 0}`,
-      `kills: ${localPlayer?.kills ?? 0}  deaths: ${localPlayer?.deaths ?? 0}`,
-      `weapon: ${localPlayer ? (weaponDefinitionById[localPlayer.equippedWeaponId]?.name ?? localPlayer.equippedWeaponId) : "unknown"}`,
-      `ammo: ${localPlayer?.equippedWeaponResource ?? "∞"}`,
-      `lives: ${localPlayer?.lives ?? 0}`,
-      `time: ${timeRemainingMs === null ? "∞" : `${Math.ceil(timeRemainingMs / 1000)}s`}`,
-    ]);
+    if (this.debugEnabled) {
+      const localPlayer = players.find((p) => p.id === this.localPlayerId);
+      this.infoText.setVisible(true).setText([
+        `room: ${ROOM_ID}  players: ${players.length}  match: ${matchState}`,
+        `hp: ${localPlayer?.hp ?? 0}  kills: ${localPlayer?.kills ?? 0}  deaths: ${localPlayer?.deaths ?? 0}`,
+        `weapon: ${localPlayer ? (weaponDefinitionById[localPlayer.equippedWeaponId]?.name ?? localPlayer.equippedWeaponId) : "?"}  ammo: ${localPlayer?.equippedWeaponResource ?? "∞"}`,
+        `lives: ${localPlayer?.lives ?? 0}  time: ${timeRemainingMs === null ? "∞" : `${Math.ceil(timeRemainingMs / 1000)}s`}`,
+      ]);
+    } else {
+      this.infoText.setVisible(false);
+    }
 
+    this.updateHud(players, timeRemainingMs);
     this.updateMatchOverlay(players, matchState, countdownMs);
+  }
+
+  // ── HUD ──────────────────────────────────────────────────────────────
+
+  private createHud() {
+    const depth = 11;
+
+    // 배경 바
+    this.hudBgGraphics = this.add
+      .graphics()
+      .setDepth(depth)
+      .setScrollFactor(0);
+    this.hudBgGraphics.fillStyle(0x0f0a06, 0.92);
+    this.hudBgGraphics.fillRect(0, HUD_BAR_Y, VIEWPORT_WIDTH, HUD_BAR_HEIGHT);
+    this.hudBgGraphics.lineStyle(1, 0x3d2610, 1);
+    this.hudBgGraphics.lineBetween(0, HUD_BAR_Y, VIEWPORT_WIDTH, HUD_BAR_Y);
+
+    // 좌측 카드 Graphics (매 업데이트마다 다시 그림)
+    this.hudLeftGraphics = this.add
+      .graphics()
+      .setDepth(depth + 1)
+      .setScrollFactor(0);
+
+    // 우측 카드 Graphics
+    this.hudRightGraphics = this.add
+      .graphics()
+      .setDepth(depth + 1)
+      .setScrollFactor(0);
+
+    const textDepth = depth + 2;
+    const textStyle = {
+      fontSize: "11px",
+      color: "#d4b89a",
+      lineSpacing: 3,
+    };
+
+    // 좌측 카드 텍스트
+    this.hudLeftNameText = this.add
+      .text(0, 0, "", { ...textStyle, fontSize: "12px", color: "#f9e4c8", fontStyle: "bold" })
+      .setDepth(textDepth)
+      .setScrollFactor(0);
+    this.hudLeftStatText = this.add
+      .text(0, 0, "", textStyle)
+      .setDepth(textDepth)
+      .setScrollFactor(0);
+
+    // 우측 카드 텍스트
+    this.hudRightNameText = this.add
+      .text(0, 0, "", { ...textStyle, fontSize: "12px", color: "#f9e4c8", fontStyle: "bold" })
+      .setDepth(textDepth)
+      .setScrollFactor(0);
+    this.hudRightStatText = this.add
+      .text(0, 0, "", textStyle)
+      .setDepth(textDepth)
+      .setScrollFactor(0);
+
+    // 타이머 (중앙)
+    this.hudTimerText = this.add
+      .text(VIEWPORT_WIDTH / 2, HUD_BAR_Y + HUD_BAR_HEIGHT / 2, "", {
+        fontSize: "24px",
+        fontStyle: "bold",
+        color: "#f9e4c8",
+      })
+      .setOrigin(0.5)
+      .setDepth(textDepth)
+      .setScrollFactor(0);
+  }
+
+  private updateHud(
+    players: PlayerSnapshot[],
+    timeRemainingMs: number | null,
+  ) {
+    const localPlayer = players.find((p) => p.id === this.localPlayerId) ?? null;
+
+    // 상대: 로컬이 아닌 플레이어 중 킬 최다
+    const opponent =
+      players
+        .filter((p) => p.id !== this.localPlayerId)
+        .sort((a, b) => b.kills - a.kills)[0] ?? null;
+
+    this.drawPlayerCard(
+      this.hudLeftGraphics,
+      this.hudLeftNameText,
+      this.hudLeftStatText,
+      HUD_LEFT_CARD_X,
+      HUD_BAR_Y + HUD_CARD_PAD_Y,
+      localPlayer,
+      true,
+    );
+
+    this.drawPlayerCard(
+      this.hudRightGraphics,
+      this.hudRightNameText,
+      this.hudRightStatText,
+      HUD_RIGHT_CARD_X,
+      HUD_BAR_Y + HUD_CARD_PAD_Y,
+      opponent,
+      false,
+    );
+
+    // 타이머
+    if (timeRemainingMs === null) {
+      this.hudTimerText.setText("∞").setColor("#f9e4c8");
+    } else {
+      const secs = Math.ceil(timeRemainingMs / 1000);
+      const m = Math.floor(secs / 60);
+      const s = secs % 60;
+      const label = m > 0 ? `${m}:${String(s).padStart(2, "0")}` : `${s}`;
+      this.hudTimerText
+        .setText(label)
+        .setColor(secs <= 10 ? "#ef4444" : "#f9e4c8");
+    }
+  }
+
+  private drawPlayerCard(
+    g: Phaser.GameObjects.Graphics,
+    nameText: Phaser.GameObjects.Text,
+    statText: Phaser.GameObjects.Text,
+    cardX: number,
+    cardY: number,
+    player: PlayerSnapshot | null,
+    isLocal: boolean,
+  ) {
+    g.clear();
+
+    if (!player) {
+      // 빈 카드 — 점선 테두리만
+      g.lineStyle(1, 0x3d2610, 0.35);
+      g.strokeRoundedRect(cardX, cardY, HUD_CARD_W, HUD_CARD_H, 6);
+      nameText.setText("").setVisible(false);
+      statText.setText("").setVisible(false);
+      return;
+    }
+
+    nameText.setVisible(true);
+    statText.setVisible(true);
+
+    // ── 카드 배경 ──
+    g.fillStyle(0x1c1410, 0.9);
+    g.fillRoundedRect(cardX, cardY, HUD_CARD_W, HUD_CARD_H, 6);
+    g.lineStyle(1.5, 0x5c3d1e, 1);
+    g.strokeRoundedRect(cardX, cardY, HUD_CARD_W, HUD_CARD_H, 6);
+
+    // ── HP 바 (수직) ──
+    const hpBarX = cardX + HUD_HP_BAR_OFFSET_X;
+    const hpBarY = cardY + 4;
+    const hpBarH = HUD_CARD_H - 8;
+    const hpRatio = Math.max(0, Math.min(1, player.hp / HUD_MAX_HP));
+
+    // 빈 영역 (깎인 HP)
+    g.fillStyle(0x2d1f15, 1);
+    g.fillRoundedRect(hpBarX, hpBarY, HUD_HP_BAR_W, hpBarH, 3);
+
+    // 채워진 영역 (현재 HP) — 아래에서 위로
+    if (hpRatio > 0) {
+      const filledH = Math.floor(hpBarH * hpRatio);
+      const filledY = hpBarY + hpBarH - filledH;
+      const hpColor =
+        hpRatio > 0.5 ? 0x22c55e : hpRatio > 0.25 ? 0xeab308 : 0xef4444;
+      g.fillStyle(hpColor, 1);
+      g.fillRoundedRect(hpBarX, filledY, HUD_HP_BAR_W, filledH, 3);
+    }
+
+    // 4구간 세그먼트 사선 컷
+    g.lineStyle(1.5, 0x0f0a06, 0.9);
+    for (let i = 1; i <= 3; i++) {
+      const segY = hpBarY + (hpBarH * i) / 4;
+      g.lineBetween(hpBarX - 1, segY + 1.5, hpBarX + HUD_HP_BAR_W + 1, segY - 1.5);
+    }
+
+    // HP 바 테두리
+    g.lineStyle(1, 0x5c3d1e, 0.8);
+    g.strokeRoundedRect(hpBarX, hpBarY, HUD_HP_BAR_W, hpBarH, 3);
+
+    // ── 생명 씨앗 아이콘 (HP 바 위에 오버레이) ──
+    const maxSeedDisplay = 8;
+    const seedCount = Math.min(player.lives, maxSeedDisplay);
+    if (seedCount > 0) {
+      const seedSizeW = 6;
+      const seedSizeH = 8;
+      const seedSpacingH = Math.min((hpBarH - 4) / seedCount, 10);
+      for (let i = 0; i < seedCount; i++) {
+        const seedX = hpBarX + HUD_HP_BAR_W / 2;
+        const seedY = hpBarY + 3 + i * seedSpacingH;
+        g.fillStyle(0xf5c518, 0.95);
+        g.fillEllipse(seedX, seedY, seedSizeW, seedSizeH);
+      }
+    }
+    if (player.lives > maxSeedDisplay) {
+      // 초과 표시: 점 하나 + 숫자 텍스트는 statText에서 처리
+    }
+
+    // ── 햄스터 얼굴 (플레이스홀더) ──
+    const faceR = HUD_FACE_SIZE / 2;
+    const faceX = cardX + HUD_FACE_OFFSET_X + HUD_HP_BAR_W + 4 + faceR;
+    const faceY = cardY + HUD_CARD_H / 2;
+    const bodyColor = isLocal ? 0xc8874a : 0x4a4a4a;
+    const earColor = isLocal ? 0xd4a574 : 0x5a5a5a;
+
+    // 귀
+    g.fillStyle(earColor, 1);
+    g.fillCircle(faceX - 13, faceY - 14, 7);
+    g.fillCircle(faceX + 13, faceY - 14, 7);
+    // 귀 안쪽 (핑크)
+    g.fillStyle(0xff8fab, 0.55);
+    g.fillCircle(faceX - 13, faceY - 14, 4);
+    g.fillCircle(faceX + 13, faceY - 14, 4);
+    // 얼굴 몸
+    g.fillStyle(bodyColor, 1);
+    g.fillCircle(faceX, faceY, faceR);
+    // 눈
+    g.fillStyle(0x2c1810, 1);
+    g.fillCircle(faceX - 6, faceY - 4, 3);
+    g.fillCircle(faceX + 6, faceY - 4, 3);
+    // 눈 하이라이트
+    g.fillStyle(0xffffff, 0.85);
+    g.fillCircle(faceX - 5, faceY - 5.5, 1.2);
+    g.fillCircle(faceX + 7, faceY - 5.5, 1.2);
+    // 코
+    g.fillStyle(0xff8fab, 1);
+    g.fillEllipse(faceX, faceY + 3, 5, 3.5);
+    // 얼굴 테두리
+    g.lineStyle(1, 0x5c3d1e, 0.5);
+    g.strokeCircle(faceX, faceY, faceR);
+
+    // ── 킬 스컬 아이콘 ──
+    const textBaseX = cardX + HUD_TEXT_OFFSET_X + 6;
+    const skullAreaY = cardY + HUD_CARD_H - 20;
+    const maxSkullDisplay = 10;
+    const visibleKills = Math.min(player.kills, maxSkullDisplay);
+    const skullR = 5;
+    const skullGap = skullR * 2 + 2;
+    for (let i = 0; i < visibleKills; i++) {
+      const skX = textBaseX + i * skullGap;
+      const skY = skullAreaY;
+      g.fillStyle(0xe87040, 0.9);
+      g.fillCircle(skX, skY, skullR);
+      g.lineStyle(1.2, 0x0f0a06, 0.9);
+      // X 눈 (좌)
+      g.lineBetween(skX - 3, skY - 2.5, skX - 1, skY - 0.5);
+      g.lineBetween(skX - 1, skY - 2.5, skX - 3, skY - 0.5);
+      // X 눈 (우)
+      g.lineBetween(skX + 1, skY - 2.5, skX + 3, skY - 0.5);
+      g.lineBetween(skX + 3, skY - 2.5, skX + 1, skY - 0.5);
+    }
+    if (player.kills > maxSkullDisplay) {
+      // 초과 시 +N 표시 (statText에서 처리)
+    }
+
+    // ── 텍스트 업데이트 ──
+    const nickX = cardX + HUD_TEXT_OFFSET_X + 6;
+    const nickY = cardY + 8;
+    nameText.setPosition(nickX, nickY).setText(player.name);
+
+    const weaponName =
+      weaponDefinitionById[player.equippedWeaponId]?.name ??
+      player.equippedWeaponId;
+    const ammo =
+      player.equippedWeaponResource !== null &&
+      player.equippedWeaponResource !== undefined
+        ? String(player.equippedWeaponResource)
+        : "∞";
+    const livesExtra = player.lives > maxSeedDisplay ? `+${player.lives - maxSeedDisplay}` : "";
+    const killsExtra = player.kills > maxSkullDisplay ? `+${player.kills - maxSkullDisplay}` : "";
+    statText.setPosition(nickX, nickY + 18).setText(
+      `${weaponName} [${ammo}]  ${killsExtra}  ${livesExtra}`.trim(),
+    );
   }
 
   private updateMatchOverlay(
@@ -1741,12 +2107,44 @@ class MainScene extends Phaser.Scene {
     }
 
     if (fireStyle === "paws_pulse") {
-      const pulseX = originX + aimX * 24;
-      const pulseY = originY + aimY * 24;
-      this.attackFlash.lineStyle(3, 0xfef08a, 0.95);
-      this.attackFlash.strokeCircle(pulseX, pulseY, 12);
-      this.attackFlash.lineStyle(2, 0xfcd34d, 0.8);
-      this.attackFlash.strokeCircle(pulseX, pulseY, 20);
+      // 사다리꼴 원뿔: 에임 방향으로 내지르는 주먹 모양
+      // 좁은 쪽(캐릭터 방향) → 넓은 쪽(주먹 끝)
+      const perpX = -aimY;
+      const perpY = aimX;
+      const nearDist = 12;
+      const farDist = 76;
+      const nearHW = 6;
+      const farHW = 24;
+
+      const p1x = originX + aimX * nearDist + perpX * nearHW;
+      const p1y = originY + aimY * nearDist + perpY * nearHW;
+      const p2x = originX + aimX * nearDist - perpX * nearHW;
+      const p2y = originY + aimY * nearDist - perpY * nearHW;
+      const p3x = originX + aimX * farDist - perpX * farHW;
+      const p3y = originY + aimY * farDist - perpY * farHW;
+      const p4x = originX + aimX * farDist + perpX * farHW;
+      const p4y = originY + aimY * farDist + perpY * farHW;
+
+      this.attackFlash.fillStyle(0xfb923c, 0.72);
+      this.attackFlash.fillPoints(
+        [
+          { x: p1x, y: p1y },
+          { x: p2x, y: p2y },
+          { x: p3x, y: p3y },
+          { x: p4x, y: p4y },
+        ],
+        true,
+      );
+      this.attackFlash.lineStyle(2, 0xfef08a, 0.88);
+      this.attackFlash.strokePoints(
+        [
+          { x: p1x, y: p1y },
+          { x: p2x, y: p2y },
+          { x: p3x, y: p3y },
+          { x: p4x, y: p4y },
+        ],
+        true,
+      );
       this.attackFlashUntil = this.time.now + 90;
       return;
     }
