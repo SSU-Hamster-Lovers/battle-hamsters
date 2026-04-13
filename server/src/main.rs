@@ -1670,6 +1670,173 @@ mod tests {
         assert!(matches!(snapshot.kill_feed[0].cause, DeathCause::FallZone));
     }
 
+    // ── Paws 근접 판정 테스트 ────────────────────────────────────────────
+
+    fn paws_shooter(x: f64, y: f64, aim_x: f64, aim_y: f64) -> PlayerRuntime {
+        let mut p = test_player(x, y);
+        p.snapshot.equipped_weapon_id = "paws".to_string();
+        p.snapshot.equipped_weapon_resource = None;
+        p.attack_queued = true;
+        p.latest_input.aim = Vector2 { x: aim_x, y: aim_y };
+        p.latest_input.attack = true;
+        p.latest_input.attack_pressed = true;
+        p
+    }
+
+    fn paws_target(x: f64, y: f64) -> PlayerRuntime {
+        let mut p = test_player(x, y);
+        p.snapshot.id = "target".to_string();
+        p.snapshot.name = "target".to_string();
+        p
+    }
+
+    #[test]
+    fn paws_hits_target_directly_in_front() {
+        // 공격자 x=100, 에임 오른쪽(1,0), 타겟 x=130 — 거리 30px (14~56 범위, 수직 0px)
+        let mut room = RoomState::new();
+        room.players.insert(
+            "shooter".to_string(),
+            paws_shooter(100.0, 200.0, 1.0, 0.0),
+        );
+        let mut target = paws_target(130.0, 200.0);
+        target.snapshot.id = "target".to_string();
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let victim = room.players.get("target").unwrap();
+        assert_eq!(victim.snapshot.hp, 92); // damage=8
+        assert!(victim.external_velocity.x > 0.0); // 오른쪽으로 넉백
+        assert_eq!(room.damage_events.len(), 1);
+        assert!(deaths.is_empty());
+    }
+
+    #[test]
+    fn paws_misses_target_behind_attacker() {
+        // 공격자 x=100, 에임 오른쪽(1,0), 타겟 x=60 — 뒤쪽, d_forward 음수
+        let mut room = RoomState::new();
+        room.players.insert(
+            "shooter".to_string(),
+            paws_shooter(100.0, 200.0, 1.0, 0.0),
+        );
+        let mut target = paws_target(60.0, 200.0);
+        target.snapshot.id = "target".to_string();
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let victim = room.players.get("target").unwrap();
+        assert_eq!(victim.snapshot.hp, 100); // 피격 없음
+        assert_eq!(room.damage_events.len(), 0);
+    }
+
+    #[test]
+    fn paws_misses_target_too_far() {
+        // 공격자 x=100, 에임 오른쪽, 타겟 x=200 — 거리 100px, 범위(14~56) 초과
+        let mut room = RoomState::new();
+        room.players.insert(
+            "shooter".to_string(),
+            paws_shooter(100.0, 200.0, 1.0, 0.0),
+        );
+        let mut target = paws_target(200.0, 200.0);
+        target.snapshot.id = "target".to_string();
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let victim = room.players.get("target").unwrap();
+        assert_eq!(victim.snapshot.hp, 100);
+        assert_eq!(room.damage_events.len(), 0);
+    }
+
+    #[test]
+    fn paws_misses_target_too_close_overlapping_body() {
+        // 공격자 x=100, 에임 오른쪽, 타겟 x=106 — 거리 6px, hit_start(14px) 미달
+        let mut room = RoomState::new();
+        room.players.insert(
+            "shooter".to_string(),
+            paws_shooter(100.0, 200.0, 1.0, 0.0),
+        );
+        let mut target = paws_target(106.0, 200.0);
+        target.snapshot.id = "target".to_string();
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let victim = room.players.get("target").unwrap();
+        assert_eq!(victim.snapshot.hp, 100); // 너무 겹쳐있으면 빗나감
+        assert_eq!(room.damage_events.len(), 0);
+    }
+
+    #[test]
+    fn paws_misses_target_outside_cone_perpendicular() {
+        // 공격자 x=100, 에임 오른쪽, 타겟 x=135, y=250 — 수직 이탈 50px (원뿔 반폭 초과)
+        let mut room = RoomState::new();
+        room.players.insert(
+            "shooter".to_string(),
+            paws_shooter(100.0, 200.0, 1.0, 0.0),
+        );
+        let mut target = paws_target(135.0, 250.0); // 수직 거리 50px
+        target.snapshot.id = "target".to_string();
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let victim = room.players.get("target").unwrap();
+        assert_eq!(victim.snapshot.hp, 100); // 원뿔 밖
+        assert_eq!(room.damage_events.len(), 0);
+    }
+
+    #[test]
+    fn paws_respects_cooldown() {
+        let mut room = RoomState::new();
+        let mut shooter = paws_shooter(100.0, 200.0, 1.0, 0.0);
+        shooter.next_attack_at = 2000; // 쿨타임 중
+        room.players.insert("shooter".to_string(), shooter);
+        let mut target = paws_target(130.0, 200.0);
+        target.snapshot.id = "target".to_string();
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying); // now_ms < next_attack_at
+
+        let victim = room.players.get("target").unwrap();
+        assert_eq!(victim.snapshot.hp, 100);
+    }
+
+    #[test]
+    fn paws_kills_low_hp_target() {
+        let mut room = RoomState::new();
+        room.players.insert(
+            "shooter".to_string(),
+            paws_shooter(100.0, 200.0, 1.0, 0.0),
+        );
+        let mut target = paws_target(130.0, 200.0);
+        target.snapshot.id = "target".to_string();
+        target.snapshot.hp = 5; // damage=8, should kill
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let victim = room.players.get("target").unwrap();
+        assert_eq!(victim.snapshot.hp, 0);
+        assert_eq!(deaths.len(), 1);
+        assert!(matches!(deaths[0].1, DeathCause::Weapon { .. }));
+    }
+
     #[test]
     fn last_hit_by_cleared_on_respawn() {
         let mut player = test_player(200.0, ground_top_y() - PLAYER_HALF_SIZE - 2.0);

@@ -4,8 +4,8 @@
 
 ## 최신 기준
 
-- 기준 브랜치: `develop`
-- 마지막 동기화 기준: 2026-04-12
+- 기준 브랜치: `develop` (feat/paws-combat-hud-v1 병합 후 기준)
+- 마지막 동기화 기준: 2026-04-13
 
 ## 현재 구현된 것
 
@@ -81,7 +81,7 @@
 - Phaser 클라이언트에서 WebSocket 연결 가능
 - `pnpm dev` 기본 실행은 `GAME_HOST` / `GAME_PORT` 를 읽어 LAN/Tailscale 접근 가능한 개발 서버로 뜬다.
 - `join_room`, `room_snapshot`, `world_snapshot` 처리 가능
-- URL 파라미터(`?room=&name=&pid=`)를 파싱해 Portal 로비에서 전달된 정보로 바로 접속한다.
+- URL query 또는 hash(`room=...&name=...&pid=...`)를 파싱해 Portal 로비에서 전달된 정보로 바로 접속한다.
 - 파라미터가 없으면 자유맵으로 자동 입장한다.
 - 닉네임/플레이어 ID 는 `localStorage` 에 저장되어 재접속 시 동일 신원 유지
 - 테스트 맵용 바닥 / 플랫폼 / pit wall / hazard / spawn 위치를 `trainingArenaMap` 공통 데이터에서 읽어 렌더링한다.
@@ -90,15 +90,30 @@
 - 월드 무기 pickup은 기본 fallback 도형/라벨을 유지하되, `Acorn Blaster` 는 1차 전용 pickup sprite + `AB` glyph + source accent 로 렌더링한다.
 - 월드 아이템 pickup을 간단한 다이아몬드 도형/라벨로 렌더링한다.
 - `Acorn Blaster` 장착 시 손 앞에 1차 무기 overlay 를 렌더링한다.
-- HUD 텍스트에 현재 장착 무기, 탄 수, HP, 킬/데스, 생명, 남은 시간을 표시한다.
-- 발사 시 로컬 보조용 무기별 연출 1차를 적용한다.
+- 하단 고정 HUD 바 (y=512~600, 88px):
+  - 좌측: 로컬 플레이어 compact combat bar
+  - 중앙: 타이머 (10초 이하 적색 강조)
+  - 우측: 상대 compact combat bar
+  - Free Play 또는 사실상 무한 시간 제한에서는 중앙 타이머를 `FREE PLAY` 패널로 표시한다.
+  - 카드형보다 얇은 `얼굴 + 가로 HP 바 + 생명 pip + 작은 무기/킬 정보` 중심 구조로 정리했다.
+  - Free Play에서는 우측 카드가 `최근 공격한 대상 -> 킬 최다 상대` 우선순위로 표시된다.
+- 좌상단에는 큰 제목/room/server tick 대신 작은 `WS/ping` 상태만 표시한다.
+- 무기 아이콘 레지스트리: `getWeaponHudTextureKey(weaponId)` → `RenderTexture` 코드 생성 아이콘 (`paws`, `acorn_blaster`, fallback)
+- 발사 시 로컬 보조용 무기별 연출을 적용한다.
   - `Acorn Blaster`: 총구 화염 + 짧은 tracer
-  - `Paws`: 원형 pulse
+  - `Paws`: 에임 방향으로 내지르는 사다리꼴 원뿔(truncated cone) flash
   - 그 외: 기존 선형 fallback
 - 피격 연출 1차/2차를 적용한다.
   - `damageEvents` 가 있으면 정확한 `impactPoint` / `impactDirection` 기준으로 작은 파편 파티클을 생성한다.
   - 정확 이벤트가 없을 때는 `hp` 감소와 넉백 방향으로 fallback 파티클을 생성한다.
-- 우상단에 킬로그 스택을 렌더링한다.
+  - `Acorn Blaster`: 밝은 파편 + 짧은 탄 파편 계열
+  - `Paws`: 짧은 먼지 puff + 충격파 타원 계열
+- 우상단에 알림 로그 스택을 `Container` 기반 카드로 렌더링한다.
+  - `weapon` 킬: 공격자명 | 무기 아이콘(HUD 아이콘 재사용) | 피해자명
+  - 낙사/함정/자살: 텍스트 카드
+  - 입장/퇴장: 시스템 알림 카드
+  - 입장/퇴장 카드도 킬 카드와 같은 TTL 기준으로 자동 퇴장한다.
+- 월드 무기/아이템 pickup은 소멸 직전 3단계 점멸 연출을 적용한다.
 - 매치 상태별 UI:
   - `Waiting`: 대기 / 카운트다운 오버레이
   - `Running`: 기존 플레이 + 남은 시간
@@ -125,7 +140,7 @@
 - 루트 `portal` 개발 실행 스크립트는 시작 전에 `apps/portal/.next` 를 정리해 stale chunk 캐시 충돌을 줄인다.
 - 닉네임 입력(localStorage), 자유맵 입장, 방 만들기(4자리 코드 표시), 코드로 입장 흐름을 제공한다.
 - 플레이어 ID 는 익명 UUID 로 자동 발급된다.
-- 게임 클라이언트로 이동 시 `?room=&name=&pid=` 파라미터를 URL 로 전달한다.
+- 게임 클라이언트로 이동 시 `room=...&name=...&pid=...` 정보를 hash 기반 URL로 전달한다.
 - 현재 Portal URL에 `ops`, `debug` 파라미터가 있으면 게임 URL로 그대로 전달한다.
 
 ### 배포
@@ -167,7 +182,9 @@
 
 ### 전투
 
-- `Acorn Blaster` 1종만 실제 발사/피격/넉백/자기 반동/탄 소모/빈 무기 폐기를 처리한다.
+- `Acorn Blaster`, `Paws` 두 무기에 대해 서버 판정을 구현한다.
+- `Paws` 근접 판정: 에임 방향 원뿔(hit_start=14px, hit_end=56px, near_half_w=7px, far_half_w=21px), 가장 가까운 단일 타겟, damage=8, knockback=3, cooldown=350ms.
+- `Acorn Blaster` 히트스캔 발사
 - 월드 무기는 `E`로 명시적으로 획득하고 `Q`로 드롭한다.
 - 월드 아이템은 닿으면 자동으로 획득한다.
 - `jump_boost_small`은 `maxJumpCount`를 `1..3` 범위에서 증가시키고, `health_pack_small`은 HP를 최대치까지 회복한다.
@@ -175,12 +192,11 @@
 
 ## 다음 구현 우선순위
 
-1. 하단 플레이어 상태 HUD 실제 배치
-2. 킬로그 카드 + 아이콘 레이아웃
-3. 무기별 피격 파티클 차별화
-4. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체
-5. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
-6. `develop` preview / staging 배포 전략 분리
+1. HUD를 compact combat bar v2 구조로 단순화 (`mini-spec-hud-compact-combat-bar-v2.md` 참조)
+2. 무기 각도 / Dead zone / 오버레이 앵커 1차 (`mini-spec-weapon-angle-deadzone-v0.md` 참조)
+3. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체
+4. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
+5. `develop` preview / staging 배포 전략 분리
 
 ## 참고
 
@@ -191,3 +207,6 @@
 - 로컬 개발 환경 정리 미니 스펙: `docs/archive/mini-specs/mini-spec-local-dev-env-runner-v1.md`
 - 점프 아이템 세부 규칙 후속은 `docs/technical/mini-spec-jump-item-integration-v1.md` 참조
 - 전투 표현 polish 후속은 `docs/technical/mini-spec-combat-presentation-polish-v0.md` 참조
+- HUD compact 후속은 `docs/technical/mini-spec-hud-compact-combat-bar-v2.md` 참조
+- 무기 각도/Dead zone 초안은 `docs/technical/mini-spec-weapon-angle-deadzone-v0.md` 참조
+- Paws 근접 전투 + HUD 1차 미니 스펙: `docs/archive/mini-specs/mini-spec-paws-combat-hud-v1.md`

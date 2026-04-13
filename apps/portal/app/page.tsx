@@ -33,7 +33,10 @@ function buildGameUrl(roomId: string, name: string, pid: string): string {
       }
     }
   }
-  return `${GAME_URL}?${params.toString()}`;
+  // Cloudflare Pages production project currently returns 404 for `/?query=...`.
+  // Use hash handoff so the static host only receives `/`, while the game client
+  // can still recover room/name/pid from `location.hash`.
+  return `${GAME_URL}#${params.toString()}`;
 }
 
 export default function Home() {

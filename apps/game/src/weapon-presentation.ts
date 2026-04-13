@@ -1,6 +1,9 @@
 import Phaser from "phaser";
 import { weaponDefinitionById } from "@battle-hamsters/shared";
 
+const WEAPON_HUD_ICON_PREFIX = "weapon-hud-icon";
+const HUD_ICON_SIZE = 24;
+
 const WEAPON_PICKUP_TEXTURE_PREFIX = "weapon-pickup";
 const ACORN_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-acorn-blaster`;
 const WEAPON_EQUIP_TEXTURE_PREFIX = "weapon-equip";
@@ -25,6 +28,11 @@ export type WeaponFireStyle =
   | "generic_line"
   | "paws_pulse"
   | "muzzle_flash";
+
+export type WeaponImpactStyle =
+  | "generic_spark"
+  | "acorn_spark"
+  | "paws_dust";
 
 export function ensureWeaponPickupTextures(scene: Phaser.Scene) {
   if (!scene.textures.exists(ACORN_PICKUP_TEXTURE_KEY)) {
@@ -101,6 +109,84 @@ export function resolveWeaponFireStyle(weaponId: string): WeaponFireStyle {
   }
 
   return "generic_line";
+}
+
+export function resolveWeaponImpactStyle(weaponId: string): WeaponImpactStyle {
+  if (weaponId === "acorn_blaster") {
+    return "acorn_spark";
+  }
+
+  if (weaponId === "paws") {
+    return "paws_dust";
+  }
+
+  return "generic_spark";
+}
+
+// ── HUD 무기 아이콘 ──────────────────────────────────────────────────────
+
+export function ensureWeaponHudTextures(scene: Phaser.Scene) {
+  for (const weaponId of Object.keys(weaponDefinitionById)) {
+    const key = `${WEAPON_HUD_ICON_PREFIX}-${weaponId}`;
+    if (scene.textures.exists(key)) continue;
+    const g = new Phaser.GameObjects.Graphics(scene);
+    if (weaponId === "paws") drawPawsHudIcon(g);
+    else if (weaponId === "acorn_blaster") drawAcornBlasterHudIcon(g);
+    else drawFallbackHudIcon(g);
+    g.generateTexture(key, HUD_ICON_SIZE, HUD_ICON_SIZE);
+    g.destroy();
+  }
+}
+
+export function getWeaponHudTextureKey(weaponId: string): string {
+  const key = `${WEAPON_HUD_ICON_PREFIX}-${weaponId}`;
+  return key;
+}
+
+function drawPawsHudIcon(g: Phaser.GameObjects.Graphics) {
+  g.clear();
+  // 손바닥 베이스
+  g.fillStyle(0xd4a574, 1);
+  g.fillCircle(12, 15, 8);
+  // 너클 4개
+  g.fillStyle(0xe8c49a, 1);
+  for (let i = 0; i < 4; i++) {
+    g.fillCircle(4.5 + i * 4.5, 8.5, 2.8);
+  }
+  // 아웃라인
+  g.lineStyle(1.5, 0x7a3f1e, 1);
+  g.strokeCircle(12, 15, 8);
+  for (let i = 0; i < 4; i++) {
+    g.strokeCircle(4.5 + i * 4.5, 8.5, 2.8);
+  }
+}
+
+function drawAcornBlasterHudIcon(g: Phaser.GameObjects.Graphics) {
+  g.clear();
+  // 총신
+  g.fillStyle(0x7c4a2c, 1);
+  g.fillRoundedRect(4, 9, 15, 7, 2);
+  // 총구
+  g.fillStyle(0x5b3922, 1);
+  g.fillRoundedRect(17, 10, 5, 4, 1);
+  // 손잡이
+  g.fillStyle(0x7c4a2c, 1);
+  g.fillRoundedRect(7, 15, 5, 7, 1);
+  // 악센트 포인트
+  g.fillStyle(0x38bdf8, 1);
+  g.fillCircle(5, 12, 2);
+  // 아웃라인
+  g.lineStyle(1.5, 0x2f1d12, 1);
+  g.strokeRoundedRect(4, 9, 15, 7, 2);
+  g.strokeRoundedRect(7, 15, 5, 7, 1);
+}
+
+function drawFallbackHudIcon(g: Phaser.GameObjects.Graphics) {
+  g.clear();
+  g.fillStyle(0x555555, 1);
+  g.fillCircle(12, 12, 10);
+  g.lineStyle(1.5, 0x888888, 1);
+  g.strokeCircle(12, 12, 10);
 }
 
 function abbreviateWeaponCode(weaponId: string): string {
