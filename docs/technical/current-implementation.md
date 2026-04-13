@@ -259,10 +259,12 @@
 
 ## 다음 구현 우선순위
 
-1. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체 (투사체 texture hookup 포함)
-2. Burn DoT를 전용 무기에 연결
-3. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
-4. `develop` preview / staging 배포 전략 분리
+1. 투사체 무기 연속 발사(Fire & Forget) 수정 — `attack_was_down` 기반 auto-requeue 추가
+2. 픽업 소멸 VFX — 점멸 + 블랙홀 흡수 연출 (흔들림 + scale 수축)
+3. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체 (투사체 texture hookup 포함)
+4. Burn DoT를 전용 무기에 연결
+5. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
+6. `develop` preview / staging 배포 전략 분리
 
 ## 참고
 
@@ -287,3 +289,5 @@
 - 투사체 중력 / 포물선 1차 미니 스펙: `docs/technical/mini-spec-projectile-gravity-v1.md`
 - 투사체 무기 1차 미니 스펙: `docs/technical/mini-spec-projectile-weapons-v1.md`
 - 투사체 충돌 정책 v2 미니 스펙: `docs/technical/mini-spec-projectile-collision-policy-v2.md`
+- Fire & Forget 수정 미니 스펙: `docs/technical/mini-spec-fire-and-forget-v1.md`
+- 픽업 소멸 VFX 미니 스펙: `docs/technical/mini-spec-pickup-despawn-vfx-v1.md`
