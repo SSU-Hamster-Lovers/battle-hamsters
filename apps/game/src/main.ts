@@ -143,7 +143,7 @@ const HUD_CARD_H = 80;
 const HUD_CARD_PAD_Y = 4;
 const HUD_LEFT_CARD_X = 8;
 const HUD_RIGHT_CARD_X = VIEWPORT_WIDTH - 8 - HUD_CARD_W; // 514
-const HUD_FACE_SIZE = 28;
+const HUD_FACE_SIZE = 24;
 const HUD_MAX_HP = 100;
 const HUD_TIMER_PANEL_W = 156;
 const HUD_TIMER_PANEL_H = 50;
@@ -1666,11 +1666,16 @@ class MainScene extends Phaser.Scene {
 
     const mirrored = !isLocal;
     const faceR = HUD_FACE_SIZE / 2;
-    const faceX = mirrored ? cardX + HUD_CARD_W - 18 : cardX + 18;
-    const faceY = cardY + 46;
-    const barX = mirrored ? cardX + 10 : cardX + 38;
-    const barY = cardY + 26;
-    const barW = HUD_CARD_W - 50;
+    const faceX = mirrored ? cardX + HUD_CARD_W - 22 : cardX + 22;
+    const faceY = cardY + 44;
+    const infoX = mirrored ? cardX + 10 : cardX + 46;
+    const infoY = cardY + 10;
+    const infoW = HUD_CARD_W - 56;
+    const nameY = infoY + 1;
+    const pipY = infoY + 16;
+    const barX = infoX;
+    const barY = infoY + 25;
+    const barW = infoW;
     const barH = 12;
     const hpRatio = Math.max(0, Math.min(1, player.hp / HUD_MAX_HP));
     const barFillColor =
@@ -1678,28 +1683,27 @@ class MainScene extends Phaser.Scene {
     const bodyColor = isLocal ? 0xc8874a : 0x4a4a4a;
     const earColor = isLocal ? 0xd4a574 : 0x5a5a5a;
     const accent = isLocal ? 0x93c5fd : 0xcbd5e1;
-    const pipY = cardY + 18;
-    const pipGap = 11;
-    const pipStartX = barX + 6;
+    const pipGap = 10;
+    const pipStartX = infoX + 6;
     const visibleLifePips = Math.min(player.lives, HUD_MAX_LIFE_PIPS);
-    const nameX = mirrored ? barX + barW - 4 : barX + 4;
-    const nameAlign = mirrored ? 1 : 0;
-    const weaponIconX = mirrored ? barX + barW - 8 : barX + 8;
-    const weaponInfoX = mirrored ? barX + barW - 18 : barX + 18;
-    const killInfoX = mirrored ? barX + 8 : barX + barW - 8;
-    const pipOverflowX = mirrored
-      ? pipStartX - 18
-      : pipStartX + HUD_MAX_LIFE_PIPS * pipGap + 2;
+    const pipOverflowX = pipStartX + HUD_MAX_LIFE_PIPS * pipGap + 4;
+    const bottomRowY = barY + 17;
+    const weaponIconX = infoX + 7;
+    const weaponInfoX = infoX + 18;
+    const killInfoX = infoX + infoW - 2;
 
     // ── 컴팩트 바 배경 ──
     g.fillStyle(0x120c09, 0.72);
-    g.fillRoundedRect(cardX + 4, cardY + 16, HUD_CARD_W - 8, 44, 10);
+    g.fillRoundedRect(cardX + 4, cardY + 14, HUD_CARD_W - 8, 48, 10);
     g.fillStyle(0x30231a, 0.95);
-    g.fillRoundedRect(barX - 2, barY - 10, barW + 4, 34, 8);
+    g.fillRoundedRect(infoX - 3, infoY - 2, infoW + 6, 44, 8);
     g.fillStyle(0x17110d, 0.96);
-    g.fillRoundedRect(barX, barY - 8, barW, 30, 7);
+    g.fillRoundedRect(infoX, infoY, infoW, 40, 7);
     g.lineStyle(1.2, 0x7a5a34, 0.9);
-    g.strokeRoundedRect(barX, barY - 8, barW, 30, 7);
+    g.strokeRoundedRect(infoX, infoY, infoW, 40, 7);
+
+    g.fillStyle(0x1a120e, 0.95);
+    g.fillRoundedRect(infoX + 2, infoY + 2, infoW - 4, 10, 4);
 
     // ── HP 바 (가로) ──
     g.fillStyle(0x20150f, 1);
@@ -1721,13 +1725,12 @@ class MainScene extends Phaser.Scene {
 
     // ── 생명 pip ──
     for (let i = 0; i < HUD_MAX_LIFE_PIPS; i++) {
-      const pipIndex = mirrored ? HUD_MAX_LIFE_PIPS - 1 - i : i;
-      const px = pipStartX + pipIndex * pipGap;
+      const px = pipStartX + i * pipGap;
       const alive = i < visibleLifePips;
       g.fillStyle(alive ? 0x7cfc00 : 0x314126, alive ? 0.95 : 0.8);
-      g.fillCircle(px, pipY, 4.2);
+      g.fillCircle(px, pipY, 3.7);
       g.lineStyle(1, alive ? 0xeaffc4 : 0x10160d, alive ? 0.7 : 0.35);
-      g.strokeCircle(px, pipY, 4.2);
+      g.strokeCircle(px, pipY, 3.7);
     }
 
     // ── 얼굴 받침 ──
@@ -1763,11 +1766,10 @@ class MainScene extends Phaser.Scene {
     g.strokeCircle(faceX, faceY, faceR);
 
     // ── 텍스트 업데이트 ──
-    const nickY = cardY + 7;
     nameText
-      .setPosition(nameX, nickY)
-      .setOrigin(nameAlign, 0)
-      .setText(player.name.length > 10 ? `${player.name.slice(0, 10)}…` : player.name)
+      .setPosition(infoX + 4, nameY)
+      .setOrigin(0, 0)
+      .setText(player.name.length > 11 ? `${player.name.slice(0, 11)}…` : player.name)
       .setColor(isLocal ? "#fde7c7" : "#e8d4bd");
 
     const ammo =
@@ -1779,20 +1781,20 @@ class MainScene extends Phaser.Scene {
     if (this.textures.exists(weaponIconKey)) {
       weaponIcon.setTexture(weaponIconKey);
     }
-    weaponIcon.setPosition(weaponIconX, cardY + 44).setScale(0.68);
+    weaponIcon.setPosition(weaponIconX, bottomRowY + 5).setScale(0.62);
     statText
-      .setPosition(weaponInfoX, cardY + 37)
-      .setOrigin(nameAlign, 0)
+      .setPosition(weaponInfoX, bottomRowY - 2)
+      .setOrigin(0, 0)
       .setColor("#cdb498")
       .setText(`${resolveWeaponAbbrev(player.equippedWeaponId)} [${ammo}]`);
     lifeText
       .setPosition(pipOverflowX, pipY - 7)
-      .setOrigin(mirrored ? 1 : 0, 0)
+      .setOrigin(0, 0)
       .setText(player.lives > HUD_MAX_LIFE_PIPS ? `+${player.lives - HUD_MAX_LIFE_PIPS}` : "")
       .setColor("#d2e6b2");
     killText
-      .setPosition(killInfoX, cardY + 37)
-      .setOrigin(mirrored ? 0 : 1, 0)
+      .setPosition(killInfoX, bottomRowY - 2)
+      .setOrigin(1, 0)
       .setText(`K ${player.kills}`)
       .setColor(accent === 0x93c5fd ? "#dbeafe" : "#e2e8f0");
   }
