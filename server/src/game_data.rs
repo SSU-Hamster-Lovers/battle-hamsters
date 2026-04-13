@@ -11,11 +11,19 @@ pub(crate) struct FloorSegment {
     pub(crate) top_y: f64,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(crate) struct OneWayPlatformSegment {
+    pub(crate) id: String,
     pub(crate) left_x: f64,
     pub(crate) right_x: f64,
     pub(crate) top_y: f64,
+}
+
+#[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RuntimeWeaponAimProfile {
+    pub(crate) min_aim_deg: f64,
+    pub(crate) max_aim_deg: f64,
 }
 
 #[derive(Clone, Copy)]
@@ -111,6 +119,7 @@ enum MapCollisionPrimitive {
         top_y: f64,
     },
     OneWayPlatform {
+        id: String,
         #[serde(rename = "leftX")]
         left_x: f64,
         #[serde(rename = "rightX")]
@@ -245,6 +254,9 @@ pub(crate) struct RuntimeWeaponDefinition {
     pub(crate) rarity: WeaponRarity,
     pub(crate) world_despawn_ms: u64,
     pub(crate) special_effect: RuntimeWeaponSpecialEffect,
+    pub(crate) aim_profile: Option<RuntimeWeaponAimProfile>,
+    #[serde(default)]
+    pub(crate) projectile_gravity_per_sec2: f64,
 }
 
 #[allow(dead_code)]
@@ -261,6 +273,14 @@ pub(crate) enum RuntimeWeaponSpecialEffect {
     },
     HealBlock {
         duration_ms: u64,
+    },
+    Burn {
+        #[serde(rename = "durationMs")]
+        duration_ms: u64,
+        #[serde(rename = "tickDamage")]
+        tick_damage: u16,
+        #[serde(rename = "tickIntervalMs")]
+        tick_interval_ms: u64,
     },
 }
 
@@ -286,10 +306,12 @@ pub(crate) fn runtime_map_data() -> &'static RuntimeMapData {
                     top_y,
                 }),
                 MapCollisionPrimitive::OneWayPlatform {
+                    id,
                     left_x,
                     right_x,
                     top_y,
                 } => one_way_platforms.push(OneWayPlatformSegment {
+                    id,
                     left_x,
                     right_x,
                     top_y,
@@ -393,13 +415,24 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
     RUNTIME_WEAPON_DEFINITIONS.get_or_init(|| {
         let paws_raw = include_str!("../../packages/shared/weapons/paws.json");
         let acorn_raw = include_str!("../../packages/shared/weapons/acorn-blaster.json");
+        let seed_shotgun_raw = include_str!("../../packages/shared/weapons/seed-shotgun.json");
+        let hand_cannon_raw = include_str!("../../packages/shared/weapons/hand-cannon.json");
 
         let paws: RuntimeWeaponDefinition =
             serde_json::from_str(paws_raw).expect("paws JSON should deserialize");
         let acorn: RuntimeWeaponDefinition =
             serde_json::from_str(acorn_raw).expect("acorn blaster JSON should deserialize");
+        let seed_shotgun: RuntimeWeaponDefinition =
+            serde_json::from_str(seed_shotgun_raw).expect("seed shotgun JSON should deserialize");
+        let hand_cannon: RuntimeWeaponDefinition =
+            serde_json::from_str(hand_cannon_raw).expect("hand cannon JSON should deserialize");
 
-        HashMap::from([(paws.id.clone(), paws), (acorn.id.clone(), acorn)])
+        HashMap::from([
+            (paws.id.clone(), paws),
+            (acorn.id.clone(), acorn),
+            (seed_shotgun.id.clone(), seed_shotgun),
+            (hand_cannon.id.clone(), hand_cannon),
+        ])
     })
 }
 

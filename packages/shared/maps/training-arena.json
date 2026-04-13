@@ -49,6 +49,20 @@
       "topY": 680
     },
     {
+      "id": "armory_shelf_upper",
+      "type": "one_way_platform",
+      "leftX": 80,
+      "rightX": 420,
+      "topY": 340
+    },
+    {
+      "id": "armory_shelf_lower",
+      "type": "one_way_platform",
+      "leftX": 80,
+      "rightX": 420,
+      "topY": 520
+    },
+    {
       "id": "platform_left",
       "type": "one_way_platform",
       "leftX": 180,
@@ -108,8 +122,8 @@
       "weaponId": "acorn_blaster",
       "x": 320,
       "y": 420,
-      "respawnMs": 10000,
-      "despawnAfterMs": 10000,
+      "respawnMs": 5000,
+      "despawnAfterMs": 7000,
       "spawnStyle": "airdrop",
       "despawnStyle": "shrink_pop",
       "mode": "random_candidates",
@@ -120,12 +134,80 @@
       "weaponId": "acorn_blaster",
       "x": 1280,
       "y": 420,
-      "respawnMs": 10000,
-      "despawnAfterMs": 10000,
+      "respawnMs": 5000,
+      "despawnAfterMs": 7000,
       "spawnStyle": "airdrop",
       "despawnStyle": "shrink_pop",
       "mode": "random_candidates",
       "spawnGroupId": "weapon_group"
+    },
+    {
+      "id": "weapon_seed_shotgun_left",
+      "weaponId": "seed_shotgun",
+      "x": 320,
+      "y": 420,
+      "respawnMs": 5000,
+      "despawnAfterMs": 7000,
+      "spawnStyle": "airdrop",
+      "despawnStyle": "shrink_pop",
+      "mode": "random_candidates",
+      "spawnGroupId": "weapon_group"
+    },
+    {
+      "id": "weapon_seed_shotgun_right",
+      "weaponId": "seed_shotgun",
+      "x": 1280,
+      "y": 420,
+      "respawnMs": 5000,
+      "despawnAfterMs": 7000,
+      "spawnStyle": "airdrop",
+      "despawnStyle": "shrink_pop",
+      "mode": "random_candidates",
+      "spawnGroupId": "weapon_group"
+    },
+    {
+      "id": "weapon_hand_cannon_fixed",
+      "weaponId": "hand_cannon",
+      "x": 800,
+      "y": 340,
+      "respawnMs": 5000,
+      "despawnAfterMs": 7000,
+      "spawnStyle": "airdrop",
+      "despawnStyle": "shrink_pop",
+      "mode": "fixed"
+    },
+    {
+      "id": "weapon_armory_acorn",
+      "weaponId": "acorn_blaster",
+      "x": 130,
+      "y": 333,
+      "respawnMs": 2500,
+      "despawnAfterMs": 6000,
+      "spawnStyle": "fade_in",
+      "despawnStyle": "shrink_pop",
+      "mode": "fixed"
+    },
+    {
+      "id": "weapon_armory_seed",
+      "weaponId": "seed_shotgun",
+      "x": 250,
+      "y": 333,
+      "respawnMs": 2500,
+      "despawnAfterMs": 6000,
+      "spawnStyle": "fade_in",
+      "despawnStyle": "shrink_pop",
+      "mode": "fixed"
+    },
+    {
+      "id": "weapon_armory_hand",
+      "weaponId": "hand_cannon",
+      "x": 370,
+      "y": 333,
+      "respawnMs": 2500,
+      "despawnAfterMs": 6000,
+      "spawnStyle": "fade_in",
+      "despawnStyle": "shrink_pop",
+      "mode": "fixed"
     }
   ],
   "itemSpawns": [
