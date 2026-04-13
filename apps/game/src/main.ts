@@ -481,6 +481,7 @@ class MainScene extends Phaser.Scene {
   private queuedPickupWeapon = false;
   private queuedDropWeapon = false;
   private attackWasDown = false;
+  private latestAim = { x: 1, y: 0 };
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private keys!: {
     w: Phaser.Input.Keyboard.Key;
@@ -1920,7 +1921,12 @@ class MainScene extends Phaser.Scene {
 
       rendered.snapshot = player;
       const isRespawning = player.state === "respawning";
-      this.updateWeaponOverlay(rendered, player, isRespawning);
+      this.updateWeaponOverlay(
+        rendered,
+        player,
+        isRespawning,
+        isLocalPlayer ? this.latestAim : undefined,
+      );
       rendered.root.setVisible(!isRespawning);
       rendered.label.setVisible(!isRespawning);
       rendered.collider.setVisible(this.debugEnabled && !isRespawning);
@@ -2131,20 +2137,40 @@ class MainScene extends Phaser.Scene {
     rendered: RenderedPlayer,
     snapshot: PlayerSnapshot,
     isRespawning: boolean,
+    aim?: { x: number; y: number },
   ) {
     const presentation = resolveWeaponEquipPresentation(snapshot.equippedWeaponId);
     const visible = presentation.textureKey !== null && !isRespawning;
 
     if (presentation.textureKey !== null) {
       rendered.weaponOverlay.setTexture(presentation.textureKey);
+
+      const dir = snapshot.direction;
+      const effectiveAim =
+        aim ?? (dir === "left" ? { x: -1, y: 0 } : { x: 1, y: 0 });
+
+      // anchorY 보간: 위 조준 시 총구가 올라가고, 아래 조준 시 내려간다
+      const anchorYOffset = effectiveAim.y * 8;
+      // 수직 조준일수록 X를 몸통 방향으로 당겨 공중부양처럼 보이지 않게 한다
+      const xPull = Math.abs(effectiveAim.y) * 3;
+
+      const xSign = dir === "left" ? -1 : 1;
       rendered.weaponOverlay.setPosition(
-        snapshot.direction === "left"
-          ? -presentation.offsetX
-          : presentation.offsetX,
-        presentation.offsetY,
+        xSign * Math.max(0, presentation.offsetX - xPull),
+        presentation.offsetY + anchorYOffset,
       );
+
+      // rotation: Phaser transform 순서 = position → rotation → scale(flipX)
+      // right-facing: atan2(aim.y, aim.x)
+      // left-facing : atan2(aim.y, -aim.x) — flipX가 텍스처를 반전하므로 X 성분을 반전
+      const angle =
+        dir === "left"
+          ? Math.atan2(effectiveAim.y, -effectiveAim.x)
+          : Math.atan2(effectiveAim.y, effectiveAim.x);
+      rendered.weaponOverlay.setRotation(angle);
+
       rendered.weaponOverlay.setFlipX(
-        presentation.flipWithDirection && snapshot.direction === "left",
+        presentation.flipWithDirection && dir === "left",
       );
     }
 
@@ -2381,6 +2407,7 @@ class MainScene extends Phaser.Scene {
     const aimY = pointer.worldY - originY;
     const aimLength = Math.hypot(aimX, aimY) || 1;
     const aim = { x: aimX / aimLength, y: aimY / aimLength };
+    this.latestAim = aim;
 
     const moveX =
       Number(this.cursors.right.isDown || this.keys.d.isDown) -
