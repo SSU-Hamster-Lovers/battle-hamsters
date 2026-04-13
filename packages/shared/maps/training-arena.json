@@ -129,20 +129,6 @@
       "topY": 380
     },
     {
-      "id": "left_bunker_wall_outer",
-      "type": "solid_wall",
-      "x": 90,
-      "topY": 480,
-      "bottomY": 680
-    },
-    {
-      "id": "left_bunker_wall_inner",
-      "type": "solid_wall",
-      "x": 350,
-      "topY": 480,
-      "bottomY": 620
-    },
-    {
       "id": "pit_wall_left",
       "type": "solid_wall",
       "x": 640,
@@ -150,39 +136,11 @@
       "bottomY": 980
     },
     {
-      "id": "center_half_wall_left",
-      "type": "solid_wall",
-      "x": 720,
-      "topY": 480,
-      "bottomY": 620
-    },
-    {
-      "id": "center_half_wall_right",
-      "type": "solid_wall",
-      "x": 880,
-      "topY": 480,
-      "bottomY": 620
-    },
-    {
       "id": "pit_wall_right",
       "type": "solid_wall",
       "x": 960,
       "topY": 680,
       "bottomY": 980
-    },
-    {
-      "id": "right_bunker_wall_inner",
-      "type": "solid_wall",
-      "x": 1250,
-      "topY": 480,
-      "bottomY": 620
-    },
-    {
-      "id": "right_bunker_wall_outer",
-      "type": "solid_wall",
-      "x": 1510,
-      "topY": 480,
-      "bottomY": 680
     }
   ],
   "hazards": [

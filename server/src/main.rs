@@ -2341,6 +2341,7 @@ mod tests {
     }
 
     // pine_sniper: 사거리 안쪽의 대상을 hitscan으로 맞혀야 한다.
+    // damage=90, range=3000 (pine-sniper.json 기준)
     #[test]
     fn pine_sniper_hits_target_in_range() {
         let mut room = RoomState::new();
@@ -2357,10 +2358,12 @@ mod tests {
         shooter.attack_queued = true;
         shooter.attack_was_down = true;
 
-        // 사거리(1100px) 안쪽 700px 거리에 있는 대상
+        // 사거리(3000px) 안쪽 700px 거리에 있는 대상
         let mut target = test_player(700.0, 300.0);
         target.snapshot.id = "target".to_string();
         target.snapshot.name = "target".to_string();
+
+        let pine_damage = weapon_definition("pine_sniper").damage;
 
         room.players.insert("shooter".to_string(), shooter);
         room.players.insert("target".to_string(), target);
@@ -2370,15 +2373,12 @@ mod tests {
         room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
 
         let target_after = room.players.get("target").unwrap();
-        assert!(
-            target_after.snapshot.hp < 100,
-            "pine_sniper는 사거리 안쪽 대상을 맞혀야 함 (hp={})",
-            target_after.snapshot.hp
-        );
+        let expected_hp = 100u16.saturating_sub(pine_damage);
         assert_eq!(
             target_after.snapshot.hp,
-            45,
-            "pine_sniper 피해량은 55여야 함 (hp={})",
+            expected_hp,
+            "pine_sniper 피해량은 {}이어야 함 (hp={})",
+            pine_damage,
             target_after.snapshot.hp
         );
     }

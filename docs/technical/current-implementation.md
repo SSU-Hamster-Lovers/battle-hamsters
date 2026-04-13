@@ -279,7 +279,7 @@
 
 ### 솔방울 저격총 (pine_sniper) — feat/pine-sniper-v1 완료
 
-- **서버**: `packages/shared/weapons/pine-sniper.json` 추가. hitscan, damage 55, range 1100, attackIntervalMs 1400, maxResource 3, `aimProfile: { minAimDeg: -8, maxAimDeg: 8 }`.
+- **서버**: `packages/shared/weapons/pine-sniper.json` 추가. hitscan, damage 90, range 3000, attackIntervalMs 2000, maxResource 8, `aimProfile: { minAimDeg: -16, maxAimDeg: 16 }` (밸런스 조정 반영).
 - **서버**: `game_data.rs`에 `include_str!` + HashMap 항목 등록.
 - **공유 타입**: `packages/shared/weapon-data.ts`에 `pine_sniper` 임포트 및 `weaponDefinitions` 배열 등록.
 - **클라이언트**: `pine_sniper` pickup 스프라이트 (72×40, 긴 금속 총신 + 솔방울 개머리판 + 스코프) + equip 오버레이 (52×16) + HUD 아이콘 (24×24).
@@ -301,7 +301,8 @@
 
 - **스파이크 방향 수정**: `drawSpikeStrip` 삼각형 꼭짓점 보정 → 90° 수직 상향. 색상 오렌지 계열 → 회색 계열(`0x9ca3af` fill, `0x374151` 베이스).
 - **플랫폼 높이 조정**: 층간 간격 110px → 100px. L1: 570→580 / L2: 460→480 / L3: 350→380. 솔리드 월·무기·아이템·스폰포인트 y 좌표 모두 반영.
-- **서버 테스트 갱신**: 투사체 one-way 충돌 테스트 시작 좌표 새 topY 기준으로 수정 (53개 전체 통과).
+- **투명 벽 버그 수정**: 잘못 배치된 `solid_wall` 6개 제거 (`pit_wall_left/right`만 유지). `left/right_bunker_wall_outer`(bottomY=680)는 바닥 이동 전체를 막고, `center_half_wall_left/right`(x=720/880)는 center_bridge 횡단을 완전히 차단했다. 원인: `resolve_wall_collisions` skip 조건 — `current_top >= wall.bottom_y` — 이 PLAYER_HALF_SIZE(14) 기준 floor player top(y=652)에 대해 만족하지 않아 벽이 활성화됨.
+- **서버 테스트 갱신**: 투사체 one-way 충돌 테스트 시작 좌표 새 topY 기준으로 수정. pine_sniper 히트 테스트를 `weapon_definition()` 동적 조회 방식으로 리팩터링 (53개 전체 통과).
 
 ### 원웨이 플랫폼 하강 (fix/one-way-drop-through-v1 완료)
 
