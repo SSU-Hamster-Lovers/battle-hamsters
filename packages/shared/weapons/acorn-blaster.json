@@ -17,7 +17,7 @@
   "projectileSpeed": 0,
   "spreadDeg": 2,
   "pelletCount": 1,
-  "maxResource": 8,
+  "maxResource": 16,
   "resourcePerShot": 1,
   "resourcePerSecond": 0,
   "discardOnEmpty": true,
