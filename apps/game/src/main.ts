@@ -2149,10 +2149,27 @@ class MainScene extends Phaser.Scene {
       const effectiveAim =
         aim ?? (dir === "left" ? { x: -1, y: 0 } : { x: 1, y: 0 });
 
+      // aimProfile clamp: 무기별 허용 조준 각도 제한 (표시 전용)
+      // local angle 기준: 0 = 정면 수평, 음수 = 위, 양수 = 아래
+      const aimProfile = weaponDefinitionById[snapshot.equippedWeaponId]?.aimProfile;
+      const localAngle =
+        dir === "left"
+          ? Math.atan2(effectiveAim.y, -effectiveAim.x)
+          : Math.atan2(effectiveAim.y, effectiveAim.x);
+      const clampedLocalAngle = aimProfile
+        ? Math.max(
+            (aimProfile.minAimDeg * Math.PI) / 180,
+            Math.min((aimProfile.maxAimDeg * Math.PI) / 180, localAngle),
+          )
+        : localAngle;
+      const clampedAimX =
+        dir === "left" ? -Math.cos(clampedLocalAngle) : Math.cos(clampedLocalAngle);
+      const clampedAimY = Math.sin(clampedLocalAngle);
+
       // anchorY 보간: 위 조준 시 총구가 올라가고, 아래 조준 시 내려간다
-      const anchorYOffset = effectiveAim.y * 8;
+      const anchorYOffset = clampedAimY * 8;
       // 수직 조준일수록 X를 몸통 방향으로 당겨 공중부양처럼 보이지 않게 한다
-      const xPull = Math.abs(effectiveAim.y) * 3;
+      const xPull = Math.abs(clampedAimY) * 3;
 
       const xSign = dir === "left" ? -1 : 1;
       rendered.weaponOverlay.setPosition(
@@ -2167,8 +2184,8 @@ class MainScene extends Phaser.Scene {
       //   → cosA = -aim.x, sinA = -aim.y → a = atan2(-aim.y, -aim.x)
       const angle =
         dir === "left"
-          ? Math.atan2(-effectiveAim.y, -effectiveAim.x)
-          : Math.atan2(effectiveAim.y, effectiveAim.x);
+          ? Math.atan2(-clampedAimY, -clampedAimX)
+          : Math.atan2(clampedAimY, clampedAimX);
       rendered.weaponOverlay.setRotation(angle);
 
       rendered.weaponOverlay.setFlipX(

@@ -96,6 +96,9 @@
   - anchorY 보간: `aim.y * 8px` 범위로 총구가 상하 이동한다.
   - 총구 이펙트 원점이 실제 무기 총구 위치에 정확히 맞춰진다 (`weapon_center_offset + muzzleFromCenter * aim`).
   - 원격 플레이어 오버레이는 direction 기반 수평 fallback 유지.
+  - `WeaponDefinition.aimProfile`(`minAimDeg` / `maxAimDeg`)이 있으면 오버레이 각도를 표시용으로 clamp한다.
+    - Acorn Blaster: -55° ~ +40°, Paws: -30° ~ +30°.
+    - clamp는 시각 표현 전용이며 서버 판정(Step 3)은 미구현.
 - 하단 고정 HUD 바 (y=512~600, 88px):
   - 좌측: 로컬 플레이어 compact combat bar
   - 중앙: 타이머 (10초 이하 적색 강조)
