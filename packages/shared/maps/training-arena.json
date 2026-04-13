@@ -288,6 +288,17 @@
       "spawnStyle": "airdrop",
       "despawnStyle": "shrink_pop",
       "mode": "fixed"
+    },
+    {
+      "id": "weapon_center_bridge_gatling",
+      "weaponId": "squirrel_gatling",
+      "x": 800,
+      "y": 573,
+      "respawnMs": 8000,
+      "despawnAfterMs": 7000,
+      "spawnStyle": "airdrop",
+      "despawnStyle": "shrink_pop",
+      "mode": "fixed"
     }
   ],
   "itemSpawns": [

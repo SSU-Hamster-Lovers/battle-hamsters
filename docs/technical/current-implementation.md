@@ -146,7 +146,7 @@
   - 카드형보다 얇은 `얼굴 + 가로 HP 바 + 생명 pip + 작은 무기/킬 정보` 중심 구조로 정리했다.
   - Free Play에서는 우측 카드가 `최근 공격한 대상 -> 킬 최다 상대` 우선순위로 표시된다.
 - 좌상단에는 큰 제목/room/server tick 대신 작은 `WS/ping` 상태만 표시한다.
-- 무기 아이콘 레지스트리: `getWeaponHudTextureKey(weaponId)` → `RenderTexture` 코드 생성 아이콘 (`paws`, `acorn_blaster`, `ember_sprinkler`, `seed_shotgun`, `walnut_cannon`, `pine_sniper`는 전용 HUD 아이콘; 그 외 자동 fallback)
+- 무기 아이콘 레지스트리: `getWeaponHudTextureKey(weaponId)` → `RenderTexture` 코드 생성 아이콘 (`paws`, `acorn_blaster`, `ember_sprinkler`, `seed_shotgun`, `walnut_cannon`, `pine_sniper`, `squirrel_gatling`는 전용 HUD 아이콘; 그 외 자동 fallback)
 - `aimProfile`이 있는 무기에 대해 클라이언트 오버레이 회전 각도를 `[minAimDeg, maxAimDeg]`로 클램프하고, 서버 공격 판정도 같은 범위를 사용한다.
 - 발사 시 로컬 보조용 무기별 연출을 적용한다.
   - `Acorn Blaster`: 총구 화염 + 짧은 tracer
@@ -155,6 +155,7 @@
   - `Seed Shotgun`: ±22° 범위 5줄기 부채꼴 tracer
   - `Walnut Cannon`: 크고 둥근 총구 화염(반지름 13) + 연기 링 2개
   - `Pine Sniper`: 길고 얇은 흰색 트레이서(500px) + muzzle 섬광(반지름 5) + 스코프 시안 글린트
+  - `Squirrel Gatling`: 짧고 빠른 총구 섬광(반지름 4) + 30px tracer, 50ms 지속 (`auto_flash`)
   - 그 외: 기존 선형 fallback
 - 피격 연출 1차/2차를 적용한다.
   - `damageEvents` 가 있으면 정확한 `impactPoint` / `impactDirection` 기준으로 작은 파편 파티클을 생성한다.
@@ -297,6 +298,17 @@
 - **클라이언트**: `instant_kill_hazard`를 90° 수직 상향 가시 strip으로 렌더링 (회색 배색).
 - **서버 테스트 갱신**: 스폰 카운트 7, 새 좌표 기준 어설션, 플랫폼 이름 갱신.
 
+### 다람쥐 기관총 (squirrel_gatling) — feat/squirrel-gatling-v1 완료
+
+- **서버**: `packages/shared/weapons/squirrel-gatling.json` 추가. hitscan, `fireMode: "auto"`, damage 5, knockback 2, attackIntervalMs 80, maxResource 30, rarity uncommon, `aimProfile: -55°~+40°`.
+- **서버**: `game_data.rs`에 `include_str!` + HashMap 항목 등록.
+- **맵**: `training-arena.json` center_bridge(x=800, y=573)에 airdrop 고정 스폰. respawnMs 8000.
+- **공유 타입**: `packages/shared/weapon-data.ts`에 `squirrel_gatling` 등록.
+- **클라이언트**: `squirrel_gatling` pickup 스프라이트 (64×40, 황갈색 몸체 + 주황 드럼 탄창 + 회색 총신) + equip 오버레이 (40×16) + HUD 아이콘 (24×24).
+- **클라이언트**: `WeaponFireStyle: "auto_flash"`. 짧은 총구 섬광(반지름 4) + 30px tracer, 50ms 지속.
+- **서버 auto fireMode**: 기존 `attack_was_down` auto-requeue 로직(room_runtime.rs:204)으로 버튼 유지 시 80ms 간격 자동 발사 동작. FireMode enum에 `Auto` 이미 존재.
+- **단위 테스트 2개 추가**: `squirrel_gatling_hits_target_in_range`, `squirrel_gatling_consumes_resource_per_shot`.
+
 ### 맵 polish (fix/map-polish-v1 완료)
 
 - **스파이크 방향 수정**: `drawSpikeStrip` 삼각형 꼭짓점 보정 → 90° 수직 상향. 색상 오렌지 계열 → 회색 계열(`0x9ca3af` fill, `0x374151` 베이스).
@@ -312,7 +324,7 @@
 
 ## 다음 구현 우선순위
 
-1. 무기 추가 계속 (목표 16~20종) — 현재 6종 구현 (map-rework-v2 이후 pine_sniper 맵 등재 포함)
+1. 무기 추가 계속 (목표 16~20종) — 현재 7종 구현 (squirrel_gatling 포함)
 2. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체 (투사체 texture hookup 포함)
 3. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
 4. `develop` preview / staging 배포 전략 분리
@@ -348,4 +360,5 @@
 - 맵 리워크 v2 완료 미니 스펙: `docs/technical/mini-spec-map-rework-v2.md`
 - 솔방울 저격총(pine sniper) 완료 미니 스펙: `docs/technical/mini-spec-pine-sniper-v1.md`
 - 훈련 아레나 맵 리워크 v2 완료 미니 스펙: `docs/technical/mini-spec-map-rework-v2.md`
+- 다람쥐 기관총(squirrel_gatling) 완료 미니 스펙: 후보 스펙은 `docs/technical/mini-spec-weapons-next-candidates.md` 참조
 - 씨앗 샷건 + 호두 대포 스프라이트 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-weapon-sprites-v2.md`

@@ -16,6 +16,8 @@ const SEED_SHOTGUN_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-seed-shot
 const WALNUT_CANNON_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-walnut-cannon`;
 const PINE_SNIPER_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-pine-sniper`;
 const PINE_SNIPER_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-pine-sniper`;
+const SQUIRREL_GATLING_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-squirrel-gatling`;
+const SQUIRREL_GATLING_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-squirrel-gatling`;
 
 type WeaponPickupSource = "spawn" | "dropped" | "reward";
 
@@ -41,7 +43,8 @@ export type WeaponFireStyle =
   | "flame_stream"
   | "shotgun_spread"
   | "cannon_blast"
-  | "sniper_flash";
+  | "sniper_flash"
+  | "auto_flash";
 
 export type WeaponImpactStyle =
   | "generic_spark"
@@ -120,6 +123,20 @@ export function ensureWeaponPickupTextures(scene: Phaser.Scene) {
     graphics.generateTexture(PINE_SNIPER_EQUIP_TEXTURE_KEY, 52, 16);
     graphics.destroy();
   }
+
+  if (!scene.textures.exists(SQUIRREL_GATLING_PICKUP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawSquirrelGatlingPickupTexture(graphics);
+    graphics.generateTexture(SQUIRREL_GATLING_PICKUP_TEXTURE_KEY, 64, 40);
+    graphics.destroy();
+  }
+
+  if (!scene.textures.exists(SQUIRREL_GATLING_EQUIP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawSquirrelGatlingEquipTexture(graphics);
+    graphics.generateTexture(SQUIRREL_GATLING_EQUIP_TEXTURE_KEY, 40, 16);
+    graphics.destroy();
+  }
 }
 
 export function resolveWeaponPickupPresentation(
@@ -161,6 +178,14 @@ export function resolveWeaponPickupPresentation(
     return {
       textureKey: PINE_SNIPER_PICKUP_TEXTURE_KEY,
       code: "PS",
+      showNameLabel: false,
+    };
+  }
+
+  if (weaponId === "squirrel_gatling") {
+    return {
+      textureKey: SQUIRREL_GATLING_PICKUP_TEXTURE_KEY,
+      code: "SG",
       showNameLabel: false,
     };
   }
@@ -230,6 +255,17 @@ export function resolveWeaponEquipPresentation(
     };
   }
 
+  if (weaponId === "squirrel_gatling") {
+    return {
+      textureKey: SQUIRREL_GATLING_EQUIP_TEXTURE_KEY,
+      offsetX: 12,
+      offsetY: 1,
+      flipWithDirection: true,
+      // 캔버스 40px, 센터 x=20, 총구 x=37 → 17px
+      muzzleFromCenter: 17,
+    };
+  }
+
   if (weaponId === "pine_sniper") {
     return {
       textureKey: PINE_SNIPER_EQUIP_TEXTURE_KEY,
@@ -275,6 +311,10 @@ export function resolveWeaponFireStyle(weaponId: string): WeaponFireStyle {
     return "sniper_flash";
   }
 
+  if (weaponId === "squirrel_gatling") {
+    return "auto_flash";
+  }
+
   return "generic_line";
 }
 
@@ -311,6 +351,7 @@ export function ensureWeaponHudTextures(scene: Phaser.Scene) {
     else if (weaponId === "seed_shotgun") drawSeedShotgunHudIcon(g);
     else if (weaponId === "walnut_cannon") drawWalnutCannonHudIcon(g);
     else if (weaponId === "pine_sniper") drawPineSniperHudIcon(g);
+    else if (weaponId === "squirrel_gatling") drawSquirrelGatlingHudIcon(g);
     else drawFallbackHudIcon(g);
     g.generateTexture(key, HUD_ICON_SIZE, HUD_ICON_SIZE);
     g.destroy();
@@ -949,4 +990,159 @@ function drawPineSniperPickupTexture(graphics: Phaser.GameObjects.Graphics) {
   graphics.lineStyle(0.8, scopeDark, 0.5);
   graphics.lineBetween(38, 10, 38, 16);
   graphics.lineBetween(35, 13, 41, 13);
+}
+
+// ── 다람쥐 기관총 (squirrel_gatling) ─────────────────────────────────────────
+
+function drawSquirrelGatlingHudIcon(g: Phaser.GameObjects.Graphics) {
+  g.clear();
+  const body = 0x8b6914;
+  const bodyDark = 0x5a4209;
+  const barrel = 0x6b7280;
+  const barrelDark = 0x374151;
+  const drum = 0xd97706;
+  const drumDark = 0x92400e;
+
+  // 드럼 탄창 (하단)
+  g.fillStyle(drum, 1);
+  g.fillCircle(10, 18, 5);
+  g.lineStyle(1.5, drumDark, 1);
+  g.strokeCircle(10, 18, 5);
+  // 드럼 중심
+  g.fillStyle(drumDark, 1);
+  g.fillCircle(10, 18, 2);
+
+  // 총신 (길고 얇음)
+  g.fillStyle(barrel, 1);
+  g.fillRoundedRect(5, 8, 17, 5, 1);
+  g.fillStyle(barrelDark, 1);
+  g.fillRoundedRect(5, 11, 17, 2, 1);
+  g.lineStyle(1, barrelDark, 1);
+  g.strokeRoundedRect(5, 8, 17, 5, 1);
+
+  // 총기 몸체
+  g.fillStyle(body, 1);
+  g.fillRoundedRect(5, 11, 10, 8, 2);
+  g.lineStyle(1.5, bodyDark, 1);
+  g.strokeRoundedRect(5, 11, 10, 8, 2);
+
+  // 다람쥐 꼬리 모양 개머리판 (곡선형)
+  g.fillStyle(0xd4a574, 1);
+  g.fillEllipse(4, 14, 5, 10);
+  g.lineStyle(1, bodyDark, 1);
+  g.strokeEllipse(4, 14, 5, 10);
+}
+
+function drawSquirrelGatlingEquipTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+  const body = 0x8b6914;
+  const bodyDark = 0x5a4209;
+  const barrel = 0x6b7280;
+  const barrelDark = 0x374151;
+  const drum = 0xd97706;
+  const drumDark = 0x92400e;
+  const stock = 0xd4a574;
+  const stockDark = 0x7a3f1e;
+
+  // 드럼 탄창
+  graphics.fillStyle(drum, 1);
+  graphics.fillCircle(14, 12, 6);
+  graphics.lineStyle(1.5, drumDark, 1);
+  graphics.strokeCircle(14, 12, 6);
+  graphics.fillStyle(drumDark, 1);
+  graphics.fillCircle(14, 12, 2.5);
+
+  // 총기 몸체
+  graphics.fillStyle(body, 1);
+  graphics.fillRoundedRect(8, 4, 18, 8, 2);
+  graphics.fillStyle(bodyDark, 0.4);
+  graphics.fillRoundedRect(8, 9, 18, 3, 2);
+  graphics.lineStyle(1.5, bodyDark, 1);
+  graphics.strokeRoundedRect(8, 4, 18, 8, 2);
+
+  // 총신 (길고 얇은 관)
+  graphics.fillStyle(barrel, 1);
+  graphics.fillRoundedRect(20, 5, 18, 5, 1);
+  graphics.fillStyle(barrelDark, 0.3);
+  graphics.fillRoundedRect(20, 8, 18, 2, 1);
+  graphics.lineStyle(1, barrelDark, 1);
+  graphics.strokeRoundedRect(20, 5, 18, 5, 1);
+
+  // 개머리판 (다람쥐 꼬리)
+  graphics.fillStyle(stock, 1);
+  graphics.fillEllipse(5, 8, 8, 12);
+  graphics.lineStyle(1, stockDark, 1);
+  graphics.strokeEllipse(5, 8, 8, 12);
+}
+
+function drawSquirrelGatlingPickupTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+  const body = 0x8b6914;
+  const bodyDark = 0x5a4209;
+  const bodyLight = 0xb8860b;
+  const barrel = 0x6b7280;
+  const barrelDark = 0x374151;
+  const barrelLight = 0x9ca3af;
+  const drum = 0xd97706;
+  const drumDark = 0x92400e;
+  const drumHighlight = 0xfbbf24;
+  const stock = 0xd4a574;
+  const stockDark = 0x7a3f1e;
+
+  // 드럼 탄창 (원형, 눈에 띄는 주황)
+  graphics.fillStyle(drum, 1);
+  graphics.fillCircle(18, 28, 10);
+  graphics.fillStyle(drumHighlight, 0.4);
+  graphics.fillCircle(16, 26, 5);
+  graphics.lineStyle(2, drumDark, 1);
+  graphics.strokeCircle(18, 28, 10);
+  graphics.fillStyle(drumDark, 1);
+  graphics.fillCircle(18, 28, 4);
+  // 드럼 살
+  graphics.lineStyle(1, drumDark, 0.6);
+  for (let i = 0; i < 4; i++) {
+    const angle = (Math.PI / 4) * i;
+    graphics.lineBetween(
+      18 + Math.cos(angle) * 4,
+      28 + Math.sin(angle) * 4,
+      18 + Math.cos(angle) * 10,
+      28 + Math.sin(angle) * 10,
+    );
+  }
+
+  // 총기 몸체
+  graphics.fillStyle(body, 1);
+  graphics.fillRoundedRect(10, 10, 28, 14, 4);
+  graphics.fillStyle(bodyLight, 0.3);
+  graphics.fillRoundedRect(10, 10, 28, 4, 4);
+  graphics.fillStyle(bodyDark, 0.3);
+  graphics.fillRoundedRect(10, 20, 28, 4, 4);
+  graphics.lineStyle(2, bodyDark, 1);
+  graphics.strokeRoundedRect(10, 10, 28, 14, 4);
+
+  // 총신 (길고 얇음)
+  graphics.fillStyle(barrel, 1);
+  graphics.fillRoundedRect(30, 12, 30, 8, 2);
+  graphics.fillStyle(barrelLight, 0.3);
+  graphics.fillRoundedRect(30, 12, 30, 2, 1);
+  graphics.fillStyle(barrelDark, 0.3);
+  graphics.fillRoundedRect(30, 17, 30, 3, 2);
+  graphics.lineStyle(1.5, barrelDark, 1);
+  graphics.strokeRoundedRect(30, 12, 30, 8, 2);
+
+  // 총구 (끝 캡)
+  graphics.fillStyle(barrelDark, 1);
+  graphics.fillRoundedRect(58, 11, 5, 10, 1);
+  graphics.lineStyle(1, barrelDark, 1);
+  graphics.strokeRoundedRect(58, 11, 5, 10, 1);
+
+  // 다람쥐 꼬리 모양 개머리판
+  graphics.fillStyle(stock, 1);
+  graphics.fillEllipse(8, 18, 14, 20);
+  graphics.lineStyle(1.5, stockDark, 1);
+  graphics.strokeEllipse(8, 18, 14, 20);
+  // 꼬리 줄무늬 (다람쥐 느낌)
+  graphics.lineStyle(1, stockDark, 0.4);
+  graphics.lineBetween(4, 14, 12, 22);
+  graphics.lineBetween(4, 18, 12, 26);
 }
