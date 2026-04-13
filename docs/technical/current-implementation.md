@@ -91,10 +91,14 @@
 - 월드 아이템 pickup을 간단한 다이아몬드 도형/라벨로 렌더링한다.
 - `Acorn Blaster` 장착 시 손 앞에 1차 무기 overlay 를 렌더링한다.
 - 하단 고정 HUD 바 (y=512~600, 88px):
-  - 좌측: 로컬 플레이어 카드 (수직 HP 바 4구간 세그먼트, 생명 씨앗 아이콘, 킬 skull 아이콘, 햄스터 얼굴 플레이스홀더, 닉네임/무기/탄 수)
+  - 좌측: 로컬 플레이어 압축 프로필 카드
   - 중앙: 타이머 (10초 이하 적색 강조)
-  - 우측: 상대 카드 (킬 최다 플레이어, 없으면 빈 카드)
-  - 기존 텍스트 HUD는 debug 모드에서만 표시
+  - 우측: 상대 카드
+  - Free Play 또는 사실상 무한 시간 제한에서는 중앙 타이머를 `FREE PLAY` 패널로 표시한다.
+  - 세로 HP 바 세그먼트 구분선은 직선 가로선 기준으로 정리했다.
+  - 프로필 카드 하단의 생명/킬 수치는 아이콘 옆 별도 숫자로 분리해 얼굴/정보 영역 겹침을 줄였다.
+  - Free Play에서는 우측 카드가 `최근 공격한 대상 -> 킬 최다 상대` 우선순위로 표시된다.
+- 좌상단에는 큰 제목/room/server tick 대신 작은 `WS/ping` 상태만 표시한다.
 - 무기 아이콘 레지스트리: `getWeaponHudTextureKey(weaponId)` → `RenderTexture` 코드 생성 아이콘 (`paws`, `acorn_blaster`, fallback)
 - 발사 시 로컬 보조용 무기별 연출을 적용한다.
   - `Acorn Blaster`: 총구 화염 + 짧은 tracer
@@ -105,9 +109,12 @@
   - 정확 이벤트가 없을 때는 `hp` 감소와 넉백 방향으로 fallback 파티클을 생성한다.
   - `Acorn Blaster`: 밝은 파편 + 짧은 탄 파편 계열
   - `Paws`: 짧은 먼지 puff + 충격파 타원 계열
-- 우상단에 킬로그 스택을 `Container` 기반 카드로 렌더링한다.
+- 우상단에 알림 로그 스택을 `Container` 기반 카드로 렌더링한다.
   - `weapon` 킬: 공격자명 | 무기 아이콘(HUD 아이콘 재사용) | 피해자명
   - 낙사/함정/자살: 텍스트 카드
+  - 입장/퇴장: 시스템 알림 카드
+  - 입장/퇴장 카드도 킬 카드와 같은 TTL 기준으로 자동 퇴장한다.
+- 월드 무기/아이템 pickup은 소멸 직전 3단계 점멸 연출을 적용한다.
 - 매치 상태별 UI:
   - `Waiting`: 대기 / 카운트다운 오버레이
   - `Running`: 기존 플레이 + 남은 시간
@@ -186,10 +193,11 @@
 
 ## 다음 구현 우선순위
 
-1. 무기 각도 / Dead zone / 오버레이 앵커 1차 (`mini-spec-weapon-angle-deadzone-v0.md` 참조)
-2. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체
-3. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
-4. `develop` preview / staging 배포 전략 분리
+1. HUD를 compact combat bar v2 구조로 단순화 (`mini-spec-hud-compact-combat-bar-v2.md` 참조)
+2. 무기 각도 / Dead zone / 오버레이 앵커 1차 (`mini-spec-weapon-angle-deadzone-v0.md` 참조)
+3. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체
+4. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
+5. `develop` preview / staging 배포 전략 분리
 
 ## 참고
 
@@ -200,5 +208,6 @@
 - 로컬 개발 환경 정리 미니 스펙: `docs/archive/mini-specs/mini-spec-local-dev-env-runner-v1.md`
 - 점프 아이템 세부 규칙 후속은 `docs/technical/mini-spec-jump-item-integration-v1.md` 참조
 - 전투 표현 polish 후속은 `docs/technical/mini-spec-combat-presentation-polish-v0.md` 참조
+- HUD compact 후속은 `docs/technical/mini-spec-hud-compact-combat-bar-v2.md` 참조
 - 무기 각도/Dead zone 초안은 `docs/technical/mini-spec-weapon-angle-deadzone-v0.md` 참조
 - Paws 근접 전투 + HUD 1차 미니 스펙: `docs/archive/mini-specs/mini-spec-paws-combat-hud-v1.md`
