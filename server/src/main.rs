@@ -964,15 +964,28 @@ mod tests {
     #[test]
     fn room_starts_with_spawned_weapon_pickup() {
         let room = RoomState::new();
-        assert_eq!(room.weapon_pickups.len(), 1);
-        let pickup = room
-            .weapon_pickups
-            .values()
-            .next()
-            .expect("spawn pickup should exist");
-        assert_eq!(pickup.weapon_id, "acorn_blaster");
-        assert_eq!(pickup.resource_remaining, 8);
-        assert!(matches!(pickup.position.x, 320.0 | 1280.0));
+        // weapon_group 후보 1개 (acorn_blaster or seed_shotgun) + hand_cannon fixed = 2개
+        assert_eq!(room.weapon_pickups.len(), 2);
+
+        let pickups: Vec<_> = room.weapon_pickups.values().collect();
+
+        // weapon_group 에서 스폰된 픽업: x=320 또는 x=1280 위치
+        let group_pickup = pickups
+            .iter()
+            .find(|p| matches!(p.position.x as u32, 320 | 1280))
+            .expect("weapon_group pickup should exist");
+        assert!(
+            group_pickup.weapon_id == "acorn_blaster"
+                || group_pickup.weapon_id == "seed_shotgun",
+            "weapon_group pickup should be acorn_blaster or seed_shotgun"
+        );
+
+        // hand_cannon fixed 스폰: x=800
+        let cannon_pickup = pickups
+            .iter()
+            .find(|p| p.weapon_id == "hand_cannon")
+            .expect("hand_cannon pickup should exist");
+        assert_eq!(cannon_pickup.position.x as u32, 800);
     }
 
     #[test]

@@ -126,6 +126,41 @@
       "despawnStyle": "shrink_pop",
       "mode": "random_candidates",
       "spawnGroupId": "weapon_group"
+    },
+    {
+      "id": "weapon_seed_shotgun_left",
+      "weaponId": "seed_shotgun",
+      "x": 320,
+      "y": 420,
+      "respawnMs": 10000,
+      "despawnAfterMs": 10000,
+      "spawnStyle": "airdrop",
+      "despawnStyle": "shrink_pop",
+      "mode": "random_candidates",
+      "spawnGroupId": "weapon_group"
+    },
+    {
+      "id": "weapon_seed_shotgun_right",
+      "weaponId": "seed_shotgun",
+      "x": 1280,
+      "y": 420,
+      "respawnMs": 10000,
+      "despawnAfterMs": 10000,
+      "spawnStyle": "airdrop",
+      "despawnStyle": "shrink_pop",
+      "mode": "random_candidates",
+      "spawnGroupId": "weapon_group"
+    },
+    {
+      "id": "weapon_hand_cannon_fixed",
+      "weaponId": "hand_cannon",
+      "x": 800,
+      "y": 340,
+      "respawnMs": 25000,
+      "despawnAfterMs": 12000,
+      "spawnStyle": "airdrop",
+      "despawnStyle": "shrink_pop",
+      "mode": "fixed"
     }
   ],
   "itemSpawns": [

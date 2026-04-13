@@ -57,8 +57,15 @@
   - `spawnStyle`에 따라 `fade_in`, `airdrop` 구분
   - `random_candidates` + `spawnGroupId` 구조 처리
   - `jump_boost_small`, `health_pack_small` 아이템 정의를 shared JSON에서 읽어 적용
+- 무기 확장 v2:
+  - `Seed Shotgun` (`seed_shotgun.json`): hitscan, 5 pellet, spreadDeg 22°, 탄창 4발
+  - `Hand Cannon` (`hand-cannon.json`): hitscan, 1 pellet, 고데미지/고넉백, 탄창 4발
+  - 맵 `weapon_group` 랜덤 후보에 Seed Shotgun 추가 (acorn_blaster와 동일 위치)
+  - Hand Cannon은 맵 중앙(x=800) 고정 스폰, 25s 리스폰
 - 전투 1차:
   - `Acorn Blaster` 히트스캔 발사
+  - `Seed Shotgun` 히트스캔 burst: `pelletCount > 1`일 때 spread_deg 범위 내 균등 분산 후 pellet별 독립 판정
+  - `Hand Cannon` 히트스캔 단발 (기존 단일 레이)
   - 상대 넉백
   - 자기 반동(`self recoil`)
   - 탄 소모

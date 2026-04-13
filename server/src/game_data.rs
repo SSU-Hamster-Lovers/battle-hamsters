@@ -393,13 +393,24 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
     RUNTIME_WEAPON_DEFINITIONS.get_or_init(|| {
         let paws_raw = include_str!("../../packages/shared/weapons/paws.json");
         let acorn_raw = include_str!("../../packages/shared/weapons/acorn-blaster.json");
+        let seed_shotgun_raw = include_str!("../../packages/shared/weapons/seed-shotgun.json");
+        let hand_cannon_raw = include_str!("../../packages/shared/weapons/hand-cannon.json");
 
         let paws: RuntimeWeaponDefinition =
             serde_json::from_str(paws_raw).expect("paws JSON should deserialize");
         let acorn: RuntimeWeaponDefinition =
             serde_json::from_str(acorn_raw).expect("acorn blaster JSON should deserialize");
+        let seed_shotgun: RuntimeWeaponDefinition =
+            serde_json::from_str(seed_shotgun_raw).expect("seed shotgun JSON should deserialize");
+        let hand_cannon: RuntimeWeaponDefinition =
+            serde_json::from_str(hand_cannon_raw).expect("hand cannon JSON should deserialize");
 
-        HashMap::from([(paws.id.clone(), paws), (acorn.id.clone(), acorn)])
+        HashMap::from([
+            (paws.id.clone(), paws),
+            (acorn.id.clone(), acorn),
+            (seed_shotgun.id.clone(), seed_shotgun),
+            (hand_cannon.id.clone(), hand_cannon),
+        ])
     })
 }
 
