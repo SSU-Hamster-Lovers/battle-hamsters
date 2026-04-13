@@ -3127,6 +3127,22 @@ class MainScene extends Phaser.Scene {
       return;
     }
 
+    if (fireStyle === "auto_flash") {
+      // 짧고 빠른 총구 섬광 — 기관총 느낌
+      this.attackFlash.fillStyle(0xfef3c7, 0.9);
+      this.attackFlash.fillCircle(muzzleX, muzzleY, 4);
+      // 짧은 tracer
+      this.attackFlash.lineStyle(1, 0xfde68a, 0.7);
+      this.attackFlash.lineBetween(
+        muzzleX,
+        muzzleY,
+        muzzleX + aimX * 30,
+        muzzleY + aimY * 30,
+      );
+      this.attackFlashUntil = this.time.now + 50;
+      return;
+    }
+
     this.attackFlash.lineStyle(3, 0xfef08a, 0.95);
     this.attackFlash.lineBetween(
       muzzleX,
