@@ -18,6 +18,7 @@ import {
   resolveWeaponPickupPresentation,
   weaponPickupAccentColor,
 } from "./weapon-presentation";
+import { resolvePickupCollapseTransform } from "./pickup-vfx";
 import type {
   CollisionPrimitive,
   DamageAppliedEvent,
@@ -2897,16 +2898,19 @@ class MainScene extends Phaser.Scene {
     }
 
     for (const [, rendered] of this.renderedWeaponPickups) {
-      rendered.root.x = Phaser.Math.Linear(
-        rendered.root.x,
-        rendered.targetX,
-        PICKUP_LERP,
+      const { scale: wScale, xOffset: wXOffset } = resolvePickupCollapseTransform(
+        rendered.spawnedAt,
+        rendered.despawnAt,
+        this.time.now,
       );
+      rendered.root.x =
+        Phaser.Math.Linear(rendered.root.x, rendered.targetX, PICKUP_LERP) + wXOffset;
       rendered.root.y = Phaser.Math.Linear(
         rendered.root.y,
         rendered.targetY,
         PICKUP_LERP,
       );
+      rendered.root.setScale(wScale);
       rendered.root.setAlpha(this.resolvePickupBlinkAlpha(rendered.spawnedAt, rendered.despawnAt));
     }
 
@@ -2932,10 +2936,18 @@ class MainScene extends Phaser.Scene {
     }
 
     for (const [, rendered] of this.renderedItemPickups) {
-      rendered.body.x = Phaser.Math.Linear(rendered.body.x, rendered.targetX, PICKUP_LERP);
+      const { scale: iScale, xOffset: iXOffset } = resolvePickupCollapseTransform(
+        rendered.spawnedAt,
+        rendered.despawnAt,
+        this.time.now,
+      );
+      rendered.body.x =
+        Phaser.Math.Linear(rendered.body.x, rendered.targetX, PICKUP_LERP) + iXOffset;
       rendered.body.y = Phaser.Math.Linear(rendered.body.y, rendered.targetY, PICKUP_LERP);
+      rendered.body.setScale(iScale);
       const alpha = this.resolvePickupBlinkAlpha(rendered.spawnedAt, rendered.despawnAt);
       rendered.body.setAlpha(alpha);
+      rendered.label.setScale(iScale);
       rendered.label.setAlpha(alpha);
       rendered.label.setPosition(
         rendered.body.x - rendered.label.width / 2,
