@@ -255,15 +255,14 @@ pub(crate) fn step_player(player: &mut PlayerRuntime, now_ms: u64) {
     let move_x = input.move_ref().x.clamp(-1.0, 1.0);
     let down_pressed = input.move_ref().y > 0.5;
 
-    if move_x < 0.0 {
-        player.snapshot.direction = crate::Direction::Left;
-    } else if move_x > 0.0 {
-        player.snapshot.direction = crate::Direction::Right;
-    } else if input.aim.x < 0.0 {
-        player.snapshot.direction = crate::Direction::Left;
-    } else if input.aim.x > 0.0 {
-        player.snapshot.direction = crate::Direction::Right;
+    if input.aim.x.abs() >= 0.12 {
+        player.snapshot.direction = if input.aim.x < 0.0 {
+            crate::Direction::Left
+        } else {
+            crate::Direction::Right
+        };
     }
+    // abs(aim.x) < 0.12 → 수직 조준 deadzone: 이전 방향 유지
 
     let on_one_way_platform = is_on_one_way_platform(&player.snapshot);
     let drop_active = player
