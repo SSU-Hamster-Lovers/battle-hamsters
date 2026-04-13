@@ -2320,6 +2320,51 @@ class MainScene extends Phaser.Scene {
     });
   }
 
+  private spawnFlameParticles(
+    muzzleX: number,
+    muzzleY: number,
+    aimX: number,
+    aimY: number,
+  ) {
+    const flameColors = [0xffdd44, 0xff9900, 0xff6600, 0xff3300, 0xffaa00];
+    const perpX = -aimY;
+    const perpY = aimX;
+    const count = Phaser.Math.Between(2, 3);
+
+    for (let i = 0; i < count; i++) {
+      const speed = Phaser.Math.FloatBetween(5, 8);
+      const side = Phaser.Math.FloatBetween(-0.35, 0.35);
+      const vx = (aimX + side * perpX) * speed;
+      const vy = (aimY + side * perpY) * speed - Phaser.Math.FloatBetween(0.1, 0.4);
+      const size = Phaser.Math.FloatBetween(4, 7);
+      const lifetime = Phaser.Math.Between(380, 620);
+      const node = this.add
+        .ellipse(
+          muzzleX + Phaser.Math.FloatBetween(-2, 2),
+          muzzleY + Phaser.Math.FloatBetween(-2, 2),
+          size,
+          size * 0.75,
+          Phaser.Utils.Array.GetRandom(flameColors) as number,
+          0.85,
+        )
+        .setDepth(8);
+
+      this.hitParticles.push({
+        node,
+        velocityX: vx,
+        velocityY: vy,
+        angularVelocity: Phaser.Math.FloatBetween(-0.02, 0.02),
+        gravity: 0.31,
+        drag: 0.985,
+        scaleXVelocity: 0.022,
+        scaleYVelocity: 0.018,
+        fadeAt: this.time.now + lifetime * 0.55,
+        destroyAt: this.time.now + lifetime,
+        baseAlpha: 0.85,
+      });
+    }
+  }
+
   private updateWeaponOverlay(
     rendered: RenderedPlayer,
     snapshot: PlayerSnapshot,
@@ -2744,6 +2789,22 @@ class MainScene extends Phaser.Scene {
         flashAim.y,
       );
     }
+
+    // 불씨 뿌리개 연속 화염 파티클 — attackHeld 동안 매 50ms 틱마다 생성
+    if (attackHeld && localPlayer?.snapshot.equippedWeaponId === "ember_sprinkler") {
+      const flamAim = resolveClampedAimForWeapon(
+        "ember_sprinkler",
+        aim,
+        localPlayer.snapshot.direction,
+      );
+      this.spawnFlameParticles(
+        originX + flamAim.x * 18,
+        originY + flamAim.y * 18,
+        flamAim.x,
+        flamAim.y,
+      );
+    }
+
     this.attackWasDown = attackHeld;
     const pickupWeaponPressed =
       this.queuedPickupWeapon || Phaser.Input.Keyboard.JustDown(this.keys.e);
@@ -2782,6 +2843,11 @@ class MainScene extends Phaser.Scene {
   ) {
     this.attackFlash.clear();
     const fireStyle = resolveWeaponFireStyle(weaponId);
+
+    if (fireStyle === "flame_stream") {
+      // 화염 파티클은 sendLatestInput에서 attackHeld 동안 매 틱 생성됨
+      return;
+    }
 
     if (fireStyle === "muzzle_flash") {
       const tracerEndX = muzzleX + aimX * 62;

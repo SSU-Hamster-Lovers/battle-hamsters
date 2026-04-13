@@ -49,6 +49,8 @@ impl RoomState {
                 &shooter_position,
                 &aim_direction,
                 weapon.range,
+                weapon.melee_cone_near_half_width,
+                weapon.melee_cone_far_half_width,
                 dying_this_tick,
             );
 
@@ -292,15 +294,17 @@ impl RoomState {
         attacker_position: &Vector2,
         aim_direction: &Vector2,
         range: f64,
+        near_half_width: Option<f64>,
+        far_half_width: Option<f64>,
         dying_this_tick: &HashSet<String>,
     ) -> Option<String> {
         // Truncated cone: starts at PLAYER_HALF_SIZE (body edge) from attacker center,
-        // ends at PLAYER_HALF_SIZE + range. Half-width grows linearly from
-        // PLAYER_HALF_SIZE * 0.5 (narrow) to PLAYER_HALF_SIZE * 1.5 (wide).
+        // ends at PLAYER_HALF_SIZE + range. Half-width grows linearly from near to far.
+        // Weapon JSON can override near/far half-widths; otherwise uses Paws defaults.
         let hit_start = PLAYER_HALF_SIZE;
         let hit_end = PLAYER_HALF_SIZE + range;
-        let near_half_w = PLAYER_HALF_SIZE * 0.5;
-        let far_half_w = PLAYER_HALF_SIZE * 1.5;
+        let near_half_w = near_half_width.unwrap_or(PLAYER_HALF_SIZE * 0.5);
+        let far_half_w = far_half_width.unwrap_or(PLAYER_HALF_SIZE * 1.5);
 
         self.players
             .iter()

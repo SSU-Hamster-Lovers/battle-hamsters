@@ -1107,8 +1107,8 @@ mod tests {
     #[test]
     fn room_starts_with_spawned_weapon_pickup() {
         let room = RoomState::new();
-        // weapon_group 후보 1개 + 중앙 hand_cannon 1개 + 좌측 armory 3개 = 5개
-        assert_eq!(room.weapon_pickups.len(), 5);
+        // weapon_group 후보 1개 + 중앙 hand_cannon 1개 + 좌측 armory 4개(acorn/seed/hand/ember) = 6개
+        assert_eq!(room.weapon_pickups.len(), 6);
 
         let pickups: Vec<_> = room.weapon_pickups.values().collect();
 
@@ -1133,6 +1133,7 @@ mod tests {
         assert!(pickups.iter().any(|p| p.weapon_id == "acorn_blaster" && p.position.x as u32 == 130));
         assert!(pickups.iter().any(|p| p.weapon_id == "seed_shotgun" && p.position.x as u32 == 250));
         assert!(pickups.iter().any(|p| p.weapon_id == "hand_cannon" && p.position.x as u32 == 370));
+        assert!(pickups.iter().any(|p| p.weapon_id == "ember_sprinkler" && p.position.x as u32 == 490));
     }
 
     #[test]
@@ -2282,6 +2283,80 @@ mod tests {
             shooter_after.snapshot.equipped_weapon_resource,
             Some(3),
             "발사 시 resource가 소비되어야 함"
+        );
+    }
+
+    // ember_sprinkler: 맞은 대상에게 Burn DoT가 적용되어야 한다.
+    // 현재 JSON은 specialEffect: none이므로 이 테스트는 RED 상태.
+    #[test]
+    fn ember_sprinkler_applies_burn_on_hit() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(140.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "ember_sprinkler".to_string();
+        shooter.snapshot.equipped_weapon_resource = None;
+        shooter.latest_input.sequence = 1;
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        // 사정거리(170px) 안쪽에 있는 대상
+        let mut target = test_player(250.0, 300.0);
+        target.snapshot.id = "target".to_string();
+        target.snapshot.name = "target".to_string();
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let target_after = room.players.get("target").unwrap();
+        assert!(
+            target_after.active_burn.is_some(),
+            "ember_sprinkler 명중 시 Burn DoT가 적용되어야 함"
+        );
+    }
+
+    // ember_sprinkler: 넓은 cone이므로 Paws 범위 밖에 있는 대상도 맞아야 한다.
+    #[test]
+    fn ember_sprinkler_wider_cone_hits_target_outside_paws_range() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(140.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "ember_sprinkler".to_string();
+        shooter.snapshot.equipped_weapon_resource = None;
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        // 사거리 안쪽(120px)이지만 aim 축에서 35px 옆에 위치 → Paws cone(far_half_w=21)은 빗나감
+        // ember_sprinkler cone(far_half_w=60)은 맞아야 함
+        let mut target = test_player(260.0, 265.0);
+        target.snapshot.id = "target".to_string();
+        target.snapshot.name = "target".to_string();
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let target_after = room.players.get("target").unwrap();
+        assert!(
+            target_after.snapshot.hp < 100,
+            "ember_sprinkler 넓은 cone으로 인해 옆에 있는 대상도 맞아야 함 (hp={})",
+            target_after.snapshot.hp
         );
     }
 }
