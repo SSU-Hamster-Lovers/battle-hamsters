@@ -7,6 +7,8 @@ use crate::{
     TICK_INTERVAL_MS,
 };
 
+const EXPLOSION_KNOCKBACK_PER_UNIT: f64 = 0.2;
+
 const PROJECTILE_SPAWN_OFFSET: f64 = PLAYER_HALF_SIZE + 6.0;
 const PROJECTILE_HIT_RADIUS: f64 = PLAYER_HALF_SIZE * 1.225;
 const EPSILON: f64 = 0.0001;
@@ -148,13 +150,13 @@ impl RoomState {
                         projectile.weapon_id.clone(),
                         projectile.damage,
                         direction.clone(),
-                        impact_point,
+                        impact_point.clone(),
                         now_ms,
                     );
 
                     if target_hp_after_hit == 0 && dying_this_tick.insert(target_id.clone()) {
                         deaths.push((
-                            target_id,
+                            target_id.clone(),
                             DeathCause::Weapon {
                                 killer_id: projectile.owner_id.clone(),
                                 weapon_id: projectile.weapon_id.clone(),
@@ -164,7 +166,7 @@ impl RoomState {
                         duration_ms,
                         tick_damage,
                         tick_interval_ms,
-                    } = projectile.special_effect
+                    } = projectile.special_effect.clone()
                     {
                         if let Some(target) = self.players.get_mut(&target_id) {
                             apply_or_refresh_burn(
@@ -179,9 +181,54 @@ impl RoomState {
                         }
                     }
 
+                    // 폭발 특수효과: 직격 지점 기준 범위 피해
+                    if let RuntimeWeaponSpecialEffect::Explode {
+                        radius: Some(radius),
+                        splash_damage: Some(splash_damage),
+                        ..
+                    } = projectile.special_effect.clone()
+                    {
+                        self.apply_explosion(
+                            &projectile.owner_id,
+                            &projectile.weapon_id,
+                            &impact_point,
+                            radius,
+                            splash_damage,
+                            projectile.knockback,
+                            now_ms,
+                            deaths,
+                            dying_this_tick,
+                        );
+                    }
+
                     consumed_projectiles.push(projectile_id);
                 }
-                Some(ProjectileCollision::Terrain { .. }) => {
+                Some(ProjectileCollision::Terrain { hit_fraction }) => {
+                    // 지형 충돌 시 폭발 특수효과
+                    if let RuntimeWeaponSpecialEffect::Explode {
+                        radius: Some(radius),
+                        splash_damage: Some(splash_damage),
+                        ..
+                    } = projectile.special_effect.clone()
+                    {
+                        let terrain_impact = Vector2 {
+                            x: projectile.position.x
+                                + (next_position.x - projectile.position.x) * hit_fraction,
+                            y: projectile.position.y
+                                + (next_position.y - projectile.position.y) * hit_fraction,
+                        };
+                        self.apply_explosion(
+                            &projectile.owner_id,
+                            &projectile.weapon_id,
+                            &terrain_impact,
+                            radius,
+                            splash_damage,
+                            projectile.knockback,
+                            now_ms,
+                            deaths,
+                            dying_this_tick,
+                        );
+                    }
                     consumed_projectiles.push(projectile_id);
                 }
                 None => {
@@ -202,6 +249,91 @@ impl RoomState {
         consumed_projectiles.dedup();
         for projectile_id in consumed_projectiles {
             self.projectiles.remove(&projectile_id);
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn apply_explosion(
+        &mut self,
+        owner_id: &str,
+        weapon_id: &str,
+        explosion_center: &Vector2,
+        radius: f64,
+        splash_damage: u16,
+        base_knockback: f64,
+        now_ms: u64,
+        deaths: &mut Vec<(String, DeathCause)>,
+        dying_this_tick: &mut HashSet<String>,
+    ) {
+        let target_ids: Vec<String> = self
+            .players
+            .iter()
+            .filter(|(id, target)| {
+                id.as_str() != owner_id
+                    && target.snapshot.state == PlayerState::Alive
+                    && !dying_this_tick.contains(id.as_str())
+            })
+            .filter_map(|(id, target)| {
+                let dx = target.snapshot.position.x - explosion_center.x;
+                let dy = target.snapshot.position.y - explosion_center.y;
+                let dist = (dx * dx + dy * dy).sqrt();
+                if dist <= radius {
+                    Some(id.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for target_id in target_ids {
+            let Some(target) = self.players.get(&target_id) else {
+                continue;
+            };
+            let dx = target.snapshot.position.x - explosion_center.x;
+            let dy = target.snapshot.position.y - explosion_center.y;
+            let dist = (dx * dx + dy * dy).sqrt().max(1.0);
+            let knockback_dir = Vector2 {
+                x: dx / dist,
+                y: dy / dist,
+            };
+            // 거리에 비례한 넉백 (가까울수록 강함)
+            let knockback_scale = (1.0 - dist / radius).max(0.0) + EXPLOSION_KNOCKBACK_PER_UNIT;
+
+            let target_hp_after = {
+                let target = self
+                    .players
+                    .get_mut(&target_id)
+                    .expect("target should exist");
+                target.external_velocity.x += knockback_dir.x * base_knockback * knockback_scale;
+                target.external_velocity.y += knockback_dir.y * base_knockback * knockback_scale;
+                target.snapshot.hp = target.snapshot.hp.saturating_sub(splash_damage);
+                target.last_hit_by = Some(LastHitInfo {
+                    killer_id: owner_id.to_string(),
+                    weapon_id: weapon_id.to_string(),
+                    hit_at_ms: now_ms,
+                });
+                target.snapshot.hp
+            };
+
+            self.push_damage_event(
+                target_id.clone(),
+                owner_id.to_string(),
+                weapon_id.to_string(),
+                splash_damage,
+                knockback_dir,
+                explosion_center.clone(),
+                now_ms,
+            );
+
+            if target_hp_after == 0 && dying_this_tick.insert(target_id.clone()) {
+                deaths.push((
+                    target_id,
+                    DeathCause::Weapon {
+                        killer_id: owner_id.to_string(),
+                        weapon_id: weapon_id.to_string(),
+                    },
+                ));
+            }
         }
     }
 

@@ -1107,8 +1107,8 @@ mod tests {
     #[test]
     fn room_starts_with_spawned_weapon_pickup() {
         let room = RoomState::new();
-        // 좌/우 random 후보 각 1개 + 고정 6개(acorn/walnut/ember/seed/pine_sniper/squirrel_gatling) = 8개
-        assert_eq!(room.weapon_pickups.len(), 8);
+        // 좌/우 random 후보 각 1개 + 고정 7개(acorn/walnut/ember/seed/pine_sniper/squirrel_gatling/blueberry_mortar) = 9개
+        assert_eq!(room.weapon_pickups.len(), 9);
 
         let pickups: Vec<_> = room.weapon_pickups.values().collect();
 
@@ -2516,6 +2516,115 @@ mod tests {
             target_after.snapshot.hp < 100,
             "ember_sprinkler 넓은 cone으로 인해 옆에 있는 대상도 맞아야 함 (hp={})",
             target_after.snapshot.hp
+        );
+    }
+
+    // blueberry_mortar: 직격한 대상에게 직접 피해 + 범위 피해가 모두 적용되어야 한다.
+    #[test]
+    fn blueberry_mortar_direct_hit_applies_direct_and_splash_damage() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "blueberry_mortar".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(5);
+        shooter.latest_input.sequence = 1;
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        // 직격 대상: 바로 오른쪽에 위치
+        let mut direct_target = test_player(150.0, 300.0);
+        direct_target.snapshot.id = "direct_target".to_string();
+        direct_target.snapshot.name = "direct_target".to_string();
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("direct_target".to_string(), direct_target);
+
+        // 투사체 발사
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        // 투사체가 대상에 충돌할 때까지 tick
+        for tick in 1..=10 {
+            room.step_projectiles(1000 + tick * 50, &mut deaths, &mut dying);
+            let target = room.players.get("direct_target").unwrap();
+            if target.snapshot.hp < 100 {
+                break;
+            }
+        }
+
+        let target_after = room.players.get("direct_target").unwrap();
+        // blueberry_mortar: damage + splashDamage 가 모두 적용되어야 함
+        let def = weapon_definition("blueberry_mortar");
+        let max_expected_hp = 100u16
+            .saturating_sub(def.damage)
+            .saturating_sub(def.special_effect.splash_damage().unwrap_or(0));
+        assert!(
+            target_after.snapshot.hp <= max_expected_hp,
+            "blueberry_mortar 직격 시 직접 피해 + 범위 피해가 모두 적용되어야 함 (hp={}, expected_max={})",
+            target_after.snapshot.hp,
+            max_expected_hp
+        );
+    }
+
+    // blueberry_mortar: 폭발 반경 안에 있는 인근 대상에게 범위 피해를 줘야 한다.
+    #[test]
+    fn blueberry_mortar_splash_damages_nearby_player() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "blueberry_mortar".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(5);
+        shooter.latest_input.sequence = 1;
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        // 직격 대상: 바로 오른쪽에 위치 (floor 위)
+        let mut direct_target = test_player(150.0, 300.0);
+        direct_target.snapshot.id = "direct_target".to_string();
+        direct_target.snapshot.name = "direct_target".to_string();
+
+        // 범위 대상: 직격 대상에서 50px 옆 (반경 80px 내부)
+        let mut splash_target = test_player(150.0, 350.0);
+        splash_target.snapshot.id = "splash_target".to_string();
+        splash_target.snapshot.name = "splash_target".to_string();
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("direct_target".to_string(), direct_target);
+        room.players.insert("splash_target".to_string(), splash_target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        for tick in 1..=10 {
+            room.step_projectiles(1000 + tick * 50, &mut deaths, &mut dying);
+            let direct = room.players.get("direct_target").unwrap();
+            let splash = room.players.get("splash_target").unwrap();
+            if direct.snapshot.hp < 100 || splash.snapshot.hp < 100 {
+                break;
+            }
+        }
+
+        let splash_after = room.players.get("splash_target").unwrap();
+        let def = weapon_definition("blueberry_mortar");
+        let splash_dmg = def.special_effect.splash_damage().unwrap_or(0);
+        let expected_hp = 100u16.saturating_sub(splash_dmg);
+        assert!(
+            splash_after.snapshot.hp <= expected_hp,
+            "blueberry_mortar 폭발 반경 내 대상에게 범위 피해가 적용되어야 함 (hp={}, splash_dmg={})",
+            splash_after.snapshot.hp,
+            splash_dmg
         );
     }
 }

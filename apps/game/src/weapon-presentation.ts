@@ -18,6 +18,8 @@ const PINE_SNIPER_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-pine-sni
 const PINE_SNIPER_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-pine-sniper`;
 const SQUIRREL_GATLING_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-squirrel-gatling`;
 const SQUIRREL_GATLING_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-squirrel-gatling`;
+const BLUEBERRY_MORTAR_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-blueberry-mortar`;
+const BLUEBERRY_MORTAR_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-blueberry-mortar`;
 
 type WeaponPickupSource = "spawn" | "dropped" | "reward";
 
@@ -44,14 +46,16 @@ export type WeaponFireStyle =
   | "shotgun_spread"
   | "cannon_blast"
   | "sniper_flash"
-  | "auto_flash";
+  | "auto_flash"
+  | "mortar_arc";
 
 export type WeaponImpactStyle =
   | "generic_spark"
   | "acorn_spark"
   | "paws_dust"
   | "seed_burst"
-  | "cannon_impact";
+  | "cannon_impact"
+  | "explosion_burst";
 
 export function ensureWeaponPickupTextures(scene: Phaser.Scene) {
   if (!scene.textures.exists(ACORN_PICKUP_TEXTURE_KEY)) {
@@ -137,6 +141,20 @@ export function ensureWeaponPickupTextures(scene: Phaser.Scene) {
     graphics.generateTexture(SQUIRREL_GATLING_EQUIP_TEXTURE_KEY, 40, 16);
     graphics.destroy();
   }
+
+  if (!scene.textures.exists(BLUEBERRY_MORTAR_PICKUP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawBlueberryMortarPickupTexture(graphics);
+    graphics.generateTexture(BLUEBERRY_MORTAR_PICKUP_TEXTURE_KEY, 60, 40);
+    graphics.destroy();
+  }
+
+  if (!scene.textures.exists(BLUEBERRY_MORTAR_EQUIP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawBlueberryMortarEquipTexture(graphics);
+    graphics.generateTexture(BLUEBERRY_MORTAR_EQUIP_TEXTURE_KEY, 36, 18);
+    graphics.destroy();
+  }
 }
 
 export function resolveWeaponPickupPresentation(
@@ -186,6 +204,14 @@ export function resolveWeaponPickupPresentation(
     return {
       textureKey: SQUIRREL_GATLING_PICKUP_TEXTURE_KEY,
       code: "SG",
+      showNameLabel: false,
+    };
+  }
+
+  if (weaponId === "blueberry_mortar") {
+    return {
+      textureKey: BLUEBERRY_MORTAR_PICKUP_TEXTURE_KEY,
+      code: "BM",
       showNameLabel: false,
     };
   }
@@ -266,6 +292,17 @@ export function resolveWeaponEquipPresentation(
     };
   }
 
+  if (weaponId === "blueberry_mortar") {
+    return {
+      textureKey: BLUEBERRY_MORTAR_EQUIP_TEXTURE_KEY,
+      offsetX: 10,
+      offsetY: 2,
+      flipWithDirection: true,
+      // 캔버스 36px, 센터 x=18, 발사관 끝 x=32 → 14px
+      muzzleFromCenter: 14,
+    };
+  }
+
   if (weaponId === "pine_sniper") {
     return {
       textureKey: PINE_SNIPER_EQUIP_TEXTURE_KEY,
@@ -315,8 +352,13 @@ export function resolveWeaponFireStyle(weaponId: string): WeaponFireStyle {
     return "auto_flash";
   }
 
+  if (weaponId === "blueberry_mortar") {
+    return "mortar_arc";
+  }
+
   return "generic_line";
 }
+
 
 export function resolveWeaponImpactStyle(weaponId: string): WeaponImpactStyle {
   if (weaponId === "acorn_blaster") {
@@ -333,6 +375,10 @@ export function resolveWeaponImpactStyle(weaponId: string): WeaponImpactStyle {
 
   if (weaponId === "walnut_cannon") {
     return "cannon_impact";
+  }
+
+  if (weaponId === "blueberry_mortar") {
+    return "explosion_burst";
   }
 
   return "generic_spark";
@@ -352,6 +398,7 @@ export function ensureWeaponHudTextures(scene: Phaser.Scene) {
     else if (weaponId === "walnut_cannon") drawWalnutCannonHudIcon(g);
     else if (weaponId === "pine_sniper") drawPineSniperHudIcon(g);
     else if (weaponId === "squirrel_gatling") drawSquirrelGatlingHudIcon(g);
+    else if (weaponId === "blueberry_mortar") drawBlueberryMortarHudIcon(g);
     else drawFallbackHudIcon(g);
     g.generateTexture(key, HUD_ICON_SIZE, HUD_ICON_SIZE);
     g.destroy();
@@ -1145,4 +1192,125 @@ function drawSquirrelGatlingPickupTexture(graphics: Phaser.GameObjects.Graphics)
   graphics.lineStyle(1, stockDark, 0.4);
   graphics.lineBetween(4, 14, 12, 22);
   graphics.lineBetween(4, 18, 12, 26);
+}
+
+// ── 블루베리 박격포 (blueberry_mortar) ────────────────────────────────────────
+
+function drawBlueberryMortarHudIcon(g: Phaser.GameObjects.Graphics) {
+  g.clear();
+  const tube = 0x6d28d9;
+  const tubeDark = 0x4c1d95;
+  const base = 0x5b21b6;
+  const blueberry = 0x7c3aed;
+  const blueberryLight = 0xa78bfa;
+
+  // 포신 (각도 있는 짧은 관)
+  g.fillStyle(tube, 1);
+  g.fillRoundedRect(8, 4, 6, 14, 2);
+  g.fillStyle(tubeDark, 0.4);
+  g.fillRoundedRect(10, 4, 2, 14, 1);
+  g.lineStyle(1.5, tubeDark, 1);
+  g.strokeRoundedRect(8, 4, 6, 14, 2);
+
+  // 받침대
+  g.fillStyle(base, 1);
+  g.fillRoundedRect(3, 17, 18, 5, 2);
+  g.lineStyle(1.5, tubeDark, 1);
+  g.strokeRoundedRect(3, 17, 18, 5, 2);
+
+  // 블루베리 탄환
+  g.fillStyle(blueberry, 1);
+  g.fillCircle(11, 3, 3);
+  g.fillStyle(blueberryLight, 0.6);
+  g.fillCircle(10, 2, 1.5);
+  g.lineStyle(1, tubeDark, 1);
+  g.strokeCircle(11, 3, 3);
+}
+
+function drawBlueberryMortarEquipTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+  const tube = 0x6d28d9;
+  const tubeDark = 0x4c1d95;
+  const base = 0x5b21b6;
+  const blueberry = 0x7c3aed;
+  const blueberryLight = 0xa78bfa;
+
+  // 받침대
+  graphics.fillStyle(base, 1);
+  graphics.fillRoundedRect(2, 10, 20, 6, 2);
+  graphics.lineStyle(1.5, tubeDark, 1);
+  graphics.strokeRoundedRect(2, 10, 20, 6, 2);
+
+  // 포신 (짧고 위쪽 각도로 솟음)
+  graphics.fillStyle(tube, 1);
+  graphics.fillRoundedRect(8, 2, 8, 14, 2);
+  graphics.fillStyle(tubeDark, 0.3);
+  graphics.fillRoundedRect(10, 2, 3, 14, 1);
+  graphics.lineStyle(1.5, tubeDark, 1);
+  graphics.strokeRoundedRect(8, 2, 8, 14, 2);
+
+  // 포구 링
+  graphics.fillStyle(tubeDark, 1);
+  graphics.fillRoundedRect(7, 1, 10, 3, 1);
+
+  // 블루베리 탄환 (포구 위)
+  graphics.fillStyle(blueberry, 1);
+  graphics.fillCircle(12, 0, 4);
+  graphics.fillStyle(blueberryLight, 0.5);
+  graphics.fillCircle(11, -1, 2);
+  graphics.lineStyle(1, tubeDark, 1);
+  graphics.strokeCircle(12, 0, 4);
+}
+
+function drawBlueberryMortarPickupTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+  const tube = 0x6d28d9;
+  const tubeDark = 0x4c1d95;
+  const tubeLight = 0x8b5cf6;
+  const base = 0x5b21b6;
+  const baseDark = 0x3b0764;
+  const blueberry = 0x7c3aed;
+  const blueberryLight = 0xa78bfa;
+  const blueberryDark = 0x4c1d95;
+
+  // 받침대 (하단 넓은 플레이트)
+  graphics.fillStyle(base, 1);
+  graphics.fillRoundedRect(4, 26, 42, 10, 3);
+  graphics.fillStyle(baseDark, 0.3);
+  graphics.fillRoundedRect(4, 32, 42, 4, 3);
+  graphics.lineStyle(2, baseDark, 1);
+  graphics.strokeRoundedRect(4, 26, 42, 10, 3);
+
+  // 포신 지지대
+  graphics.fillStyle(base, 1);
+  graphics.fillRoundedRect(18, 16, 10, 14, 2);
+  graphics.lineStyle(1.5, baseDark, 1);
+  graphics.strokeRoundedRect(18, 16, 10, 14, 2);
+
+  // 포신 (세로로 긴 발사관)
+  graphics.fillStyle(tube, 1);
+  graphics.fillRoundedRect(20, 4, 14, 24, 4);
+  graphics.fillStyle(tubeLight, 0.3);
+  graphics.fillRoundedRect(20, 4, 4, 24, 3);
+  graphics.fillStyle(tubeDark, 0.2);
+  graphics.fillRoundedRect(29, 4, 5, 24, 3);
+  graphics.lineStyle(2, tubeDark, 1);
+  graphics.strokeRoundedRect(20, 4, 14, 24, 4);
+
+  // 포구 링
+  graphics.fillStyle(tubeDark, 1);
+  graphics.fillRoundedRect(18, 3, 18, 4, 2);
+  graphics.lineStyle(1.5, baseDark, 1);
+  graphics.strokeRoundedRect(18, 3, 18, 4, 2);
+
+  // 블루베리 탄환 (포구 위에 보라/파란 공)
+  graphics.fillStyle(blueberry, 1);
+  graphics.fillCircle(27, 0, 7);
+  graphics.fillStyle(blueberryLight, 0.5);
+  graphics.fillCircle(25, -2, 3.5);
+  graphics.lineStyle(2, blueberryDark, 1);
+  graphics.strokeCircle(27, 0, 7);
+  // 블루베리 꼭지
+  graphics.fillStyle(baseDark, 1);
+  graphics.fillRoundedRect(25, -7, 4, 5, 1);
 }

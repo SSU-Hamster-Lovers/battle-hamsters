@@ -299,6 +299,17 @@
       "spawnStyle": "airdrop",
       "despawnStyle": "shrink_pop",
       "mode": "fixed"
+    },
+    {
+      "id": "weapon_center_crown_mortar",
+      "weaponId": "blueberry_mortar",
+      "x": 800,
+      "y": 373,
+      "respawnMs": 12000,
+      "despawnAfterMs": 8000,
+      "spawnStyle": "airdrop",
+      "despawnStyle": "shrink_pop",
+      "mode": "fixed"
     }
   ],
   "itemSpawns": [

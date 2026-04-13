@@ -271,6 +271,8 @@ pub(crate) enum RuntimeWeaponSpecialEffect {
     Explode {
         fuse_ms: Option<u64>,
         radius: Option<f64>,
+        #[serde(rename = "splashDamage")]
+        splash_damage: Option<u16>,
     },
     Grab {
         grab_duration_ms: u64,
@@ -286,6 +288,16 @@ pub(crate) enum RuntimeWeaponSpecialEffect {
         #[serde(rename = "tickIntervalMs")]
         tick_interval_ms: u64,
     },
+}
+
+impl RuntimeWeaponSpecialEffect {
+    pub(crate) fn splash_damage(&self) -> Option<u16> {
+        if let RuntimeWeaponSpecialEffect::Explode { splash_damage, .. } = self {
+            *splash_damage
+        } else {
+            None
+        }
+    }
 }
 
 pub(crate) fn runtime_map_data() -> &'static RuntimeMapData {
@@ -426,6 +438,8 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
         let pine_sniper_raw = include_str!("../../packages/shared/weapons/pine-sniper.json");
         let squirrel_gatling_raw =
             include_str!("../../packages/shared/weapons/squirrel-gatling.json");
+        let blueberry_mortar_raw =
+            include_str!("../../packages/shared/weapons/blueberry-mortar.json");
 
         let paws: RuntimeWeaponDefinition =
             serde_json::from_str(paws_raw).expect("paws JSON should deserialize");
@@ -442,6 +456,9 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
         let squirrel_gatling: RuntimeWeaponDefinition =
             serde_json::from_str(squirrel_gatling_raw)
                 .expect("squirrel gatling JSON should deserialize");
+        let blueberry_mortar: RuntimeWeaponDefinition =
+            serde_json::from_str(blueberry_mortar_raw)
+                .expect("blueberry mortar JSON should deserialize");
 
         HashMap::from([
             (paws.id.clone(), paws),
@@ -451,6 +468,7 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
             (ember_sprinkler.id.clone(), ember_sprinkler),
             (pine_sniper.id.clone(), pine_sniper),
             (squirrel_gatling.id.clone(), squirrel_gatling),
+            (blueberry_mortar.id.clone(), blueberry_mortar),
         ])
     })
 }

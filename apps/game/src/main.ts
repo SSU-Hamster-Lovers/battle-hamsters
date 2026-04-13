@@ -2253,6 +2253,11 @@ class MainScene extends Phaser.Scene {
       return;
     }
 
+    if (impactStyle === "explosion_burst") {
+      this.spawnExplosionBurst(impactPoint);
+      return;
+    }
+
     this.spawnSparkImpactBurst(impactPoint, direction, damage, isExact, impactStyle);
   }
 
@@ -2385,6 +2390,69 @@ class MainScene extends Phaser.Scene {
         fadeAt: this.time.now + (isExact ? 200 : 140),
         destroyAt: this.time.now + (isExact ? 520 : 380),
         baseAlpha: isDust ? 0.55 : 0.9,
+      });
+    }
+  }
+
+  private spawnExplosionBurst(impactPoint: Vector2) {
+    // 블루베리 박격포 폭발 — 보라/흰 원형 파동 + 파편
+    const coreColors = [0xddd6fe, 0xffffff, 0xc4b5fd];
+    const fragmentColors = [0x7c3aed, 0x6d28d9, 0xa78bfa, 0xffffff];
+    // 폭발 중심 플래시
+    for (let i = 0; i < 3; i++) {
+      const size = Phaser.Math.Between(14, 22);
+      const node = this.add
+        .ellipse(
+          impactPoint.x + Phaser.Math.FloatBetween(-4, 4),
+          impactPoint.y + Phaser.Math.FloatBetween(-4, 4),
+          size,
+          size * 0.8,
+          Phaser.Utils.Array.GetRandom(coreColors) as number,
+          0.8,
+        )
+        .setDepth(9);
+      this.hitParticles.push({
+        node,
+        velocityX: Phaser.Math.FloatBetween(-0.4, 0.4),
+        velocityY: Phaser.Math.FloatBetween(-0.8, -0.2),
+        angularVelocity: Phaser.Math.FloatBetween(-0.04, 0.04),
+        gravity: 0.06,
+        drag: 0.9,
+        scaleXVelocity: 0.04,
+        scaleYVelocity: 0.04,
+        fadeAt: this.time.now + 100,
+        destroyAt: this.time.now + 350,
+        baseAlpha: 0.8,
+      });
+    }
+    // 파편 파티클 (방사형)
+    for (let i = 0; i < 8; i++) {
+      const angle = (Math.PI * 2 * i) / 8 + Phaser.Math.FloatBetween(-0.3, 0.3);
+      const speed = Phaser.Math.FloatBetween(2.5, 5.0);
+      const size = Phaser.Math.Between(3, 6);
+      const node = this.add
+        .rectangle(
+          impactPoint.x,
+          impactPoint.y,
+          size,
+          Phaser.Math.Between(2, 4),
+          Phaser.Utils.Array.GetRandom(fragmentColors) as number,
+          0.9,
+        )
+        .setDepth(8);
+      node.setAngle(Phaser.Math.RadToDeg(angle));
+      this.hitParticles.push({
+        node,
+        velocityX: Math.cos(angle) * speed,
+        velocityY: Math.sin(angle) * speed - 0.5,
+        angularVelocity: Phaser.Math.FloatBetween(-0.08, 0.08),
+        gravity: 0.18,
+        drag: 0.96,
+        scaleXVelocity: 0,
+        scaleYVelocity: 0,
+        fadeAt: this.time.now + 200,
+        destroyAt: this.time.now + 500,
+        baseAlpha: 0.9,
       });
     }
   }
@@ -3140,6 +3208,19 @@ class MainScene extends Phaser.Scene {
         muzzleY + aimY * 30,
       );
       this.attackFlashUntil = this.time.now + 50;
+      return;
+    }
+
+    if (fireStyle === "mortar_arc") {
+      // 박격포 발사 — 크고 둥근 총구 폭발 + 보라/흰 섬광
+      this.attackFlash.fillStyle(0xddd6fe, 0.9);
+      this.attackFlash.fillCircle(muzzleX, muzzleY, 11);
+      this.attackFlash.fillStyle(0xffffff, 0.7);
+      this.attackFlash.fillCircle(muzzleX, muzzleY, 6);
+      // 연기 링
+      this.attackFlash.lineStyle(3, 0x8b5cf6, 0.45);
+      this.attackFlash.strokeCircle(muzzleX + aimX * 8, muzzleY + aimY * 8, 8);
+      this.attackFlashUntil = this.time.now + 100;
       return;
     }
 
