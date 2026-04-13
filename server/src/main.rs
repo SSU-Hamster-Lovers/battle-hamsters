@@ -2323,6 +2323,80 @@ mod tests {
         );
     }
 
+    // pine_sniper: 사거리 안쪽의 대상을 hitscan으로 맞혀야 한다.
+    #[test]
+    fn pine_sniper_hits_target_in_range() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "pine_sniper".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(3);
+        shooter.latest_input.sequence = 1;
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        // 사거리(1100px) 안쪽 700px 거리에 있는 대상
+        let mut target = test_player(700.0, 300.0);
+        target.snapshot.id = "target".to_string();
+        target.snapshot.name = "target".to_string();
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let target_after = room.players.get("target").unwrap();
+        assert!(
+            target_after.snapshot.hp < 100,
+            "pine_sniper는 사거리 안쪽 대상을 맞혀야 함 (hp={})",
+            target_after.snapshot.hp
+        );
+        assert_eq!(
+            target_after.snapshot.hp,
+            45,
+            "pine_sniper 피해량은 55여야 함 (hp={})",
+            target_after.snapshot.hp
+        );
+    }
+
+    // pine_sniper: 발사 시 resource가 1 소비되어야 한다.
+    #[test]
+    fn pine_sniper_consumes_resource_per_shot() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "pine_sniper".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(3);
+        shooter.latest_input.sequence = 1;
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        room.players.insert("shooter".to_string(), shooter);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let shooter_after = room.players.get("shooter").unwrap();
+        assert_eq!(
+            shooter_after.snapshot.equipped_weapon_resource,
+            Some(2),
+            "pine_sniper 발사 시 resource가 3 → 2로 소비되어야 함"
+        );
+    }
+
     // ember_sprinkler: 넓은 cone이므로 Paws 범위 밖에 있는 대상도 맞아야 한다.
     #[test]
     fn ember_sprinkler_wider_cone_hits_target_outside_paws_range() {
