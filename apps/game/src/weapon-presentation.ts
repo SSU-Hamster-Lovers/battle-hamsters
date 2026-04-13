@@ -14,6 +14,8 @@ const ACORN_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-acorn-blaster`;
 const EMBER_SPRINKLER_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-ember-sprinkler`;
 const SEED_SHOTGUN_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-seed-shotgun`;
 const WALNUT_CANNON_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-walnut-cannon`;
+const PINE_SNIPER_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-pine-sniper`;
+const PINE_SNIPER_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-pine-sniper`;
 
 type WeaponPickupSource = "spawn" | "dropped" | "reward";
 
@@ -38,7 +40,8 @@ export type WeaponFireStyle =
   | "muzzle_flash"
   | "flame_stream"
   | "shotgun_spread"
-  | "cannon_blast";
+  | "cannon_blast"
+  | "sniper_flash";
 
 export type WeaponImpactStyle =
   | "generic_spark"
@@ -103,6 +106,20 @@ export function ensureWeaponPickupTextures(scene: Phaser.Scene) {
     graphics.generateTexture(WALNUT_CANNON_EQUIP_TEXTURE_KEY, 32, 18);
     graphics.destroy();
   }
+
+  if (!scene.textures.exists(PINE_SNIPER_PICKUP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawPineSniperPickupTexture(graphics);
+    graphics.generateTexture(PINE_SNIPER_PICKUP_TEXTURE_KEY, 72, 40);
+    graphics.destroy();
+  }
+
+  if (!scene.textures.exists(PINE_SNIPER_EQUIP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawPineSniperEquipTexture(graphics);
+    graphics.generateTexture(PINE_SNIPER_EQUIP_TEXTURE_KEY, 52, 16);
+    graphics.destroy();
+  }
 }
 
 export function resolveWeaponPickupPresentation(
@@ -136,6 +153,14 @@ export function resolveWeaponPickupPresentation(
     return {
       textureKey: WALNUT_CANNON_PICKUP_TEXTURE_KEY,
       code: "WC",
+      showNameLabel: false,
+    };
+  }
+
+  if (weaponId === "pine_sniper") {
+    return {
+      textureKey: PINE_SNIPER_PICKUP_TEXTURE_KEY,
+      code: "PS",
       showNameLabel: false,
     };
   }
@@ -205,6 +230,17 @@ export function resolveWeaponEquipPresentation(
     };
   }
 
+  if (weaponId === "pine_sniper") {
+    return {
+      textureKey: PINE_SNIPER_EQUIP_TEXTURE_KEY,
+      offsetX: 14,
+      offsetY: 1,
+      flipWithDirection: true,
+      // 캔버스 52px, 센터 x=26, 총구 x=48 → 22px
+      muzzleFromCenter: 22,
+    };
+  }
+
   return {
     textureKey: null,
     offsetX: 0,
@@ -233,6 +269,10 @@ export function resolveWeaponFireStyle(weaponId: string): WeaponFireStyle {
 
   if (weaponId === "walnut_cannon") {
     return "cannon_blast";
+  }
+
+  if (weaponId === "pine_sniper") {
+    return "sniper_flash";
   }
 
   return "generic_line";
@@ -270,6 +310,7 @@ export function ensureWeaponHudTextures(scene: Phaser.Scene) {
     else if (weaponId === "ember_sprinkler") drawEmberSprinklerHudIcon(g);
     else if (weaponId === "seed_shotgun") drawSeedShotgunHudIcon(g);
     else if (weaponId === "walnut_cannon") drawWalnutCannonHudIcon(g);
+    else if (weaponId === "pine_sniper") drawPineSniperHudIcon(g);
     else drawFallbackHudIcon(g);
     g.generateTexture(key, HUD_ICON_SIZE, HUD_ICON_SIZE);
     g.destroy();
@@ -741,4 +782,171 @@ function drawEmberSprinklerPickupTexture(graphics: Phaser.GameObjects.Graphics) 
   // 화염: 붉은 외곽
   graphics.fillStyle(0xef4444, 0.82);
   graphics.fillEllipse(49, 19, 5, 4);
+}
+
+// ── 솔방울 저격총 (pine_sniper) ─────────────────────────────────────────────
+
+function drawPineSniperHudIcon(g: Phaser.GameObjects.Graphics) {
+  g.clear();
+
+  // 총신 (얇고 긴)
+  g.fillStyle(0x708090, 1);
+  g.fillRoundedRect(3, 10, 19, 3, 1);
+  // 총신 상단 하이라이트
+  g.fillStyle(0xa0b0c0, 0.6);
+  g.fillRoundedRect(3, 10, 19, 1, 1);
+  // 총구 캡
+  g.fillStyle(0x4a5568, 1);
+  g.fillRoundedRect(21, 10, 2, 3, 1);
+  // 스코프
+  g.fillStyle(0x374151, 1);
+  g.fillRoundedRect(9, 7, 9, 3, 1);
+  // 스코프 렌즈
+  g.fillStyle(0x7dd3fc, 0.9);
+  g.fillCircle(13, 8, 1.5);
+  // 솔방울 개머리판 몸체
+  g.fillStyle(0x8b5e3c, 1);
+  g.fillEllipse(4, 13, 7, 8);
+  // 솔방울 음영
+  g.fillStyle(0x5b3922, 0.6);
+  g.fillEllipse(4, 15, 6, 4);
+  // 솔방울 꼭지
+  g.fillStyle(0x4a3020, 1);
+  g.fillEllipse(4, 9, 3, 3);
+  // 솔방울 비늘 선
+  g.lineStyle(0.8, 0x5b3922, 0.7);
+  g.lineBetween(2, 11, 6, 13);
+  g.lineBetween(2, 13, 6, 15);
+  // 아웃라인
+  g.lineStyle(1.5, 0x2f3f50, 1);
+  g.strokeRoundedRect(3, 10, 19, 3, 1);
+}
+
+function drawPineSniperEquipTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+
+  // 솔방울 개머리판
+  graphics.fillStyle(0x8b5e3c, 1);
+  graphics.fillEllipse(6, 8, 12, 14);
+  // 솔방울 음영
+  graphics.fillStyle(0x5b3922, 0.55);
+  graphics.fillEllipse(6, 11, 10, 6);
+  // 솔방울 꼭지
+  graphics.fillStyle(0x4a3020, 1);
+  graphics.fillEllipse(6, 2, 4, 4);
+  // 솔방울 비늘 선
+  graphics.lineStyle(0.8, 0x5b3922, 0.7);
+  graphics.lineBetween(2, 5, 9, 8);
+  graphics.lineBetween(2, 8, 10, 11);
+  graphics.lineBetween(3, 11, 10, 13);
+  // 개머리판 아웃라인
+  graphics.lineStyle(1.5, 0x2f1d12, 1);
+  graphics.strokeEllipse(6, 8, 12, 14);
+
+  // 총신 (긴, 가늘게)
+  graphics.fillStyle(0x708090, 1);
+  graphics.fillRoundedRect(8, 5, 40, 5, 1);
+  // 총신 상단 하이라이트
+  graphics.fillStyle(0xa8b8c8, 0.55);
+  graphics.fillRoundedRect(8, 5, 40, 1, 1);
+  // 총신 아웃라인
+  graphics.lineStyle(1.5, 0x2f3f50, 1);
+  graphics.strokeRoundedRect(8, 5, 40, 5, 1);
+
+  // 총구 캡
+  graphics.fillStyle(0x4a5568, 1);
+  graphics.fillRoundedRect(47, 4, 4, 7, 1);
+  graphics.lineStyle(1, 0x2f3f50, 1);
+  graphics.strokeRoundedRect(47, 4, 4, 7, 1);
+
+  // 스코프 바디
+  graphics.fillStyle(0x374151, 1);
+  graphics.fillRoundedRect(18, 2, 14, 4, 1);
+  graphics.lineStyle(1, 0x1f2937, 1);
+  graphics.strokeRoundedRect(18, 2, 14, 4, 1);
+  // 스코프 렌즈
+  graphics.fillStyle(0x7dd3fc, 0.85);
+  graphics.fillCircle(24, 4, 1.5);
+}
+
+function drawPineSniperPickupTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+
+  const barrelColor = 0x708090;
+  const barrelHighlight = 0xa8b8c8;
+  const barrelDark = 0x2f3f50;
+  const muzzleColor = 0x4a5568;
+  const scopeColor = 0x374151;
+  const scopeDark = 0x1f2937;
+  const pineconeBody = 0x8b5e3c;
+  const pineconeDark = 0x5b3922;
+  const pineconeDeep = 0x3d2510;
+
+  // 솔방울 개머리판 몸체
+  graphics.fillStyle(pineconeBody, 1);
+  graphics.fillEllipse(10, 24, 18, 28);
+
+  // 솔방울 하단 음영
+  graphics.fillStyle(pineconeDark, 0.6);
+  graphics.fillEllipse(10, 30, 14, 12);
+
+  // 솔방울 비늘 (3단)
+  graphics.fillStyle(pineconeDark, 0.75);
+  graphics.fillRoundedRect(3, 14, 6, 4, 2);
+  graphics.fillRoundedRect(9, 14, 6, 4, 2);
+  graphics.fillRoundedRect(3, 19, 6, 4, 2);
+  graphics.fillRoundedRect(9, 19, 6, 4, 2);
+  graphics.fillRoundedRect(4, 24, 6, 4, 2);
+  graphics.fillRoundedRect(10, 24, 6, 4, 2);
+
+  // 솔방울 꼭지
+  graphics.fillStyle(pineconeDeep, 1);
+  graphics.fillEllipse(10, 10, 6, 7);
+  graphics.fillStyle(pineconeDark, 1);
+  graphics.fillEllipse(10, 12, 5, 5);
+
+  // 솔방울 아웃라인
+  graphics.lineStyle(1.5, pineconeDeep, 1);
+  graphics.strokeEllipse(10, 24, 18, 28);
+
+  // 총신 (긴 파이프)
+  graphics.fillStyle(barrelColor, 1);
+  graphics.fillRoundedRect(14, 15, 54, 8, 2);
+
+  // 총신 상단 하이라이트
+  graphics.fillStyle(barrelHighlight, 0.5);
+  graphics.fillRoundedRect(14, 15, 54, 2, 1);
+
+  // 총신 하단 음영
+  graphics.fillStyle(barrelDark, 0.25);
+  graphics.fillRoundedRect(14, 20, 54, 3, 2);
+
+  // 총신 아웃라인
+  graphics.lineStyle(1.5, barrelDark, 1);
+  graphics.strokeRoundedRect(14, 15, 54, 8, 2);
+
+  // 총구 캡
+  graphics.fillStyle(muzzleColor, 1);
+  graphics.fillRoundedRect(67, 14, 4, 10, 1);
+  graphics.lineStyle(1, barrelDark, 1);
+  graphics.strokeRoundedRect(67, 14, 4, 10, 1);
+
+  // 스코프 바디
+  graphics.fillStyle(scopeColor, 1);
+  graphics.fillRoundedRect(28, 10, 22, 7, 2);
+  graphics.lineStyle(1.5, scopeDark, 1);
+  graphics.strokeRoundedRect(28, 10, 22, 7, 2);
+
+  // 스코프 렌즈 (크게)
+  graphics.fillStyle(0xbae6fd, 0.9);
+  graphics.fillCircle(38, 13, 3);
+  graphics.fillStyle(0x7dd3fc, 0.6);
+  graphics.fillCircle(37, 12, 1.5);
+  graphics.lineStyle(1, scopeDark, 0.8);
+  graphics.strokeCircle(38, 13, 3);
+
+  // 스코프 조준선 (십자)
+  graphics.lineStyle(0.8, scopeDark, 0.5);
+  graphics.lineBetween(38, 10, 38, 16);
+  graphics.lineBetween(35, 13, 41, 13);
 }
