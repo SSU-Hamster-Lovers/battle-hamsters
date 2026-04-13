@@ -1422,7 +1422,7 @@ mod tests {
 
         let shooter_after = room.players.get("shooter").expect("shooter should exist");
         assert_eq!(shooter_after.snapshot.equipped_weapon_resource, Some(3));
-        assert_eq!(room.projectiles.len(), 5);
+        assert_eq!(room.projectiles.len(), 10);
         assert!(deaths.is_empty());
     }
 
