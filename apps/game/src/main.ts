@@ -48,7 +48,16 @@ const DEBUG_VISIBLE_STORAGE_KEY = "battle-hamsters-debug-visible";
 const FREE_PLAY_ROOM_ID = "free_play";
 
 function getUrlParam(key: string): string | null {
-  return new URLSearchParams(window.location.search).get(key);
+  const searchValue = new URLSearchParams(window.location.search).get(key);
+  if (searchValue !== null) {
+    return searchValue;
+  }
+
+  const rawHash = window.location.hash.startsWith("#")
+    ? window.location.hash.slice(1)
+    : window.location.hash;
+  const normalizedHash = rawHash.startsWith("?") ? rawHash.slice(1) : rawHash;
+  return new URLSearchParams(normalizedHash).get(key);
 }
 
 function parseBooleanUrlParam(key: string): boolean | null {
@@ -98,7 +107,7 @@ function resolveInitialDebugVisible(opsAccess: boolean): boolean {
   return readStoredFlag(DEBUG_VISIBLE_STORAGE_KEY);
 }
 
-// URL ?room=xxxx 이 있으면 그 값, 없으면 자유맵
+// URL query/hash 에 room 값이 있으면 그 값, 없으면 자유맵
 const ROOM_ID =
   getUrlParam("room") ?? getUrlParam("roomId") ?? FREE_PLAY_ROOM_ID;
 const INPUT_SEND_INTERVAL_MS = 50;
@@ -318,7 +327,7 @@ function fallbackImpactDirection(
 }
 
 function getOrCreatePlayerName(): string {
-  // URL 파라미터 우선 (Portal 에서 전달)
+  // URL query/hash 우선 (Portal 에서 전달)
   const fromUrl = getUrlParam("name");
   if (fromUrl) {
     return fromUrl;

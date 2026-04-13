@@ -81,7 +81,7 @@
 - Phaser 클라이언트에서 WebSocket 연결 가능
 - `pnpm dev` 기본 실행은 `GAME_HOST` / `GAME_PORT` 를 읽어 LAN/Tailscale 접근 가능한 개발 서버로 뜬다.
 - `join_room`, `room_snapshot`, `world_snapshot` 처리 가능
-- URL 파라미터(`?room=&name=&pid=`)를 파싱해 Portal 로비에서 전달된 정보로 바로 접속한다.
+- URL query 또는 hash(`room=...&name=...&pid=...`)를 파싱해 Portal 로비에서 전달된 정보로 바로 접속한다.
 - 파라미터가 없으면 자유맵으로 자동 입장한다.
 - 닉네임/플레이어 ID 는 `localStorage` 에 저장되어 재접속 시 동일 신원 유지
 - 테스트 맵용 바닥 / 플랫폼 / pit wall / hazard / spawn 위치를 `trainingArenaMap` 공통 데이터에서 읽어 렌더링한다.
@@ -134,7 +134,7 @@
 - 루트 `portal` 개발 실행 스크립트는 시작 전에 `apps/portal/.next` 를 정리해 stale chunk 캐시 충돌을 줄인다.
 - 닉네임 입력(localStorage), 자유맵 입장, 방 만들기(4자리 코드 표시), 코드로 입장 흐름을 제공한다.
 - 플레이어 ID 는 익명 UUID 로 자동 발급된다.
-- 게임 클라이언트로 이동 시 `?room=&name=&pid=` 파라미터를 URL 로 전달한다.
+- 게임 클라이언트로 이동 시 `room=...&name=...&pid=...` 정보를 hash 기반 URL로 전달한다.
 - 현재 Portal URL에 `ops`, `debug` 파라미터가 있으면 게임 URL로 그대로 전달한다.
 
 ### 배포
