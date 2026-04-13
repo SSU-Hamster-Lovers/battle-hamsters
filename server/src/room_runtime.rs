@@ -213,6 +213,7 @@ impl RoomState {
 
         self.step_projectiles(now_ms, &mut deaths, &mut dying_this_tick);
         self.tick_burn_effects(now_ms, &mut deaths, &mut dying_this_tick);
+        self.tick_grab_effects(now_ms);
 
         for (player_id, cause) in deaths {
             // 점수 추적: killer +1 kill, victim +1 death

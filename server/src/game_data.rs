@@ -275,6 +275,7 @@ pub(crate) enum RuntimeWeaponSpecialEffect {
         splash_damage: Option<u16>,
     },
     Grab {
+        #[serde(rename = "grabDurationMs")]
         grab_duration_ms: u64,
     },
     HealBlock {
@@ -440,6 +441,9 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
             include_str!("../../packages/shared/weapons/squirrel-gatling.json");
         let blueberry_mortar_raw =
             include_str!("../../packages/shared/weapons/blueberry-mortar.json");
+        let laser_cutter_raw =
+            include_str!("../../packages/shared/weapons/laser-cutter.json");
+        let grab_spear_raw = include_str!("../../packages/shared/weapons/grab-spear.json");
 
         let paws: RuntimeWeaponDefinition =
             serde_json::from_str(paws_raw).expect("paws JSON should deserialize");
@@ -459,6 +463,10 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
         let blueberry_mortar: RuntimeWeaponDefinition =
             serde_json::from_str(blueberry_mortar_raw)
                 .expect("blueberry mortar JSON should deserialize");
+        let laser_cutter: RuntimeWeaponDefinition =
+            serde_json::from_str(laser_cutter_raw).expect("laser cutter JSON should deserialize");
+        let grab_spear: RuntimeWeaponDefinition =
+            serde_json::from_str(grab_spear_raw).expect("grab spear JSON should deserialize");
 
         HashMap::from([
             (paws.id.clone(), paws),
@@ -469,6 +477,8 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
             (pine_sniper.id.clone(), pine_sniper),
             (squirrel_gatling.id.clone(), squirrel_gatling),
             (blueberry_mortar.id.clone(), blueberry_mortar),
+            (laser_cutter.id.clone(), laser_cutter),
+            (grab_spear.id.clone(), grab_spear),
         ])
     })
 }

@@ -146,7 +146,7 @@
   - 카드형보다 얇은 `얼굴 + 가로 HP 바 + 생명 pip + 작은 무기/킬 정보` 중심 구조로 정리했다.
   - Free Play에서는 우측 카드가 `최근 공격한 대상 -> 킬 최다 상대` 우선순위로 표시된다.
 - 좌상단에는 큰 제목/room/server tick 대신 작은 `WS/ping` 상태만 표시한다.
-- 무기 아이콘 레지스트리: `getWeaponHudTextureKey(weaponId)` → `RenderTexture` 코드 생성 아이콘 (`paws`, `acorn_blaster`, `ember_sprinkler`, `seed_shotgun`, `walnut_cannon`, `pine_sniper`, `squirrel_gatling`는 전용 HUD 아이콘; 그 외 자동 fallback)
+- 무기 아이콘 레지스트리: `getWeaponHudTextureKey(weaponId)` → `RenderTexture` 코드 생성 아이콘 (`paws`, `acorn_blaster`, `ember_sprinkler`, `seed_shotgun`, `walnut_cannon`, `pine_sniper`, `squirrel_gatling`, `blueberry_mortar`, `laser_cutter`, `grab_spear`는 전용 HUD 아이콘; 그 외 자동 fallback)
 - `aimProfile`이 있는 무기에 대해 클라이언트 오버레이 회전 각도를 `[minAimDeg, maxAimDeg]`로 클램프하고, 서버 공격 판정도 같은 범위를 사용한다.
 - 발사 시 로컬 보조용 무기별 연출을 적용한다.
   - `Acorn Blaster`: 총구 화염 + 짧은 tracer
@@ -257,7 +257,7 @@
 - 월드 무기는 `E`로 명시적으로 획득하고 `Q`로 드롭한다.
 - 월드 아이템은 닿으면 자동으로 획득한다.
 - `jump_boost_small`은 `maxJumpCount`를 `1..3` 범위에서 증가시키고, `health_pack_small`은 HP를 최대치까지 회복한다.
-- beam / grab / throwable, speed rank / extra life 아이템, 다중 무기 밸런싱은 아직 미구현이다.
+- throwable, speed rank / extra life 아이템, 다중 무기 밸런싱은 아직 미구현이다.
 
 ### 현재 투사체 한계
 
@@ -311,6 +311,19 @@
 - **클라이언트**: `WeaponImpactStyle: "explosion_burst"`. 방사형 8개 파편 + 3개 원형 코어 파티클.
 - **단위 테스트 2개 추가**: `blueberry_mortar_direct_hit_applies_direct_and_splash_damage`, `blueberry_mortar_splash_damages_nearby_player`.
 
+### 레이저 커터 + 잡기 창 (laser_cutter, grab_spear) — feat/beam-grab-v1 완료
+
+- **레이저 커터 서버**: `packages/shared/weapons/laser-cutter.json` 추가. `hitType: "beam"`, `fireMode: "channel"`, `resourceModel: "capacity"`, damage 3, range 500, attackIntervalMs 50, resourcePerSecond 200, maxResource 600(= 3초 연속 사격), rarity rare.
+- **잡기 창 서버**: `packages/shared/weapons/grab-spear.json` 추가. `hitType: "projectile"`, damage 10, projectileSpeed 650, maxResource 3, `specialEffect: { kind: "grab", grabDurationMs: 1500 }`, rarity uncommon.
+- **서버 beam 구현**: `HitType::Beam`이 `room_combat.rs`에서 Hitscan과 동일한 경로로 처리됨 (channel 연속 공격은 기존 auto-requeue 로직 재사용).
+- **서버 capacity 드레인**: `ResourceModel::Capacity` 시 `resource_per_second * attack_interval_ms / 1000`을 발사 1회당 소모. laser_cutter는 10/발 소모(200×50/1000).
+- **서버 grab 구현**: 투사체 적중 시 `active_grab: Option<GrabEffect>` 설정 + `StatusEffectSnapshot { kind: "grabbed" }` 추가. `tick_grab_effects`에서 `expires_at` 도달 시 자동 해제.
+- **맵**: laser_cutter — 좌측 고지대(x=200, y=373) airdrop. grab_spear — 우측 벙커 상층(x=1310, y=473) 고정 스폰.
+- **공유 타입**: `packages/shared/weapon-data.ts`에 `laser_cutter`, `grab_spear` 등록.
+- **클라이언트 laser_cutter**: pickup 스프라이트(64×36, 은색 바디 + 시안 렌즈 글로우) + equip 오버레이(44×12) + HUD 아이콘. `WeaponFireStyle: "beam_pulse"`. attack 버튼 누르는 동안 매 50ms 틱마다 3중 레이어 시안 빔(500px) 렌더링.
+- **클라이언트 grab_spear**: pickup 스프라이트(64×32, 갈색 자루 + 은색 창날 + 갈고리 팁) + equip 오버레이(52×10) + HUD 아이콘. 발사 스타일: `generic_line` (표준 선형 flash 재사용).
+- **단위 테스트 3개 추가**: `laser_cutter_hits_target_in_range`, `laser_cutter_drains_capacity_per_tick`, `grab_spear_applies_grab_on_hit`.
+
 ### 다람쥐 기관총 (squirrel_gatling) — feat/squirrel-gatling-v1 완료
 
 - **서버**: `packages/shared/weapons/squirrel-gatling.json` 추가. hitscan, `fireMode: "auto"`, damage 5, knockback 2, attackIntervalMs 80, maxResource 30, rarity uncommon, `aimProfile: -55°~+40°`.
@@ -337,7 +350,7 @@
 
 ## 다음 구현 우선순위
 
-1. 무기 추가 계속 (목표 16~20종) — 현재 8종 구현 (blueberry_mortar 포함)
+1. 무기 추가 계속 (목표 16~20종) — 현재 10종 구현 (laser_cutter, grab_spear 추가)
 2. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체 (투사체 texture hookup 포함)
 3. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
 4. `develop` preview / staging 배포 전략 분리

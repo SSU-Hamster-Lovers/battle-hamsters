@@ -2995,6 +2995,34 @@ class MainScene extends Phaser.Scene {
       );
     }
 
+    // 레이저 커터 빔 — attackHeld 동안 매 50ms 틱마다 지속 렌더
+    if (attackHeld && localPlayer?.snapshot.equippedWeaponId === "laser_cutter") {
+      const beamAim = resolveClampedAimForWeapon(
+        "laser_cutter",
+        aim,
+        localPlayer.snapshot.direction,
+      );
+      const beamPres = resolveWeaponEquipPresentation("laser_cutter");
+      const dir = localPlayer.snapshot.direction;
+      const xSign = dir === "left" ? -1 : 1;
+      const bMuzzleX = originX + xSign * beamPres.offsetX + beamPres.muzzleFromCenter * beamAim.x;
+      const bMuzzleY = originY + beamPres.offsetY + beamPres.muzzleFromCenter * beamAim.y;
+      this.attackFlash.clear();
+      // 외부 글로우 (넓고 반투명 시안)
+      this.attackFlash.lineStyle(4, 0x22d3ee, 0.3);
+      this.attackFlash.lineBetween(bMuzzleX, bMuzzleY, bMuzzleX + beamAim.x * 500, bMuzzleY + beamAim.y * 500);
+      // 코어 빔 (밝은 시안)
+      this.attackFlash.lineStyle(2, 0x67e8f9, 0.9);
+      this.attackFlash.lineBetween(bMuzzleX, bMuzzleY, bMuzzleX + beamAim.x * 500, bMuzzleY + beamAim.y * 500);
+      // 중심선 (흰색)
+      this.attackFlash.lineStyle(1, 0xffffff, 0.95);
+      this.attackFlash.lineBetween(bMuzzleX, bMuzzleY, bMuzzleX + beamAim.x * 500, bMuzzleY + beamAim.y * 500);
+      // 렌즈 글로우
+      this.attackFlash.fillStyle(0x22d3ee, 0.85);
+      this.attackFlash.fillCircle(bMuzzleX, bMuzzleY, 4);
+      this.attackFlashUntil = this.time.now + 80;
+    }
+
     // 불씨 뿌리개 연속 화염 파티클 — attackHeld 동안 매 50ms 틱마다 생성
     if (attackHeld && localPlayer?.snapshot.equippedWeaponId === "ember_sprinkler") {
       const flamAim = resolveClampedAimForWeapon(
@@ -3062,6 +3090,11 @@ class MainScene extends Phaser.Scene {
 
     if (fireStyle === "flame_stream") {
       // 화염 파티클은 sendLatestInput에서 attackHeld 동안 매 틱 생성됨
+      return;
+    }
+
+    if (fireStyle === "beam_pulse") {
+      // 레이저 빔은 sendLatestInput에서 attackHeld 동안 매 틱 렌더됨
       return;
     }
 

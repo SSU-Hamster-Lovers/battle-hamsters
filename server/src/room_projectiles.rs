@@ -3,8 +3,8 @@ use std::collections::HashSet;
 use crate::{
     game_data::{runtime_map_data, RuntimeWeaponDefinition, RuntimeWeaponSpecialEffect},
     room_combat::apply_or_refresh_burn,
-    DeathCause, LastHitInfo, PlayerState, ProjectileRuntime, RoomState, Vector2, PLAYER_HALF_SIZE,
-    TICK_INTERVAL_MS,
+    DeathCause, GrabEffect, LastHitInfo, PlayerState, ProjectileRuntime, RoomState,
+    StatusEffectSnapshot, Vector2, PLAYER_HALF_SIZE, TICK_INTERVAL_MS,
 };
 
 const EXPLOSION_KNOCKBACK_PER_UNIT: f64 = 0.2;
@@ -178,6 +178,22 @@ impl RoomState {
                                 tick_damage,
                                 tick_interval_ms,
                             );
+                        }
+                    } else if let RuntimeWeaponSpecialEffect::Grab { grab_duration_ms } =
+                        projectile.special_effect.clone()
+                    {
+                        if let Some(target) = self.players.get_mut(&target_id) {
+                            target.active_grab = Some(GrabEffect {
+                                weapon_id: projectile.weapon_id.clone(),
+                                expires_at: now_ms + grab_duration_ms,
+                            });
+                            target.snapshot.effects.retain(|e| e.kind != "grabbed");
+                            target.snapshot.effects.push(StatusEffectSnapshot {
+                                kind: "grabbed",
+                                killer_id: Some(projectile.owner_id.clone()),
+                                weapon_id: projectile.weapon_id.clone(),
+                                expires_at: now_ms + grab_duration_ms,
+                            });
                         }
                     }
 
