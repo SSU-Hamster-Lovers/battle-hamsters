@@ -4,7 +4,7 @@
 
 ## 최신 기준
 
-- 기준 브랜치: `feat/projectile-gravity-v1` (서버 aim clamp + 투사체 포물선 1차 반영)
+- 기준 브랜치: `fix/fire-and-forget-v1` (투사체 무기 연속 발사 auto-requeue 반영)
 - 마지막 동기화 기준: 2026-04-13
 
 ## 현재 구현된 것
@@ -228,6 +228,13 @@
 - 디버그 오버레이는 운영자용 숨김 토글 방식 1차다.
 - `weapon/self` 사망 시 더미 연출은 임시 구현이며, 실제 래그돌 물리/애니메이션은 아직 없다.
 
+### 투사체 연속 발사 (fix/fire-and-forget-v1 완료)
+
+- 공격 버튼을 계속 누르고 있을 때 쿨다운이 만료되면 자동으로 재발사(`attack_queued = true`)된다.
+- `attack_pressed`(edge trigger)에만 의존하던 구조를 `attack_was_down`(held state) 기반 auto-requeue로 보완했다.
+- 조건: `attack_was_down && !attack_queued && now_ms >= next_attack_at` 모두 충족 시 재큐잉.
+- `tick_gameplay`의 `handle_weapon_attack` 호출 직전에 적용된다.
+
 ### 전투
 
 - `Acorn Blaster`, `Paws`, `Seed Shotgun`, `Hand Cannon` 네 무기에 대해 서버 판정을 구현한다.
@@ -259,12 +266,11 @@
 
 ## 다음 구현 우선순위
 
-1. 투사체 무기 연속 발사(Fire & Forget) 수정 — `attack_was_down` 기반 auto-requeue 추가
-2. 픽업 소멸 VFX — 점멸 + 블랙홀 흡수 연출 (흔들림 + scale 수축)
-3. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체 (투사체 texture hookup 포함)
-4. Burn DoT를 전용 무기에 연결
-5. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
-6. `develop` preview / staging 배포 전략 분리
+1. 픽업 소멸 VFX — 점멸 + 블랙홀 흡수 연출 (흔들림 + scale 수축)
+2. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체 (투사체 texture hookup 포함)
+3. Burn DoT를 전용 무기에 연결
+4. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
+5. `develop` preview / staging 배포 전략 분리
 
 ## 참고
 
@@ -289,5 +295,5 @@
 - 투사체 중력 / 포물선 1차 미니 스펙: `docs/technical/mini-spec-projectile-gravity-v1.md`
 - 투사체 무기 1차 미니 스펙: `docs/technical/mini-spec-projectile-weapons-v1.md`
 - 투사체 충돌 정책 v2 미니 스펙: `docs/technical/mini-spec-projectile-collision-policy-v2.md`
-- Fire & Forget 수정 미니 스펙: `docs/technical/mini-spec-fire-and-forget-v1.md`
+- Fire & Forget 수정 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-fire-and-forget-v1.md`
 - 픽업 소멸 VFX 미니 스펙: `docs/technical/mini-spec-pickup-despawn-vfx-v1.md`

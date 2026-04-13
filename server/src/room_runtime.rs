@@ -198,6 +198,16 @@ impl RoomState {
             self.handle_item_pickup(player_id, now_ms);
             self.drop_equipped_weapon_if_needed(player_id, now_ms);
             self.handle_weapon_pickup(player_id, now_ms);
+
+            // 버튼을 누르고 있는 동안 쿨다운이 만료되면 자동 재큐잉한다.
+            // attack_pressed는 edge trigger이므로 held 상태에서는 attack_was_down으로 판단한다.
+            if let Some(player) = self.players.get_mut(player_id) {
+                if player.attack_was_down && !player.attack_queued && now_ms >= player.next_attack_at
+                {
+                    player.attack_queued = true;
+                }
+            }
+
             self.handle_weapon_attack(player_id, now_ms, &mut deaths, &mut dying_this_tick);
         }
 
