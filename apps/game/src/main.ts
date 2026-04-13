@@ -26,6 +26,7 @@ import type {
   KillFeedEntry,
   PingMessage,
   PlayerInputMessage,
+  ProjectileSnapshot,
   PlayerSnapshot,
   SpawnPoint,
   RoomSnapshotMessage,
@@ -118,6 +119,9 @@ const LOCAL_PLAYER_LERP = 0.35;
 const PICKUP_LERP = 0.24;
 const PLAYER_SNAP_DISTANCE = 96;
 const PICKUP_SNAP_DISTANCE = 72;
+const PROJECTILE_LERP = 0.58;
+const PROJECTILE_SNAP_DISTANCE = 88;
+const PROJECTILE_PREDICTION_MS = 75;
 const CAMERA_FOLLOW_LERP_X = 0.1;
 const CAMERA_FOLLOW_LERP_Y = 0.1;
 // Fixed canvas (viewport) dimensions. Separate from MAP_DEFINITION.size which
@@ -153,6 +157,34 @@ const KILL_FEED_SLIDE_IN_MS = 200;
 const DAMAGE_EVENT_DISMISSED_RETENTION_MS = 1_200;
 const NETWORK_PING_INTERVAL_MS = 2_000;
 const HUD_MAX_LIFE_PIPS = 6;
+
+function resolveClampedAimForWeapon(
+  weaponId: string,
+  aim: { x: number; y: number },
+  direction: "left" | "right",
+) {
+  const aimProfile = weaponDefinitionById[weaponId]?.aimProfile;
+  if (!aimProfile) {
+    return aim;
+  }
+
+  const localAngle =
+    direction === "left"
+      ? Math.atan2(aim.y, -aim.x)
+      : Math.atan2(aim.y, aim.x);
+  const clampedLocalAngle = Math.max(
+    (aimProfile.minAimDeg * Math.PI) / 180,
+    Math.min((aimProfile.maxAimDeg * Math.PI) / 180, localAngle),
+  );
+
+  return {
+    x:
+      direction === "left"
+        ? -Math.cos(clampedLocalAngle)
+        : Math.cos(clampedLocalAngle),
+    y: Math.sin(clampedLocalAngle),
+  };
+}
 
 const COLLISION_PRIMITIVES: CollisionPrimitive[] = MAP_DEFINITION.collision;
 const HAZARDS: HazardZone[] = MAP_DEFINITION.hazards;
@@ -225,6 +257,19 @@ type RenderedItemPickup = {
   targetY: number;
   spawnedAt: number;
   despawnAt: number | null;
+};
+
+type RenderedProjectile = {
+  root: Phaser.GameObjects.Container;
+  body: Phaser.GameObjects.Ellipse;
+  trail: Phaser.GameObjects.Rectangle;
+  weaponId: string;
+  serverX: number;
+  serverY: number;
+  velocityX: number;
+  velocityY: number;
+  gravityPerSec2: number;
+  lastSnapshotAt: number;
 };
 
 type VisibilityControlledObject =
@@ -334,6 +379,37 @@ function fallbackImpactDirection(
     : { x: 0.74, y: -0.46 };
 }
 
+function resolveProjectilePresentation(weaponId: string): {
+  color: number;
+  radius: number;
+  trailLength: number;
+  trailThickness: number;
+} {
+  switch (weaponId) {
+    case "seed_shotgun":
+      return {
+        color: 0x55ee66,
+        radius: 3,
+        trailLength: 4,
+        trailThickness: 2,
+      };
+    case "hand_cannon":
+      return {
+        color: 0xff8800,
+        radius: 5,
+        trailLength: 8,
+        trailThickness: 3,
+      };
+    default:
+      return {
+        color: 0xf8fafc,
+        radius: 3,
+        trailLength: 5,
+        trailThickness: 2,
+      };
+  }
+}
+
 function getOrCreatePlayerName(): string {
   // URL query/hash 우선 (Portal 에서 전달)
   const fromUrl = getUrlParam("name");
@@ -434,6 +510,7 @@ class MainScene extends Phaser.Scene {
   private deathEchoes: DeathEcho[] = [];
   private hitParticles: HitParticle[] = [];
   private renderedPlayers = new Map<string, RenderedPlayer>();
+  private renderedProjectiles = new Map<string, RenderedProjectile>();
   private renderedWeaponPickups = new Map<string, RenderedWeaponPickup>();
   private renderedItemPickups = new Map<string, RenderedItemPickup>();
   private renderedKillFeed = new Map<
@@ -1086,6 +1163,7 @@ class MainScene extends Phaser.Scene {
       this.refreshNetworkStatusText();
       this.localPlayerId = null;
       this.clearRenderedPlayers();
+      this.clearRenderedProjectiles();
       this.clearRenderedWeaponPickups();
       this.clearRenderedItemPickups();
       this.clearDeathEchoes();
@@ -1170,6 +1248,7 @@ class MainScene extends Phaser.Scene {
     this.captureRecentAttackTarget(message.payload.damageEvents);
     const damageEventMap = this.buildDamageEventMap(message.payload.damageEvents);
     this.renderPlayers(message.payload.players, damageEventMap);
+    this.clearRenderedProjectiles();
     this.renderWeaponPickups(message.payload.weaponPickups);
     this.renderItemPickups(message.payload.itemPickups);
     this.captureLocalPlayer(message.payload.players);
@@ -1183,6 +1262,7 @@ class MainScene extends Phaser.Scene {
     this.captureRecentAttackTarget(message.payload.damageEvents);
     const damageEventMap = this.buildDamageEventMap(message.payload.damageEvents);
     this.renderPlayers(message.payload.players, damageEventMap);
+    this.renderProjectiles(message.payload.projectiles);
     this.renderWeaponPickups(message.payload.weaponPickups);
     this.renderItemPickups(message.payload.itemPickups);
     this.captureLocalPlayer(message.payload.players);
@@ -2254,23 +2334,13 @@ class MainScene extends Phaser.Scene {
       const dir = snapshot.direction;
       const effectiveAim =
         aim ?? (dir === "left" ? { x: -1, y: 0 } : { x: 1, y: 0 });
-
-      // aimProfile clamp: 무기별 허용 조준 각도 제한 (표시 전용)
-      // local angle 기준: 0 = 정면 수평, 음수 = 위, 양수 = 아래
-      const aimProfile = weaponDefinitionById[snapshot.equippedWeaponId]?.aimProfile;
-      const localAngle =
-        dir === "left"
-          ? Math.atan2(effectiveAim.y, -effectiveAim.x)
-          : Math.atan2(effectiveAim.y, effectiveAim.x);
-      const clampedLocalAngle = aimProfile
-        ? Math.max(
-            (aimProfile.minAimDeg * Math.PI) / 180,
-            Math.min((aimProfile.maxAimDeg * Math.PI) / 180, localAngle),
-          )
-        : localAngle;
-      const clampedAimX =
-        dir === "left" ? -Math.cos(clampedLocalAngle) : Math.cos(clampedLocalAngle);
-      const clampedAimY = Math.sin(clampedLocalAngle);
+      const clampedAim = resolveClampedAimForWeapon(
+        snapshot.equippedWeaponId,
+        effectiveAim,
+        dir,
+      );
+      const clampedAimX = clampedAim.x;
+      const clampedAimY = clampedAim.y;
 
       // anchorY 보간: 위 조준 시 총구가 올라가고, 아래 조준 시 내려간다
       const anchorYOffset = clampedAimY * 8;
@@ -2326,11 +2396,102 @@ class MainScene extends Phaser.Scene {
     }
   }
 
+  private clearRenderedProjectiles() {
+    for (const [projectileId, rendered] of this.renderedProjectiles) {
+      rendered.root.destroy();
+      this.renderedProjectiles.delete(projectileId);
+    }
+  }
+
   private clearRenderedItemPickups() {
     for (const [pickupId, rendered] of this.renderedItemPickups) {
       rendered.body.destroy();
       rendered.label.destroy();
       this.renderedItemPickups.delete(pickupId);
+    }
+  }
+
+  private renderProjectiles(projectiles: ProjectileSnapshot[]) {
+    const nextIds = new Set(projectiles.map((projectile) => projectile.id));
+    const snapshotNow = this.time.now;
+
+    for (const projectile of projectiles) {
+      let rendered = this.renderedProjectiles.get(projectile.id);
+      const presentation = resolveProjectilePresentation(projectile.weaponId);
+      const predictedX = projectile.position.x;
+      const predictedY = projectile.position.y;
+
+      if (!rendered) {
+        const trail = this.add.rectangle(
+          -presentation.trailLength * 0.5,
+          0,
+          presentation.trailLength,
+          presentation.trailThickness,
+          presentation.color,
+          0.32,
+        );
+        const body = this.add.ellipse(
+          0,
+          0,
+          presentation.radius * 2,
+          presentation.radius * 2,
+          presentation.color,
+          0.96,
+        );
+        trail.setOrigin(0.5);
+        const root = this.add
+          .container(predictedX, predictedY, [trail, body])
+          .setDepth(6.5);
+        rendered = {
+          root,
+          body,
+          trail,
+          weaponId: projectile.weaponId,
+          serverX: projectile.position.x,
+          serverY: projectile.position.y,
+          velocityX: projectile.velocity.x,
+          velocityY: projectile.velocity.y,
+          gravityPerSec2:
+            weaponDefinitionById[projectile.weaponId]?.projectileGravityPerSec2 ?? 0,
+          lastSnapshotAt: snapshotNow,
+        };
+        this.renderedProjectiles.set(projectile.id, rendered);
+      }
+
+      rendered.body.setSize(presentation.radius * 2, presentation.radius * 2);
+      rendered.body.setFillStyle(presentation.color, 0.96);
+      rendered.trail.setSize(presentation.trailLength, presentation.trailThickness);
+      rendered.trail.setFillStyle(presentation.color, 0.32);
+      rendered.trail.setPosition(-presentation.trailLength * 0.5, 0);
+      rendered.weaponId = projectile.weaponId;
+      rendered.serverX = projectile.position.x;
+      rendered.serverY = projectile.position.y;
+      rendered.velocityX = projectile.velocity.x;
+      rendered.velocityY = projectile.velocity.y;
+      rendered.gravityPerSec2 =
+        weaponDefinitionById[projectile.weaponId]?.projectileGravityPerSec2 ?? 0;
+      rendered.lastSnapshotAt = snapshotNow;
+      if (
+        shouldSnapToTarget(
+          rendered.root.x,
+          rendered.root.y,
+          predictedX,
+          predictedY,
+          PROJECTILE_SNAP_DISTANCE,
+        )
+      ) {
+        rendered.root.setPosition(predictedX, predictedY);
+      }
+      rendered.root.setRotation(
+        Math.atan2(projectile.velocity.y, projectile.velocity.x),
+      );
+    }
+
+    for (const [projectileId, rendered] of this.renderedProjectiles) {
+      if (!nextIds.has(projectileId)) {
+        rendered.root.destroy();
+        this.renderedProjectiles.delete(projectileId);
+      }
     }
   }
 
@@ -2544,6 +2705,13 @@ class MainScene extends Phaser.Scene {
     if (attackPressed) {
       const equippedId = localPlayer?.snapshot.equippedWeaponId ?? "paws";
       const pres = resolveWeaponEquipPresentation(equippedId);
+      const flashAim = localPlayer
+        ? resolveClampedAimForWeapon(
+            equippedId,
+            aim,
+            localPlayer.snapshot.direction,
+          )
+        : aim;
       let muzzleWorldX: number;
       let muzzleWorldY: number;
 
@@ -2553,19 +2721,27 @@ class MainScene extends Phaser.Scene {
         //   muzzle_world = player + weapon_center_offset + muzzleFromCenter * aim
         const dir = localPlayer.snapshot.direction;
         const xSign = dir === "left" ? -1 : 1;
-        const xPull = Math.abs(aim.y) * 3;
-        const anchorYOffset = aim.y * 8;
+        const xPull = Math.abs(flashAim.y) * 3;
+        const anchorYOffset = flashAim.y * 8;
         const weaponCenterX = xSign * Math.max(0, pres.offsetX - xPull);
         const weaponCenterY = pres.offsetY + anchorYOffset;
-        muzzleWorldX = originX + weaponCenterX + pres.muzzleFromCenter * aim.x;
-        muzzleWorldY = originY + weaponCenterY + pres.muzzleFromCenter * aim.y;
+        muzzleWorldX =
+          originX + weaponCenterX + pres.muzzleFromCenter * flashAim.x;
+        muzzleWorldY =
+          originY + weaponCenterY + pres.muzzleFromCenter * flashAim.y;
       } else {
         // overlay 없는 무기(paws 등)는 캐릭터 중심 기준 고정 오프셋
-        muzzleWorldX = originX + aim.x * 15;
-        muzzleWorldY = originY + aim.y * 15;
+        muzzleWorldX = originX + flashAim.x * 15;
+        muzzleWorldY = originY + flashAim.y * 15;
       }
 
-      this.showAttackFlash(equippedId, muzzleWorldX, muzzleWorldY, aim.x, aim.y);
+      this.showAttackFlash(
+        equippedId,
+        muzzleWorldX,
+        muzzleWorldY,
+        flashAim.x,
+        flashAim.y,
+      );
     }
     this.attackWasDown = attackHeld;
     const pickupWeaponPressed =
@@ -2732,6 +2908,27 @@ class MainScene extends Phaser.Scene {
         PICKUP_LERP,
       );
       rendered.root.setAlpha(this.resolvePickupBlinkAlpha(rendered.spawnedAt, rendered.despawnAt));
+    }
+
+    for (const [, rendered] of this.renderedProjectiles) {
+      const elapsedMs = Math.min(
+        Math.max(0, this.time.now - rendered.lastSnapshotAt),
+        PROJECTILE_PREDICTION_MS,
+      );
+      const elapsedSec = elapsedMs / 1000;
+      const predictedX = rendered.serverX + rendered.velocityX * elapsedSec;
+      const predictedY =
+        rendered.serverY +
+        rendered.velocityY * elapsedSec +
+        rendered.gravityPerSec2 * 0.5 * elapsedSec * elapsedSec;
+      const predictedVelocityY =
+        rendered.velocityY + rendered.gravityPerSec2 * elapsedSec;
+
+      rendered.root.x = Phaser.Math.Linear(rendered.root.x, predictedX, PROJECTILE_LERP);
+      rendered.root.y = Phaser.Math.Linear(rendered.root.y, predictedY, PROJECTILE_LERP);
+      rendered.root.setRotation(
+        Math.atan2(predictedVelocityY, rendered.velocityX),
+      );
     }
 
     for (const [, rendered] of this.renderedItemPickups) {

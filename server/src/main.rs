@@ -5,6 +5,7 @@ mod game_data;
 mod room_combat;
 mod room_config;
 mod room_pickups;
+mod room_projectiles;
 mod room_runtime;
 mod ws_runtime;
 use game_data::{
@@ -167,10 +168,26 @@ struct BurnEffect {
 }
 
 #[derive(Clone)]
+struct ProjectileRuntime {
+    id: String,
+    owner_id: String,
+    weapon_id: String,
+    position: Vector2,
+    velocity: Vector2,
+    gravity_per_sec2: f64,
+    damage: u16,
+    knockback: f64,
+    range_remaining: f64,
+    special_effect: game_data::RuntimeWeaponSpecialEffect,
+    spawned_at: u64,
+}
+
+#[derive(Clone)]
 struct PlayerRuntime {
     snapshot: PlayerSnapshot,
     latest_input: PlayerInputPayload,
     spawn_index: usize,
+    vertical_velocity: f64,
     external_velocity: Vector2,
     next_attack_at: u64,
     attack_queued: bool,
@@ -197,8 +214,10 @@ struct RoomState {
     time_remaining_ms: u64,
     gameplay_config: RoomGameplayConfig,
     players: HashMap<String, PlayerRuntime>,
+    projectiles: HashMap<String, ProjectileRuntime>,
     weapon_pickups: HashMap<String, WorldWeaponPickup>,
     item_pickups: HashMap<String, WorldItemPickup>,
+    next_projectile_id: u64,
     next_weapon_pickup_id: u64,
     next_item_pickup_id: u64,
     next_spawn_respawn_at: HashMap<String, u64>,
@@ -276,8 +295,10 @@ impl RoomState {
             time_remaining_ms: gameplay_config.time_limit_ms,
             gameplay_config,
             players: HashMap::new(),
+            projectiles: HashMap::new(),
             weapon_pickups: HashMap::new(),
             item_pickups: HashMap::new(),
+            next_projectile_id: 1,
             next_weapon_pickup_id: 1,
             next_item_pickup_id: 1,
             next_spawn_respawn_at: HashMap::new(),
@@ -297,6 +318,19 @@ impl RoomState {
         self.players
             .values()
             .map(|player| player.snapshot.clone())
+            .collect()
+    }
+
+    fn projectile_snapshots(&self) -> Vec<ProjectileSnapshot> {
+        self.projectiles
+            .values()
+            .map(|projectile| ProjectileSnapshot {
+                id: projectile.id.clone(),
+                owner_id: projectile.owner_id.clone(),
+                weapon_id: projectile.weapon_id.clone(),
+                position: projectile.position.clone(),
+                velocity: projectile.velocity.clone(),
+            })
             .collect()
     }
 
@@ -417,6 +451,7 @@ impl RoomState {
                 snapshot: player,
                 latest_input: PlayerInputPayload::default(),
                 spawn_index,
+                vertical_velocity: 0.0,
                 external_velocity: Vector2 { x: 0.0, y: 0.0 },
                 next_attack_at: 0,
                 attack_queued: false,
@@ -539,7 +574,7 @@ struct WorldSnapshotPayload {
     countdown_ms: Option<u64>,
     server_tick: u64,
     players: Vec<PlayerSnapshot>,
-    projectiles: Vec<Value>,
+    projectiles: Vec<ProjectileSnapshot>,
     weapon_pickups: Vec<WorldWeaponPickup>,
     item_pickups: Vec<WorldItemPickup>,
     time_remaining_ms: u64,
@@ -567,6 +602,16 @@ struct DamageAppliedEvent {
     damage: u16,
     impact_direction: Vector2,
     impact_point: Vector2,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct ProjectileSnapshot {
+    id: String,
+    owner_id: String,
+    weapon_id: String,
+    position: Vector2,
+    velocity: Vector2,
 }
 
 #[derive(Serialize, Clone)]
@@ -857,6 +902,8 @@ async fn main() -> std::io::Result<()> {
 mod tests {
     use super::*;
     use actix_web::{test as actix_test, App};
+    use crate::room_combat::resolve_weapon_aim_direction;
+    use crate::game_data::RuntimeWeaponSpecialEffect;
 
     fn test_player(x: f64, y: f64) -> PlayerRuntime {
         PlayerRuntime {
@@ -885,6 +932,7 @@ mod tests {
             },
             latest_input: PlayerInputPayload::default(),
             spawn_index: 0,
+            vertical_velocity: 0.0,
             external_velocity: Vector2 { x: 0.0, y: 0.0 },
             next_attack_at: 0,
             attack_queued: false,
@@ -892,6 +940,13 @@ mod tests {
             last_hit_by: None,
             active_burn: None,
         }
+    }
+
+    fn assert_approx_eq(actual: f64, expected: f64) {
+        assert!(
+            (actual - expected).abs() < 0.001,
+            "expected {expected}, got {actual}"
+        );
     }
 
     #[actix_rt::test]
@@ -906,9 +961,16 @@ mod tests {
     #[test]
     fn player_lands_on_floor_outside_pit() {
         let mut player = test_player(180.0, ground_top_y() - PLAYER_HALF_SIZE - 2.0);
-        player.snapshot.velocity.y = 8.0;
+        player.vertical_velocity = 8.0;
 
         step_player(&mut player, 0);
+        dbg!(
+            ground_top_y(),
+            primary_fall_zone().y,
+            player.snapshot.position.y,
+            player.snapshot.position.y + PLAYER_HALF_SIZE,
+            intersecting_hazard(&player.snapshot)
+        );
 
         assert!(player.snapshot.grounded);
         assert_eq!(
@@ -924,7 +986,7 @@ mod tests {
             (pit_left_x() + pit_right_x()) / 2.0,
             ground_top_y() - PLAYER_HALF_SIZE - 2.0,
         );
-        player.snapshot.velocity.y = 8.0;
+        player.vertical_velocity = 8.0;
 
         step_player(&mut player, 0);
 
@@ -968,6 +1030,56 @@ mod tests {
     }
 
     #[test]
+    fn external_vertical_knockback_does_not_accumulate_into_base_gravity_velocity() {
+        let mut player = test_player(800.0, 300.0);
+        player.snapshot.grounded = false;
+        player.vertical_velocity = 0.0;
+        player.external_velocity.y = -18.0;
+
+        step_player(&mut player, 0);
+        assert!((player.vertical_velocity - GRAVITY_PER_TICK).abs() < 0.001);
+        assert!(player.snapshot.velocity.y < -16.0);
+
+        step_player(&mut player, 50);
+        assert!((player.vertical_velocity - (GRAVITY_PER_TICK * 2.0)).abs() < 0.001);
+        assert!(player.snapshot.velocity.y > -14.0);
+    }
+
+    #[test]
+    fn acorn_blaster_aim_profile_clamps_vertical_extremes_on_server() {
+        let weapon = weapon_definition("acorn_blaster");
+
+        let clamped_up = resolve_weapon_aim_direction(
+            weapon,
+            Vector2 { x: 0.0, y: -1.0 },
+            Direction::Right,
+        );
+        assert_approx_eq(clamped_up.x, 55.0_f64.to_radians().cos());
+        assert_approx_eq(clamped_up.y, -55.0_f64.to_radians().sin());
+
+        let clamped_down = resolve_weapon_aim_direction(
+            weapon,
+            Vector2 { x: 0.0, y: 1.0 },
+            Direction::Right,
+        );
+        assert_approx_eq(clamped_down.x, 40.0_f64.to_radians().cos());
+        assert_approx_eq(clamped_down.y, 40.0_f64.to_radians().sin());
+    }
+
+    #[test]
+    fn paws_aim_profile_clamps_using_left_facing_local_angle() {
+        let weapon = weapon_definition("paws");
+
+        let clamped = resolve_weapon_aim_direction(
+            weapon,
+            Vector2 { x: 0.0, y: -1.0 },
+            Direction::Left,
+        );
+        assert_approx_eq(clamped.x, -30.0_f64.to_radians().cos());
+        assert_approx_eq(clamped.y, -30.0_f64.to_radians().sin());
+    }
+
+    #[test]
     fn instant_kill_hazard_is_separate_from_fall_zone() {
         let ikh = primary_instant_kill_hazard();
         let player_on_spikes =
@@ -990,8 +1102,8 @@ mod tests {
     #[test]
     fn room_starts_with_spawned_weapon_pickup() {
         let room = RoomState::new();
-        // weapon_group 후보 1개 (acorn_blaster or seed_shotgun) + hand_cannon fixed = 2개
-        assert_eq!(room.weapon_pickups.len(), 2);
+        // weapon_group 후보 1개 + 중앙 hand_cannon 1개 + 좌측 armory 3개 = 5개
+        assert_eq!(room.weapon_pickups.len(), 5);
 
         let pickups: Vec<_> = room.weapon_pickups.values().collect();
 
@@ -1009,9 +1121,13 @@ mod tests {
         // hand_cannon fixed 스폰: x=800
         let cannon_pickup = pickups
             .iter()
-            .find(|p| p.weapon_id == "hand_cannon")
+            .find(|p| p.weapon_id == "hand_cannon" && p.position.x as u32 == 800)
             .expect("hand_cannon pickup should exist");
         assert_eq!(cannon_pickup.position.x as u32, 800);
+
+        assert!(pickups.iter().any(|p| p.weapon_id == "acorn_blaster" && p.position.x as u32 == 130));
+        assert!(pickups.iter().any(|p| p.weapon_id == "seed_shotgun" && p.position.x as u32 == 250));
+        assert!(pickups.iter().any(|p| p.weapon_id == "hand_cannon" && p.position.x as u32 == 370));
     }
 
     #[test]
@@ -1211,6 +1327,7 @@ mod tests {
                 drop_weapon_pressed: false,
             },
             spawn_index: 0,
+            vertical_velocity: 0.0,
             external_velocity: Vector2 { x: 0.0, y: 0.0 },
             next_attack_at: 0,
             attack_queued: true,
@@ -1245,6 +1362,7 @@ mod tests {
             },
             latest_input: PlayerInputPayload::default(),
             spawn_index: 1,
+            vertical_velocity: 0.0,
             external_velocity: Vector2 { x: 0.0, y: 0.0 },
             next_attack_at: 0,
             attack_queued: false,
@@ -1275,6 +1393,184 @@ mod tests {
         assert_eq!(damage_event.weapon_id, "acorn_blaster");
         assert_eq!(damage_event.damage, 12);
         assert!(damage_event.impact_direction.x > 0.0);
+        assert!(deaths.is_empty());
+    }
+
+    #[test]
+    fn projectile_attack_spawns_projectiles_and_consumes_resource() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(140.0, 120.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "seed_shotgun".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(4);
+        shooter.latest_input.sequence = 1;
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.latest_input.attack = true;
+        shooter.latest_input.attack_pressed = true;
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        room.players.insert("shooter".to_string(), shooter);
+
+        let mut deaths = Vec::new();
+        let mut dying_this_tick = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying_this_tick);
+
+        let shooter_after = room.players.get("shooter").expect("shooter should exist");
+        assert_eq!(shooter_after.snapshot.equipped_weapon_resource, Some(3));
+        assert_eq!(room.projectiles.len(), 5);
+        assert!(deaths.is_empty());
+    }
+
+    #[test]
+    fn projectile_step_hits_target_after_multiple_ticks() {
+        let mut room = RoomState::new();
+        assert_eq!(weapon_definition("hand_cannon").damage, 80);
+
+        let mut shooter = test_player(140.0, 120.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "hand_cannon".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(1);
+        shooter.latest_input.sequence = 1;
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.latest_input.attack = true;
+        shooter.latest_input.attack_pressed = true;
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        let mut target = test_player(240.0, 120.0);
+        target.snapshot.id = "target".to_string();
+        target.snapshot.name = "target".to_string();
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying_this_tick = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying_this_tick);
+        assert_eq!(room.projectiles.len(), 1);
+
+        room.step_projectiles(1000, &mut deaths, &mut dying_this_tick);
+        assert_eq!(room.projectiles.len(), 1);
+        assert_eq!(room.players.get("target").unwrap().snapshot.hp, 100);
+
+        room.step_projectiles(1050, &mut deaths, &mut dying_this_tick);
+
+        let target_after = room.players.get("target").expect("target should exist");
+        assert_eq!(target_after.snapshot.hp, 20);
+        assert!(target_after.external_velocity.x > 0.0);
+        assert!(room.projectiles.is_empty());
+        assert_eq!(room.damage_events.len(), 1);
+        assert_eq!(room.damage_events[0].damage, 80);
+        assert!(deaths.is_empty());
+    }
+
+    #[test]
+    fn projectile_passes_upward_through_one_way_platform() {
+        let mut room = RoomState::new();
+        room.projectiles.insert(
+            "proj_up".to_string(),
+            ProjectileRuntime {
+                id: "proj_up".to_string(),
+                owner_id: "shooter".to_string(),
+                weapon_id: "hand_cannon".to_string(),
+                position: Vector2 { x: 800.0, y: 470.0 },
+                velocity: Vector2 { x: 0.0, y: -800.0 },
+                gravity_per_sec2: 0.0,
+                damage: 80,
+                knockback: 18.0,
+                range_remaining: 200.0,
+                special_effect: RuntimeWeaponSpecialEffect::None,
+                spawned_at: 0,
+            },
+        );
+
+        let mut deaths = Vec::new();
+        let mut dying_this_tick = std::collections::HashSet::new();
+        room.step_projectiles(1000, &mut deaths, &mut dying_this_tick);
+
+        let projectile = room
+            .projectiles
+            .get("proj_up")
+            .expect("projectile should remain");
+        assert!(projectile.position.y < 440.0);
+        assert!(deaths.is_empty());
+    }
+
+    #[test]
+    fn projectile_blocks_when_descending_onto_one_way_platform() {
+        let mut room = RoomState::new();
+        room.projectiles.insert(
+            "proj_down".to_string(),
+            ProjectileRuntime {
+                id: "proj_down".to_string(),
+                owner_id: "shooter".to_string(),
+                weapon_id: "hand_cannon".to_string(),
+                position: Vector2 { x: 800.0, y: 410.0 },
+                velocity: Vector2 { x: 0.0, y: 800.0 },
+                gravity_per_sec2: 0.0,
+                damage: 80,
+                knockback: 18.0,
+                range_remaining: 200.0,
+                special_effect: RuntimeWeaponSpecialEffect::None,
+                spawned_at: 0,
+            },
+        );
+
+        let mut deaths = Vec::new();
+        let mut dying_this_tick = std::collections::HashSet::new();
+        room.step_projectiles(1000, &mut deaths, &mut dying_this_tick);
+
+        assert!(room.projectiles.is_empty());
+        assert!(deaths.is_empty());
+    }
+
+    #[test]
+    fn projectile_gravity_curves_horizontal_shot_downward_over_time() {
+        let mut room = RoomState::new();
+        room.projectiles.insert(
+            "proj_arc".to_string(),
+            ProjectileRuntime {
+                id: "proj_arc".to_string(),
+                owner_id: "shooter".to_string(),
+                weapon_id: "seed_shotgun".to_string(),
+                position: Vector2 { x: 200.0, y: 200.0 },
+                velocity: Vector2 { x: 600.0, y: 0.0 },
+                gravity_per_sec2: 520.0,
+                damage: 7,
+                knockback: 4.0,
+                range_remaining: 400.0,
+                special_effect: RuntimeWeaponSpecialEffect::None,
+                spawned_at: 0,
+            },
+        );
+
+        let mut deaths = Vec::new();
+        let mut dying_this_tick = std::collections::HashSet::new();
+
+        room.step_projectiles(1000, &mut deaths, &mut dying_this_tick);
+        let after_first = room
+            .projectiles
+            .get("proj_arc")
+            .expect("projectile should remain after first step")
+            .clone();
+        assert!(after_first.position.y > 200.0);
+        assert!(after_first.velocity.y > 0.0);
+
+        room.step_projectiles(1050, &mut deaths, &mut dying_this_tick);
+        let after_second = room
+            .projectiles
+            .get("proj_arc")
+            .expect("projectile should remain after second step");
+        assert!(after_second.position.y > after_first.position.y);
+        assert!(after_second.velocity.y > after_first.velocity.y);
         assert!(deaths.is_empty());
     }
 

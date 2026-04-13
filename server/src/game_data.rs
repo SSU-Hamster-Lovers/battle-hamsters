@@ -11,11 +11,19 @@ pub(crate) struct FloorSegment {
     pub(crate) top_y: f64,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(crate) struct OneWayPlatformSegment {
+    pub(crate) id: String,
     pub(crate) left_x: f64,
     pub(crate) right_x: f64,
     pub(crate) top_y: f64,
+}
+
+#[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RuntimeWeaponAimProfile {
+    pub(crate) min_aim_deg: f64,
+    pub(crate) max_aim_deg: f64,
 }
 
 #[derive(Clone, Copy)]
@@ -111,6 +119,7 @@ enum MapCollisionPrimitive {
         top_y: f64,
     },
     OneWayPlatform {
+        id: String,
         #[serde(rename = "leftX")]
         left_x: f64,
         #[serde(rename = "rightX")]
@@ -245,6 +254,9 @@ pub(crate) struct RuntimeWeaponDefinition {
     pub(crate) rarity: WeaponRarity,
     pub(crate) world_despawn_ms: u64,
     pub(crate) special_effect: RuntimeWeaponSpecialEffect,
+    pub(crate) aim_profile: Option<RuntimeWeaponAimProfile>,
+    #[serde(default)]
+    pub(crate) projectile_gravity_per_sec2: f64,
 }
 
 #[allow(dead_code)]
@@ -294,10 +306,12 @@ pub(crate) fn runtime_map_data() -> &'static RuntimeMapData {
                     top_y,
                 }),
                 MapCollisionPrimitive::OneWayPlatform {
+                    id,
                     left_x,
                     right_x,
                     top_y,
                 } => one_way_platforms.push(OneWayPlatformSegment {
+                    id,
                     left_x,
                     right_x,
                     top_y,
