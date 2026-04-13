@@ -332,6 +332,45 @@ function isRectHazard(hazard: HazardZone): hazard is HazardZone & {
   return "width" in hazard && "height" in hazard;
 }
 
+function drawSpikeStrip(
+  scene: Phaser.Scene,
+  hazard: HazardZone & {
+    type: "instant_kill_hazard";
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  },
+) {
+  scene.add.rectangle(
+    hazard.x + hazard.width / 2,
+    hazard.y + hazard.height - 3,
+    hazard.width,
+    6,
+    0x7f1d1d,
+    0.9,
+  );
+
+  const spikeCount = Math.max(4, Math.round(hazard.width / 24));
+  const spikeWidth = hazard.width / spikeCount;
+  for (let i = 0; i < spikeCount; i += 1) {
+    const centerX = hazard.x + spikeWidth * i + spikeWidth / 2;
+    const spike = scene.add.triangle(
+      centerX,
+      hazard.y + hazard.height / 2,
+      0,
+      hazard.height / 2,
+      spikeWidth / 2,
+      -hazard.height / 2,
+      -spikeWidth / 2,
+      hazard.height / 2,
+      0xf97316,
+      0.96,
+    );
+    spike.setStrokeStyle(1, 0xfef3c7, 0.8);
+  }
+}
+
 function vectorLengthSquared(vector: Vector2): number {
   return vector.x * vector.x + vector.y * vector.y;
 }
@@ -986,14 +1025,7 @@ class MainScene extends Phaser.Scene {
         continue;
       }
 
-      this.add.rectangle(
-        hazard.x + hazard.width / 2,
-        hazard.y + hazard.height / 2,
-        hazard.width,
-        hazard.height,
-        0xc026d3,
-        0.55,
-      );
+      drawSpikeStrip(this, hazard);
     }
 
     const debug = this.addDebugObject(this.add.graphics().setDepth(2));
