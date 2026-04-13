@@ -4,7 +4,7 @@
 
 ## 최신 기준
 
-- 기준 브랜치: `develop` (weapon-sprites-v2 포함)
+- 기준 브랜치: `develop` (fix/map-polish-v1 포함)
 - 마지막 동기화 기준: 2026-04-13
 
 ## 현재 구현된 것
@@ -78,7 +78,7 @@
   - 세로 넉백은 내부 `vertical_velocity`와 `external_velocity`를 분리해 skyrocket형 누적 버그를 막는다.
 - 훈련 아레나 맵 재설계 v2:
   - armory 집중 배치를 제거하고 좌/우 벙커 + 중앙 브릿지/고지대 구조로 전면 재배치했다.
-  - 지상(680) → 저층(570) → 중층(460) → 고지대(350) 순으로 단일 점프 이동 루트를 만든다.
+  - 지상(680) → 저층(580) → 중층(480) → 고지대(380) 순으로 단일 점프 이동 루트를 만든다 (층간 100px 간격).
   - 무기 스폰은 좌측 벙커 / 좌측 지상 / 중앙 고지대 / 우측 벙커 / 좌우 mid-lane 후보군으로 분산했다.
   - `instant_kill_hazard`는 좌우 지상 가시와 피트 입구 가시로 나뉘고, `fall_zone`은 중앙 피트 아래를 유지한다.
 - 전투 1차:
@@ -118,7 +118,7 @@
 - 파라미터가 없으면 자유맵으로 자동 입장한다.
 - 닉네임/플레이어 ID 는 `localStorage` 에 저장되어 재접속 시 동일 신원 유지
 - 테스트 맵용 바닥 / 플랫폼 / pit wall / hazard / spawn 위치를 `trainingArenaMap` 공통 데이터에서 읽어 렌더링한다.
-- `instant_kill_hazard`는 단색 사각형 대신 상향 가시 strip으로 렌더링한다. `fall_zone`은 기존 논리/디버그 표현을 유지한다.
+- `instant_kill_hazard`는 단색 사각형 대신 상향 90° 가시 strip으로 렌더링한다 (회색 계열 배색, 다크그레이 베이스 바). `fall_zone`은 기존 논리/디버그 표현을 유지한다.
 - 플레이어는 코드 기반 임시 텍스처로 만든 캐주얼 햄스터 silhouette로 렌더링되며, `idle / run / jump / fall / respawning` 상태를 기본 구분한다.
 - remote player / local player / pickup 에 1차 보간을 적용했다.
 - 월드 무기 pickup은 기본 fallback 도형/라벨을 유지하되, `Acorn Blaster` 는 1차 전용 pickup sprite + `AB` glyph + source accent 로 렌더링한다.
@@ -247,7 +247,7 @@
 
 ### 전투
 
-- `Acorn Blaster`, `Paws`, `Seed Shotgun`, `Hand Cannon` 네 무기에 대해 서버 판정을 구현한다.
+- `Acorn Blaster`, `Paws`, `Seed Shotgun`, `Walnut Cannon`, `Ember Sprinkler`, `Pine Sniper` 여섯 무기에 대해 서버 판정을 구현한다.
 - `Paws` 근접 판정: 에임 방향 원뿔(hit_start=14px, hit_end=56px, near_half_w=7px, far_half_w=21px), 가장 가까운 단일 타겟, damage=8, knockback=3, cooldown=350ms.
 - `Acorn Blaster` 히트스캔 단발 발사.
 - `Seed Shotgun` 투사체 5-pellet 산탄, `Hand Cannon` 투사체 단발 고화력.
@@ -279,23 +279,30 @@
 
 ### 솔방울 저격총 (pine_sniper) — feat/pine-sniper-v1 완료
 
-- **서버**: `packages/shared/weapons/pine-sniper.json` 추가. hitscan, damage 55, range 1100, attackIntervalMs 1400, maxResource 3, `aimProfile: { minAimDeg: -8, maxAimDeg: 8 }`.
+- **서버**: `packages/shared/weapons/pine-sniper.json` 추가. hitscan, damage 90, range 3000, attackIntervalMs 2000, maxResource 8, `aimProfile: { minAimDeg: -16, maxAimDeg: 16 }` (밸런스 조정 반영).
 - **서버**: `game_data.rs`에 `include_str!` + HashMap 항목 등록.
 - **공유 타입**: `packages/shared/weapon-data.ts`에 `pine_sniper` 임포트 및 `weaponDefinitions` 배열 등록.
 - **클라이언트**: `pine_sniper` pickup 스프라이트 (72×40, 긴 금속 총신 + 솔방울 개머리판 + 스코프) + equip 오버레이 (52×16) + HUD 아이콘 (24×24).
 - **클라이언트**: `WeaponFireStyle: "sniper_flash"`. 길고 얇은 흰색 트레이서(500px, 2px 두께) + muzzle 섬광(반지름 5) + 스코프 시안 글린트. 지속 80ms.
 - **단위 테스트 2개 추가**: `pine_sniper_hits_target_in_range`, `pine_sniper_consumes_resource_per_shot`.
-- **맵 스폰**: `training-arena.json` 우측 고지대(x=1400, y=343) 고정 스폰. map-rework-v2와 함께 반영.
+- **맵 스폰**: `training-arena.json` 우측 고지대 right_roof_perch(x=1400, y=373) 고정 스폰. map-rework-v2와 함께 반영.
 
 ### 훈련 아레나 맵 리워크 (feat/map-rework-v2 완료)
 
-- **맵 레이아웃**: 지상(680) → 저층(570) → 중층(460) → 고지대(350) 4단 구조. 단일 점프로 인접 층 이동 가능.
+- **맵 레이아웃**: 지상(680) → 저층(580) → 중층(480) → 고지대(380) 4단 구조. 단일 점프로 인접 층 이동 가능 (층간 100px 간격).
 - **플랫폼 재배치**: 좌/우 벙커(상·하층) + 좌/우 mid-lane + 중앙 테라스 + 좌/우/중앙 고지대 3개.
 - **pit wall** 제거, `solid_wall` 경계는 좌/우 맵 끝에만 유지.
-- **무기 스폰 재배치**: 좌측 벙커(acorn) / 좌측 지상(ember) / 중앙 고지대(walnut_cannon, airdrop) / 우측 벙커(seed) / 우측 고지대(pine_sniper, airdrop) / 좌우 mid-lane 랜덤 후보군.
+- **무기 스폰 재배치**: 좌측 벙커(acorn, y=573) / 좌측 지상(ember, y=673) / 중앙 고지대(walnut_cannon, y=240 airdrop) / 우측 벙커(seed, y=573) / 우측 고지대(pine_sniper, y=373 airdrop) / 좌우 mid-lane 랜덤 후보군(y=473).
 - **스폰포인트 7개**: 상단 3 + 중층 2 + 저층 2.
-- **클라이언트**: `instant_kill_hazard`를 단색 사각형 대신 상향 가시 strip으로 렌더링.
+- **클라이언트**: `instant_kill_hazard`를 90° 수직 상향 가시 strip으로 렌더링 (회색 배색).
 - **서버 테스트 갱신**: 스폰 카운트 7, 새 좌표 기준 어설션, 플랫폼 이름 갱신.
+
+### 맵 polish (fix/map-polish-v1 완료)
+
+- **스파이크 방향 수정**: `drawSpikeStrip` 삼각형 꼭짓점 보정 → 90° 수직 상향. 색상 오렌지 계열 → 회색 계열(`0x9ca3af` fill, `0x374151` 베이스).
+- **플랫폼 높이 조정**: 층간 간격 110px → 100px. L1: 570→580 / L2: 460→480 / L3: 350→380. 솔리드 월·무기·아이템·스폰포인트 y 좌표 모두 반영.
+- **투명 벽 버그 수정**: 잘못 배치된 `solid_wall` 6개 제거 (`pit_wall_left/right`만 유지). `left/right_bunker_wall_outer`(bottomY=680)는 바닥 이동 전체를 막고, `center_half_wall_left/right`(x=720/880)는 center_bridge 횡단을 완전히 차단했다. 원인: `resolve_wall_collisions` skip 조건 — `current_top >= wall.bottom_y` — 이 PLAYER_HALF_SIZE(14) 기준 floor player top(y=652)에 대해 만족하지 않아 벽이 활성화됨.
+- **서버 테스트 갱신**: 투사체 one-way 충돌 테스트 시작 좌표 새 topY 기준으로 수정. pine_sniper 히트 테스트를 `weapon_definition()` 동적 조회 방식으로 리팩터링 (53개 전체 통과).
 
 ### 원웨이 플랫폼 하강 (fix/one-way-drop-through-v1 완료)
 
@@ -337,6 +344,8 @@
 - Fire & Forget 수정 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-fire-and-forget-v1.md`
 - 픽업 소멸 VFX 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-pickup-despawn-vfx-v1.md`
 - 불씨 뿌리개(flamethrower) 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-flamethrower-v1.md`
+- 솔방울 저격총 완료 미니 스펙: `docs/technical/mini-spec-pine-sniper-v1.md`
+- 맵 리워크 v2 완료 미니 스펙: `docs/technical/mini-spec-map-rework-v2.md`
 - 솔방울 저격총(pine sniper) 완료 미니 스펙: `docs/technical/mini-spec-pine-sniper-v1.md`
 - 훈련 아레나 맵 리워크 v2 완료 미니 스펙: `docs/technical/mini-spec-map-rework-v2.md`
 - 씨앗 샷건 + 호두 대포 스프라이트 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-weapon-sprites-v2.md`

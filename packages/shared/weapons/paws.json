@@ -1,7 +1,7 @@
 {
   "version": 1,
   "id": "paws",
-  "name": "Paws",
+  "name": "맨손",
   "hitType": "melee",
   "fireMode": "single",
   "resourceModel": "infinite",

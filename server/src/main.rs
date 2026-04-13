@@ -1506,7 +1506,7 @@ mod tests {
                 id: "proj_up".to_string(),
                 owner_id: "shooter".to_string(),
                 weapon_id: "walnut_cannon".to_string(),
-                position: Vector2 { x: 800.0, y: 470.0 },
+                position: Vector2 { x: 800.0, y: 490.0 },
                 velocity: Vector2 { x: 0.0, y: -800.0 },
                 gravity_per_sec2: 0.0,
                 damage: 80,
@@ -1525,7 +1525,7 @@ mod tests {
             .projectiles
             .get("proj_up")
             .expect("projectile should remain");
-        assert!(projectile.position.y < 440.0);
+        assert!(projectile.position.y < 460.0);
         assert!(deaths.is_empty());
     }
 
@@ -1538,7 +1538,7 @@ mod tests {
                 id: "proj_down".to_string(),
                 owner_id: "shooter".to_string(),
                 weapon_id: "walnut_cannon".to_string(),
-                position: Vector2 { x: 800.0, y: 430.0 },
+                position: Vector2 { x: 800.0, y: 450.0 },
                 velocity: Vector2 { x: 0.0, y: 800.0 },
                 gravity_per_sec2: 0.0,
                 damage: 80,
@@ -2219,15 +2219,15 @@ mod tests {
         );
     }
 
-    // left_bunker_upper: topY=460, x=160-380
-    // left_bunker_lower: topY=570, x=120-340
-    // x=260 은 두 플랫폼 x 범위 모두에 포함되고, 수직 간격은 110px.
+    // left_bunker_upper: topY=480, x=160-380
+    // left_bunker_lower: topY=580, x=120-340
+    // x=260 은 두 플랫폼 x 범위 모두에 포함되고, 수직 간격은 100px.
     // 버그 조건: 기존 전역 시간 무시(drop_active)는 lower platform까지 함께 건너뜀 → 두 플랫폼을 한 번에 통과
     // 수정 후: source 플랫폼(left_bunker_upper)만 무시하고 left_bunker_lower에 정상 착지해야 함
     #[test]
     fn drop_through_skips_only_source_platform_not_adjacent_platform_below() {
-        let left_bunker_upper_top_y = 460.0;
-        let left_bunker_lower_top_y = 570.0;
+        let left_bunker_upper_top_y = 480.0;
+        let left_bunker_lower_top_y = 580.0;
         let test_x = 260.0;
 
         let mut player = test_player(test_x, left_bunker_upper_top_y - PLAYER_HALF_SIZE);
@@ -2341,6 +2341,7 @@ mod tests {
     }
 
     // pine_sniper: 사거리 안쪽의 대상을 hitscan으로 맞혀야 한다.
+    // damage=90, range=3000 (pine-sniper.json 기준)
     #[test]
     fn pine_sniper_hits_target_in_range() {
         let mut room = RoomState::new();
@@ -2357,10 +2358,12 @@ mod tests {
         shooter.attack_queued = true;
         shooter.attack_was_down = true;
 
-        // 사거리(1100px) 안쪽 700px 거리에 있는 대상
+        // 사거리(3000px) 안쪽 700px 거리에 있는 대상
         let mut target = test_player(700.0, 300.0);
         target.snapshot.id = "target".to_string();
         target.snapshot.name = "target".to_string();
+
+        let pine_damage = weapon_definition("pine_sniper").damage;
 
         room.players.insert("shooter".to_string(), shooter);
         room.players.insert("target".to_string(), target);
@@ -2370,15 +2373,12 @@ mod tests {
         room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
 
         let target_after = room.players.get("target").unwrap();
-        assert!(
-            target_after.snapshot.hp < 100,
-            "pine_sniper는 사거리 안쪽 대상을 맞혀야 함 (hp={})",
-            target_after.snapshot.hp
-        );
+        let expected_hp = 100u16.saturating_sub(pine_damage);
         assert_eq!(
             target_after.snapshot.hp,
-            45,
-            "pine_sniper 피해량은 55여야 함 (hp={})",
+            expected_hp,
+            "pine_sniper 피해량은 {}이어야 함 (hp={})",
+            pine_damage,
             target_after.snapshot.hp
         );
     }
