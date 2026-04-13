@@ -1,5 +1,9 @@
 # 미니 스펙: 씨앗 샷건 + 호두 대포 스프라이트 v1
 
+> **상태: 구현 완료** — `feat/weapon-sprites-v2` → `develop` (PR #71 머지, 2026-04-13)
+>
+> 추가 완료: `hand_cannon` → `walnut_cannon` ID 변경, `weapon-data.ts`에 `ember_sprinkler` 누락 수정 포함.
+
 ## 작업명
 
 `feat/weapon-sprites-v2`

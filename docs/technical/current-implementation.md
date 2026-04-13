@@ -258,7 +258,7 @@
 ### 현재 투사체 한계
 
 - 무기별 탄도 차이(직선탄 vs 포물선탄 vs 관통탄)는 아직 초기 단계다.
-- 현재는 `Seed Shotgun`, `Hand Cannon`만 포물선 튜닝이 들어가 있고, 다른 무기/투사체 타입은 미구현이다.
+- 현재는 `Seed Shotgun`, `Walnut Cannon`만 포물선 튜닝이 들어가 있고, 다른 무기/투사체 타입은 미구현이다.
 - 무기별 개별 충돌 정책(`collisionProfile`)은 아직 없다.
 
 ### 현재 조준 각도 한계
@@ -283,9 +283,10 @@
 
 ## 다음 구현 우선순위
 
-1. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체 (투사체 texture hookup 포함)
-2. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
-3. `develop` preview / staging 배포 전략 분리
+1. 무기 추가 계속 (목표 16~20종) — 현재 5종 구현
+2. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체 (투사체 texture hookup 포함)
+3. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
+4. `develop` preview / staging 배포 전략 분리
 
 ## 참고
 
@@ -314,4 +315,4 @@
 - Fire & Forget 수정 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-fire-and-forget-v1.md`
 - 픽업 소멸 VFX 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-pickup-despawn-vfx-v1.md`
 - 불씨 뿌리개(flamethrower) 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-flamethrower-v1.md`
-- 씨앗 샷건 + 호두 대포 스프라이트 미니 스펙: `docs/technical/mini-spec-weapon-sprites-v2.md`
+- 씨앗 샷건 + 호두 대포 스프라이트 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-weapon-sprites-v2.md`
