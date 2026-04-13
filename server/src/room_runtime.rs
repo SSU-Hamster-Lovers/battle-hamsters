@@ -270,13 +270,23 @@ pub(crate) fn step_player(player: &mut PlayerRuntime, now_ms: u64) {
     // abs(aim.x) < 0.12 → 수직 조준 deadzone: 이전 방향 유지
 
     let on_one_way_platform = is_on_one_way_platform(&player.snapshot);
-    let drop_active = player
-        .snapshot
-        .drop_through_until
-        .is_some_and(|until| until > now_ms);
 
     if input.jump {
         if player.snapshot.grounded && down_pressed && on_one_way_platform {
+            // source 플랫폼 ID를 기억해 해당 플랫폼만 무시한다 (전역 무시 제거)
+            let source_id = runtime_map_data()
+                .one_way_platforms
+                .iter()
+                .find(|platform| {
+                    (player.snapshot.position.y + PLAYER_HALF_SIZE - platform.top_y).abs() < 1.0
+                        && surface_contains_x(
+                            platform.left_x,
+                            platform.right_x,
+                            player.snapshot.position.x,
+                        )
+                })
+                .map(|platform| platform.id.clone());
+            player.drop_through_platform_id = source_id;
             player.snapshot.drop_through_until = Some(now_ms + DROP_THROUGH_MS);
             player.snapshot.grounded = false;
             player.snapshot.position.y += 2.0;
@@ -347,8 +357,38 @@ pub(crate) fn step_player(player: &mut PlayerRuntime, now_ms: u64) {
         }
     }
 
-    if player.snapshot.velocity.y >= 0.0 && !drop_active {
+    // source 플랫폼 무시 해제 조건 (Option C): 플레이어 바닥이 source 플랫폼 아래로
+    // DROP_CLEAR_MARGIN 이상 내려가면 해당 플랫폼을 다시 착지 후보로 되돌린다.
+    const DROP_CLEAR_MARGIN: f64 = 8.0;
+    if let Some(ref src_id) = player.drop_through_platform_id.clone() {
+        let src_top_y = runtime_map_data()
+            .one_way_platforms
+            .iter()
+            .find(|p| &p.id == src_id)
+            .map(|p| p.top_y);
+
+        let should_clear = match src_top_y {
+            Some(top_y) => current_bottom > top_y + DROP_CLEAR_MARGIN,
+            None => true,
+        };
+        if should_clear {
+            player.drop_through_platform_id = None;
+            player.snapshot.drop_through_until = None;
+        }
+    } else if player
+        .snapshot
+        .drop_through_until
+        .is_some_and(|until| until <= now_ms)
+    {
+        player.snapshot.drop_through_until = None;
+    }
+
+    if player.snapshot.velocity.y >= 0.0 {
         for platform in &runtime_map_data().one_way_platforms {
+            // source 플랫폼만 건너뛴다 — 다른 플랫폼은 정상 착지 후보
+            if player.drop_through_platform_id.as_deref() == Some(platform.id.as_str()) {
+                continue;
+            }
             if previous_bottom <= platform.top_y
                 && current_bottom >= platform.top_y
                 && surface_contains_x(
@@ -358,6 +398,8 @@ pub(crate) fn step_player(player: &mut PlayerRuntime, now_ms: u64) {
                 )
             {
                 land_on_surface(player, platform.top_y);
+                player.drop_through_platform_id = None;
+                player.snapshot.drop_through_until = None;
                 return;
             }
         }

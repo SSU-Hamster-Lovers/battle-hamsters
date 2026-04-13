@@ -96,22 +96,23 @@ oneWayPlatformTopY = 380
 - 아래에서 위로 통과는 허용한다.
 - `아래 + 점프` 입력 시 일정 시간 동안 해당 플랫폼 충돌을 무시할 수 있다.
 
-### 현재 알려진 구현 한계
+### 현재 구현 (fix/one-way-drop-through-v1 이후)
 
-- 현재 런타임은 `dropThroughUntil` 시간 창 동안 모든 `one_way_platform` 착지를 함께 무시한다.
-- 그래서 세로 간격이 가까운 플랫폼 조합에서는, 의도한 첫 번째 플랫폼만이 아니라 바로 아래 두 번째 플랫폼까지 한 번에 통과할 수 있다.
-- 후속 논의안은 `docs/technical/mini-spec-one-way-drop-through-v1.md`를 따른다.
+- 플레이어가 원웨이 플랫폼 위에서 `아래 + 점프`를 누르면, **해당 플랫폼의 ID**를 `drop_through_platform_id`에 저장한다.
+- 착지 판정 시 `drop_through_platform_id`와 일치하는 플랫폼만 건너뛴다. 다른 모든 원웨이 플랫폼은 즉시 정상 착지 후보다.
+- 플레이어 바닥이 source 플랫폼 아래로 `DROP_CLEAR_MARGIN(8px)` 이상 내려가면 source ignore를 자동 해제한다.
+- `dropThroughUntil` 타임스탬프는 클라이언트 시각 표현용으로 스냅샷에 유지되며, source ID가 해제될 때 함께 초기화된다.
 
 ### 필요한 데이터
+- `id` (맵 JSON의 `one_way_platform`에 필수)
 - `leftX`
 - `rightX`
 - `topY`
-- `dropThroughUntil` 또는 동등한 상태
 
 ### 판정 원칙
 - 이전 프레임의 player bottom이 `topY` 위에 있었고
 - 현재 프레임의 player bottom이 `topY` 아래로 내려왔고
-- `dropThrough` 상태가 아니면
+- 해당 플랫폼이 `drop_through_platform_id`와 다르면
 - 착지 처리 가능
 
 ## 투사체 / 원웨이 플랫폼 계약
