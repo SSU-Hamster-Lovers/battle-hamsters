@@ -4,8 +4,8 @@
 
 ## 최신 기준
 
-- 기준 브랜치: `develop`
-- 마지막 동기화 기준: 2026-04-12
+- 기준 브랜치: `develop` (feat/paws-combat-hud-v1 병합 후 기준)
+- 마지막 동기화 기준: 2026-04-13
 
 ## 현재 구현된 것
 
@@ -184,12 +184,10 @@
 
 ## 다음 구현 우선순위
 
-1. 하단 플레이어 상태 HUD 실제 배치
-2. 킬로그 카드 + 아이콘 레이아웃
-3. 무기별 피격 파티클 차별화
-4. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체
-5. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
-6. `develop` preview / staging 배포 전략 분리
+1. Paws 피격 파티클 차별화 (짧은 먼지/충격파 계열, `mini-spec-combat-presentation-polish-v0.md` §1 참조)
+2. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체
+3. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
+4. `develop` preview / staging 배포 전략 분리
 
 ## 참고
 
@@ -200,3 +198,4 @@
 - 로컬 개발 환경 정리 미니 스펙: `docs/archive/mini-specs/mini-spec-local-dev-env-runner-v1.md`
 - 점프 아이템 세부 규칙 후속은 `docs/technical/mini-spec-jump-item-integration-v1.md` 참조
 - 전투 표현 polish 후속은 `docs/technical/mini-spec-combat-presentation-polish-v0.md` 참조
+- Paws 근접 전투 + HUD 1차 미니 스펙: `docs/technical/mini-spec-paws-combat-hud-v1.md` (완료, 아카이브 대기)
