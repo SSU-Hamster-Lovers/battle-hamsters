@@ -91,12 +91,11 @@
 - 월드 아이템 pickup을 간단한 다이아몬드 도형/라벨로 렌더링한다.
 - `Acorn Blaster` 장착 시 손 앞에 1차 무기 overlay 를 렌더링한다.
 - 하단 고정 HUD 바 (y=512~600, 88px):
-  - 좌측: 로컬 플레이어 압축 프로필 카드
+  - 좌측: 로컬 플레이어 compact combat bar
   - 중앙: 타이머 (10초 이하 적색 강조)
-  - 우측: 상대 카드
+  - 우측: 상대 compact combat bar
   - Free Play 또는 사실상 무한 시간 제한에서는 중앙 타이머를 `FREE PLAY` 패널로 표시한다.
-  - 세로 HP 바 세그먼트 구분선은 직선 가로선 기준으로 정리했다.
-  - 프로필 카드 하단의 생명/킬 수치는 아이콘 옆 별도 숫자로 분리해 얼굴/정보 영역 겹침을 줄였다.
+  - 카드형보다 얇은 `얼굴 + 가로 HP 바 + 생명 pip + 작은 무기/킬 정보` 중심 구조로 정리했다.
   - Free Play에서는 우측 카드가 `최근 공격한 대상 -> 킬 최다 상대` 우선순위로 표시된다.
 - 좌상단에는 큰 제목/room/server tick 대신 작은 `WS/ping` 상태만 표시한다.
 - 무기 아이콘 레지스트리: `getWeaponHudTextureKey(weaponId)` → `RenderTexture` 코드 생성 아이콘 (`paws`, `acorn_blaster`, fallback)
