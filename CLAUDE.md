@@ -6,6 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 사용자에게 보이는 결과물(답변, PR/이슈 본문, 문서, 한글 설명 주석)은 **기본적으로 한국어**로 작성한다. 코드 문법, API/타입/파일 경로/외부 서비스 고유명은 예외다. 자세한 규칙은 `AGENTS.md` 참조.
 
+## Branch / PR Guardrails
+
+Claude는 PR base branch 를 추측해서는 안 된다. 이 저장소의 기본 전략은 아래와 같다.
+
+- `main` 으로 가는 PR 은 `develop` 또는 `hotfix/*` 브랜치에서만 연다.
+- `feat/*`, `fix/*`, `chore/*`, `docs/*` 브랜치는 `develop` 으로만 PR 을 연다.
+- PR 생성은 `pr-create` 로만 수행한다. `gh pr create` 직접 호출, GitHub 웹 UI 기본값, 도구 자동 PR 생성 버튼을 사용하지 않는다.
+- PR 생성 전 반드시 `git branch --show-current` 로 현재 브랜치를 확인하고, base branch 를 명시적으로 검증한다.
+- 규칙에 맞는 base branch 가 확실하지 않으면 PR 을 만들지 말고 사용자에게 확인한다.
+
 ## Repository layout
 
 pnpm workspace + Rust server. 네 영역이 명확히 분리되어 있고, 이 경계를 흐리지 않는 것이 중요하다.
