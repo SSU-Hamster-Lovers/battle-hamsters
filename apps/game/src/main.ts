@@ -143,19 +143,16 @@ const HUD_CARD_H = 80;
 const HUD_CARD_PAD_Y = 4;
 const HUD_LEFT_CARD_X = 8;
 const HUD_RIGHT_CARD_X = VIEWPORT_WIDTH - 8 - HUD_CARD_W; // 514
-const HUD_HP_BAR_OFFSET_X = 4;
-const HUD_HP_BAR_W = 12;
-const HUD_FACE_SIZE = 20;
-const HUD_FACE_OFFSET_X = 13;
-const HUD_TEXT_OFFSET_X = 68;
+const HUD_FACE_SIZE = 24;
 const HUD_MAX_HP = 100;
-const HUD_TIMER_PANEL_W = 184;
-const HUD_TIMER_PANEL_H = 56;
+const HUD_TIMER_PANEL_W = 156;
+const HUD_TIMER_PANEL_H = 50;
 const HUD_TIMER_FREE_PLAY_THRESHOLD_MS = 99 * 60 * 60 * 1000;
 const HUD_RECENT_TARGET_TTL_MS = 6_000;
 const KILL_FEED_SLIDE_IN_MS = 200;
 const DAMAGE_EVENT_DISMISSED_RETENTION_MS = 1_200;
 const NETWORK_PING_INTERVAL_MS = 2_000;
+const HUD_MAX_LIFE_PIPS = 6;
 
 const COLLISION_PRIMITIVES: CollisionPrimitive[] = MAP_DEFINITION.collision;
 const HAZARDS: HazardZone[] = MAP_DEFINITION.hazards;
@@ -1644,12 +1641,14 @@ class MainScene extends Phaser.Scene {
       g.lineStyle(1, 0x5c3d1e, 0.28);
       g.strokeRoundedRect(cardX, cardY, HUD_CARD_W, HUD_CARD_H, 6);
       nameText
-        .setPosition(cardX + 14, cardY + 18)
+        .setPosition(cardX + 12, cardY + 20)
+        .setOrigin(0, 0)
         .setText(isLocal ? "YOU" : "RIVAL")
         .setColor("#7d6651")
         .setVisible(true);
       statText
-        .setPosition(cardX + 14, cardY + 40)
+        .setPosition(cardX + 12, cardY + 42)
+        .setOrigin(0, 0)
         .setText(isLocal ? "joining..." : "waiting...")
         .setColor("#6f5a48")
         .setVisible(true);
@@ -1665,56 +1664,76 @@ class MainScene extends Phaser.Scene {
     killText.setVisible(true);
     weaponIcon.setVisible(true);
 
-    // ── 카드 배경 ──
-    g.fillStyle(0x1a120e, 0.96);
-    g.fillRoundedRect(cardX, cardY, HUD_CARD_W, HUD_CARD_H, 8);
-    g.fillStyle(isLocal ? 0x8c5a30 : 0x56463c, 0.9);
-    g.fillRoundedRect(cardX + 1, cardY + 1, 8, HUD_CARD_H - 2, 6);
-    g.fillStyle(0x2a1c14, 0.85);
-    g.fillRoundedRect(cardX + 10, cardY + 8, HUD_CARD_W - 20, 18, 6);
-    g.fillStyle(0x120c09, 0.42);
-    g.fillRoundedRect(cardX + 62, cardY + 31, HUD_CARD_W - 72, 18, 6);
-    g.lineStyle(1.5, 0x6b4427, 1);
-    g.strokeRoundedRect(cardX, cardY, HUD_CARD_W, HUD_CARD_H, 8);
-
-    // ── HP 바 (수직) ──
-    const hpBarX = cardX + HUD_HP_BAR_OFFSET_X;
-    const hpBarY = cardY + 4;
-    const hpBarH = HUD_CARD_H - 8;
-    const hpRatio = Math.max(0, Math.min(1, player.hp / HUD_MAX_HP));
-
-    // 빈 영역 (깎인 HP)
-    g.fillStyle(0x2d1f15, 1);
-    g.fillRoundedRect(hpBarX, hpBarY, HUD_HP_BAR_W, hpBarH, 3);
-
-    // 채워진 영역 (현재 HP) — 아래에서 위로
-    if (hpRatio > 0) {
-      const filledH = Math.floor(hpBarH * hpRatio);
-      const filledY = hpBarY + hpBarH - filledH;
-      const hpColor =
-        hpRatio > 0.5 ? 0x22c55e : hpRatio > 0.25 ? 0xeab308 : 0xef4444;
-      g.fillStyle(hpColor, 1);
-      g.fillRoundedRect(hpBarX, filledY, HUD_HP_BAR_W, filledH, 3);
-    }
-
-    // 4구간 세그먼트 직선 컷
-    g.lineStyle(1, 0x0f0a06, 0.95);
-    for (let i = 1; i <= 3; i++) {
-      const segY = hpBarY + (hpBarH * i) / 4;
-      g.lineBetween(hpBarX, segY, hpBarX + HUD_HP_BAR_W, segY);
-    }
-
-    // HP 바 테두리
-    g.lineStyle(1, 0x5c3d1e, 0.8);
-    g.strokeRoundedRect(hpBarX, hpBarY, HUD_HP_BAR_W, hpBarH, 3);
-
-    // ── 햄스터 얼굴 (플레이스홀더) ──
+    const mirrored = !isLocal;
     const faceR = HUD_FACE_SIZE / 2;
-    const faceX = cardX + HUD_FACE_OFFSET_X + HUD_HP_BAR_W + 4 + faceR;
-    const faceY = cardY + HUD_CARD_H / 2;
+    const faceX = mirrored ? cardX + HUD_CARD_W - 22 : cardX + 22;
+    const faceY = cardY + 44;
+    const infoX = mirrored ? cardX + 10 : cardX + 46;
+    const infoY = cardY + 10;
+    const infoW = HUD_CARD_W - 56;
+    const nameY = infoY + 1;
+    const pipY = infoY + 16;
+    const barX = infoX;
+    const barY = infoY + 25;
+    const barW = infoW;
+    const barH = 12;
+    const hpRatio = Math.max(0, Math.min(1, player.hp / HUD_MAX_HP));
+    const barFillColor =
+      hpRatio > 0.5 ? 0x7cfc00 : hpRatio > 0.25 ? 0xeab308 : 0xef4444;
     const bodyColor = isLocal ? 0xc8874a : 0x4a4a4a;
     const earColor = isLocal ? 0xd4a574 : 0x5a5a5a;
+    const accent = isLocal ? 0x93c5fd : 0xcbd5e1;
+    const pipGap = 10;
+    const pipStartX = infoX + 6;
+    const visibleLifePips = Math.min(player.lives, HUD_MAX_LIFE_PIPS);
+    const pipOverflowX = pipStartX + HUD_MAX_LIFE_PIPS * pipGap + 4;
+    const bottomRowY = barY + 17;
+    const weaponIconX = infoX + 7;
+    const weaponInfoX = infoX + 18;
+    const killInfoX = infoX + infoW - 2;
 
+    // ── 컴팩트 바 배경 ──
+    g.fillStyle(0x120c09, 0.72);
+    g.fillRoundedRect(cardX + 4, cardY + 14, HUD_CARD_W - 8, 48, 10);
+    g.fillStyle(0x30231a, 0.95);
+    g.fillRoundedRect(infoX - 3, infoY - 2, infoW + 6, 44, 8);
+    g.fillStyle(0x17110d, 0.96);
+    g.fillRoundedRect(infoX, infoY, infoW, 40, 7);
+    g.lineStyle(1.2, 0x7a5a34, 0.9);
+    g.strokeRoundedRect(infoX, infoY, infoW, 40, 7);
+
+    g.fillStyle(0x1a120e, 0.95);
+    g.fillRoundedRect(infoX + 2, infoY + 2, infoW - 4, 10, 4);
+
+    // ── HP 바 (가로) ──
+    g.fillStyle(0x20150f, 1);
+    g.fillRoundedRect(barX, barY, barW, barH, 5);
+    g.fillStyle(0x0f0a06, 0.42);
+    g.fillRoundedRect(barX + 2, barY + 2, barW - 4, 3, 2);
+    if (hpRatio > 0) {
+      const filledW = Math.max(8, Math.floor(barW * hpRatio));
+      g.fillStyle(barFillColor, 1);
+      g.fillRoundedRect(barX, barY, filledW, barH, 5);
+    }
+    g.lineStyle(1, 0x0f0a06, 0.4);
+    for (let i = 1; i <= 4; i++) {
+      const segX = barX + (barW * i) / 5;
+      g.lineBetween(segX, barY + 1, segX, barY + barH - 1);
+    }
+    g.lineStyle(1.2, 0x5c3d1e, 0.9);
+    g.strokeRoundedRect(barX, barY, barW, barH, 5);
+
+    // ── 생명 pip ──
+    for (let i = 0; i < HUD_MAX_LIFE_PIPS; i++) {
+      const px = pipStartX + i * pipGap;
+      const alive = i < visibleLifePips;
+      g.fillStyle(alive ? 0x7cfc00 : 0x314126, alive ? 0.95 : 0.8);
+      g.fillCircle(px, pipY, 3.7);
+      g.lineStyle(1, alive ? 0xeaffc4 : 0x10160d, alive ? 0.7 : 0.35);
+      g.strokeCircle(px, pipY, 3.7);
+    }
+
+    // ── 얼굴 받침 ──
     g.fillStyle(0x120c09, 0.55);
     g.fillCircle(faceX, faceY, faceR + 4);
     g.lineStyle(1.2, isLocal ? 0x9d6a3e : 0x6b5a4d, 0.9);
@@ -1722,12 +1741,12 @@ class MainScene extends Phaser.Scene {
 
     // 귀
     g.fillStyle(earColor, 1);
-    g.fillCircle(faceX - 8, faceY - 9, 4.4);
-    g.fillCircle(faceX + 8, faceY - 9, 4.4);
+    g.fillCircle(faceX - 10, faceY - 13, 6);
+    g.fillCircle(faceX + 10, faceY - 13, 6);
     // 귀 안쪽 (핑크)
     g.fillStyle(0xff8fab, 0.55);
-    g.fillCircle(faceX - 8, faceY - 9, 2.2);
-    g.fillCircle(faceX + 8, faceY - 9, 2.2);
+    g.fillCircle(faceX - 10, faceY - 13, 3.2);
+    g.fillCircle(faceX + 10, faceY - 13, 3.2);
     // 얼굴 몸
     g.fillStyle(bodyColor, 1);
     g.fillCircle(faceX, faceY, faceR);
@@ -1746,25 +1765,11 @@ class MainScene extends Phaser.Scene {
     g.lineStyle(1, 0x5c3d1e, 0.5);
     g.strokeCircle(faceX, faceY, faceR);
 
-    const infoBaseX = cardX + HUD_TEXT_OFFSET_X + 2;
-    const livesY = cardY + 59;
-    const killsY = cardY + 59;
-    g.fillStyle(0xf5c518, 0.95);
-    g.fillEllipse(infoBaseX + 6, livesY, 7, 9);
-    g.fillStyle(0xe87040, 0.9);
-    g.fillCircle(infoBaseX + 50, killsY, 5);
-    g.lineStyle(1.1, 0x0f0a06, 0.9);
-    g.lineBetween(infoBaseX + 47.4, killsY - 2.2, infoBaseX + 49.4, killsY - 0.4);
-    g.lineBetween(infoBaseX + 49.4, killsY - 2.2, infoBaseX + 47.4, killsY - 0.4);
-    g.lineBetween(infoBaseX + 50.6, killsY - 2.2, infoBaseX + 52.6, killsY - 0.4);
-    g.lineBetween(infoBaseX + 52.6, killsY - 2.2, infoBaseX + 50.6, killsY - 0.4);
-
     // ── 텍스트 업데이트 ──
-    const nickX = cardX + HUD_TEXT_OFFSET_X + 2;
-    const nickY = cardY + 10;
     nameText
-      .setPosition(nickX, nickY)
-      .setText(player.name.length > 8 ? `${player.name.slice(0, 8)}…` : player.name)
+      .setPosition(infoX + 4, nameY)
+      .setOrigin(0, 0)
+      .setText(player.name.length > 11 ? `${player.name.slice(0, 11)}…` : player.name)
       .setColor(isLocal ? "#fde7c7" : "#e8d4bd");
 
     const ammo =
@@ -1776,19 +1781,22 @@ class MainScene extends Phaser.Scene {
     if (this.textures.exists(weaponIconKey)) {
       weaponIcon.setTexture(weaponIconKey);
     }
-    weaponIcon.setPosition(cardX + HUD_CARD_W - 16, cardY + 17).setScale(0.82);
+    weaponIcon.setPosition(weaponIconX, bottomRowY + 5).setScale(0.62);
     statText
-      .setPosition(nickX, nickY + 18)
+      .setPosition(weaponInfoX, bottomRowY - 2)
+      .setOrigin(0, 0)
       .setColor("#cdb498")
-      .setText(`${resolveWeaponAbbrev(player.equippedWeaponId)} [${ammo}]  HP ${player.hp}`);
+      .setText(`${resolveWeaponAbbrev(player.equippedWeaponId)} [${ammo}]`);
     lifeText
-      .setPosition(infoBaseX + 14, livesY - 7)
-      .setText(String(player.lives))
-      .setColor("#f8e4a2");
+      .setPosition(pipOverflowX, pipY - 7)
+      .setOrigin(0, 0)
+      .setText(player.lives > HUD_MAX_LIFE_PIPS ? `+${player.lives - HUD_MAX_LIFE_PIPS}` : "")
+      .setColor("#d2e6b2");
     killText
-      .setPosition(infoBaseX + 58, killsY - 7)
-      .setText(String(player.kills))
-      .setColor("#f7c2a2");
+      .setPosition(killInfoX, bottomRowY - 2)
+      .setOrigin(1, 0)
+      .setText(`K ${player.kills}`)
+      .setColor(accent === 0x93c5fd ? "#dbeafe" : "#e2e8f0");
   }
 
   private updateMatchOverlay(
