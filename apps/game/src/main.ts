@@ -10,6 +10,7 @@ import {
 } from "./hamster-visuals";
 import {
   ensureWeaponHudTextures,
+  resolveWeaponImpactStyle,
   ensureWeaponPickupTextures,
   getWeaponHudTextureKey,
   resolveWeaponEquipPresentation,
@@ -224,10 +225,14 @@ type DeathEcho = {
 };
 
 type HitParticle = {
-  node: Phaser.GameObjects.Rectangle;
+  node: Phaser.GameObjects.Shape;
   velocityX: number;
   velocityY: number;
   angularVelocity: number;
+  gravity: number;
+  drag: number;
+  scaleXVelocity: number;
+  scaleYVelocity: number;
   fadeAt: number;
   destroyAt: number;
   baseAlpha: number;
@@ -595,9 +600,13 @@ class MainScene extends Phaser.Scene {
       const particle = this.hitParticles[index];
       particle.node.x += particle.velocityX;
       particle.node.y += particle.velocityY;
-      particle.velocityX *= 0.96;
-      particle.velocityY += 0.16;
+      particle.velocityX *= particle.drag;
+      particle.velocityY = particle.velocityY * particle.drag + particle.gravity;
       particle.node.rotation += particle.angularVelocity;
+      particle.node.setScale(
+        Math.max(0.18, particle.node.scaleX + particle.scaleXVelocity),
+        Math.max(0.18, particle.node.scaleY + particle.scaleYVelocity),
+      );
 
       if (now >= particle.fadeAt) {
         const fadeWindow = particle.destroyAt - particle.fadeAt;
@@ -1712,7 +1721,13 @@ class MainScene extends Phaser.Scene {
         continue;
       }
 
-      this.spawnHitBurst(event.impactPoint, event.impactDirection, event.damage, true);
+      this.spawnHitBurst(
+        event.weaponId,
+        event.impactPoint,
+        event.impactDirection,
+        event.damage,
+        true,
+      );
       rendered.lastImpactDirection = addUpwardBias(event.impactDirection);
       rendered.lastImpactAt = this.time.now;
       this.dismissedDamageEventIds.set(event.id, this.time.now);
@@ -1726,6 +1741,7 @@ class MainScene extends Phaser.Scene {
         y: nextSnapshot.position.y - 7 - direction.y * 3,
       };
       this.spawnHitBurst(
+        null,
         impactPoint,
         direction,
         previousSnapshot.hp - nextSnapshot.hp,
@@ -1737,16 +1753,41 @@ class MainScene extends Phaser.Scene {
   }
 
   private spawnHitBurst(
+    weaponId: string | null,
     impactPoint: Vector2,
     impactDirection: Vector2,
     damage: number,
     isExact: boolean,
   ) {
+    const impactStyle = weaponId
+      ? resolveWeaponImpactStyle(weaponId)
+      : "generic_spark";
     const direction = addUpwardBias(normalizeVector(impactDirection, { x: 1, y: -0.2 }));
+
+    if (impactStyle === "paws_dust") {
+      this.spawnPawsImpactBurst(impactPoint, direction, damage, isExact);
+      return;
+    }
+
+    this.spawnSparkImpactBurst(impactPoint, direction, damage, isExact, impactStyle);
+  }
+
+  private spawnSparkImpactBurst(
+    impactPoint: Vector2,
+    direction: Vector2,
+    damage: number,
+    isExact: boolean,
+    impactStyle: "generic_spark" | "acorn_spark",
+  ) {
     const count = isExact ? 7 : 5;
-    const colors = isExact
-      ? [0xfde68a, 0xfca5a5, 0xfef3c7]
-      : [0xfcd34d, 0xfde68a];
+    const colors =
+      impactStyle === "acorn_spark"
+        ? isExact
+          ? [0xfde68a, 0xfca5a5, 0xfef3c7]
+          : [0xfcd34d, 0xfde68a]
+        : isExact
+          ? [0xe2e8f0, 0xf8fafc, 0xcbd5e1]
+          : [0xe5e7eb, 0xcbd5e1];
 
     for (let index = 0; index < count; index += 1) {
       const speed = Phaser.Math.FloatBetween(1.4, 2.8) + damage * 0.015;
@@ -1765,17 +1806,81 @@ class MainScene extends Phaser.Scene {
         )
         .setDepth(8);
       node.setAngle(Phaser.Math.FloatBetween(-35, 35));
-
       this.hitParticles.push({
         node,
         velocityX,
         velocityY,
         angularVelocity: Phaser.Math.FloatBetween(-0.08, 0.08),
+        gravity: 0.16,
+        drag: 0.96,
+        scaleXVelocity: 0,
+        scaleYVelocity: 0,
         fadeAt: this.time.now + (isExact ? 160 : 120),
         destroyAt: this.time.now + (isExact ? 430 : 320),
         baseAlpha: 0.92,
       });
     }
+  }
+
+  private spawnPawsImpactBurst(
+    impactPoint: Vector2,
+    direction: Vector2,
+    damage: number,
+    isExact: boolean,
+  ) {
+    const dustCount = isExact ? 5 : 3;
+    const dustColors = [0xd6b38a, 0xc89b72, 0xe7cfb3];
+    const sideX = -direction.y;
+    const sideY = direction.x;
+
+    for (let index = 0; index < dustCount; index += 1) {
+      const burst = this.add
+        .ellipse(
+          impactPoint.x + Phaser.Math.FloatBetween(-2, 2),
+          impactPoint.y + Phaser.Math.FloatBetween(-2, 2),
+          Phaser.Math.Between(8, 12),
+          Phaser.Math.Between(5, 8),
+          Phaser.Utils.Array.GetRandom(dustColors),
+          0.82,
+        )
+        .setDepth(8);
+      burst.setAngle(Phaser.Math.FloatBetween(-35, 35));
+
+      const forwardPush = Phaser.Math.FloatBetween(0.5, 1.15) + damage * 0.01;
+      const sideSpread = Phaser.Math.FloatBetween(-0.7, 0.7);
+      this.hitParticles.push({
+        node: burst,
+        velocityX: direction.x * forwardPush + sideX * sideSpread,
+        velocityY: direction.y * forwardPush + sideY * sideSpread - 0.12,
+        angularVelocity: Phaser.Math.FloatBetween(-0.03, 0.03),
+        gravity: 0.04,
+        drag: 0.9,
+        scaleXVelocity: 0.018,
+        scaleYVelocity: 0.012,
+        fadeAt: this.time.now + (isExact ? 110 : 90),
+        destroyAt: this.time.now + (isExact ? 280 : 220),
+        baseAlpha: 0.82,
+      });
+    }
+
+    const shockwave = this.add
+      .ellipse(impactPoint.x, impactPoint.y, 12, 8, 0xfef3c7, 0.2)
+      .setDepth(7);
+    shockwave.setStrokeStyle(2, 0xf8d7a4, 0.9);
+    shockwave.setAngle(Phaser.Math.RadToDeg(Math.atan2(direction.y, direction.x)));
+    this.hitParticles.push({
+      node: shockwave,
+      velocityX: direction.x * 0.35,
+      velocityY: direction.y * 0.18 - 0.05,
+      angularVelocity: 0,
+      gravity: 0.01,
+      drag: 0.88,
+      scaleXVelocity: 0.065,
+      scaleYVelocity: 0.04,
+      fadeAt: this.time.now + 60,
+      destroyAt: this.time.now + (isExact ? 190 : 160),
+      baseAlpha: 0.9,
+    });
   }
 
   private updateWeaponOverlay(

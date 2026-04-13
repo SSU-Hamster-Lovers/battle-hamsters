@@ -103,6 +103,8 @@
 - 피격 연출 1차/2차를 적용한다.
   - `damageEvents` 가 있으면 정확한 `impactPoint` / `impactDirection` 기준으로 작은 파편 파티클을 생성한다.
   - 정확 이벤트가 없을 때는 `hp` 감소와 넉백 방향으로 fallback 파티클을 생성한다.
+  - `Acorn Blaster`: 밝은 파편 + 짧은 탄 파편 계열
+  - `Paws`: 짧은 먼지 puff + 충격파 타원 계열
 - 우상단에 킬로그 스택을 `Container` 기반 카드로 렌더링한다.
   - `weapon` 킬: 공격자명 | 무기 아이콘(HUD 아이콘 재사용) | 피해자명
   - 낙사/함정/자살: 텍스트 카드
@@ -184,7 +186,7 @@
 
 ## 다음 구현 우선순위
 
-1. Paws 피격 파티클 차별화 (짧은 먼지/충격파 계열, `mini-spec-combat-presentation-polish-v0.md` §1 참조)
+1. 무기 각도 / Dead zone / 오버레이 앵커 1차 (`mini-spec-weapon-angle-deadzone-v0.md` 참조)
 2. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체
 3. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
 4. `develop` preview / staging 배포 전략 분리
@@ -198,4 +200,5 @@
 - 로컬 개발 환경 정리 미니 스펙: `docs/archive/mini-specs/mini-spec-local-dev-env-runner-v1.md`
 - 점프 아이템 세부 규칙 후속은 `docs/technical/mini-spec-jump-item-integration-v1.md` 참조
 - 전투 표현 polish 후속은 `docs/technical/mini-spec-combat-presentation-polish-v0.md` 참조
-- Paws 근접 전투 + HUD 1차 미니 스펙: `docs/technical/mini-spec-paws-combat-hud-v1.md` (완료, 아카이브 대기)
+- 무기 각도/Dead zone 초안은 `docs/technical/mini-spec-weapon-angle-deadzone-v0.md` 참조
+- Paws 근접 전투 + HUD 1차 미니 스펙: `docs/archive/mini-specs/mini-spec-paws-combat-hud-v1.md`
