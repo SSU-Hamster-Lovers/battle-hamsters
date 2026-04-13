@@ -100,6 +100,13 @@ export interface GrabState {
   remainingMs: number;
 }
 
+export interface StatusEffectInstance {
+  kind: "burn";
+  killerId: EntityId | null;
+  weaponId: EntityId;
+  expiresAt: TimestampMs;
+}
+
 export interface PlayerSnapshot {
   id: EntityId;
   name: string;
@@ -121,6 +128,7 @@ export interface PlayerSnapshot {
   state: PlayerState;
   kills: number;
   deaths: number;
+  effects: StatusEffectInstance[];
 }
 
 export interface RoomConfig {

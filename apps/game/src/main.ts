@@ -196,6 +196,7 @@ type RenderedPlayer = {
   sprite: Phaser.GameObjects.Image;
   weaponOverlay: Phaser.GameObjects.Image;
   collider: Phaser.GameObjects.Rectangle;
+  burnFlame: Phaser.GameObjects.Graphics;
   label: Phaser.GameObjects.Text;
   targetX: number;
   targetY: number;
@@ -653,6 +654,109 @@ class MainScene extends Phaser.Scene {
       }
     }
   }
+
+  // ── Burn flame ────────────────────────────────────────────────────────────
+
+  private updateBurnFlames(now: number) {
+    for (const [, rendered] of this.renderedPlayers) {
+      const isBurning =
+        rendered.snapshot.state !== "respawning" &&
+        rendered.snapshot.effects.some((e) => e.kind === "burn");
+      if (!isBurning) {
+        rendered.burnFlame.clear();
+        continue;
+      }
+      this.redrawBurnFlame(rendered.burnFlame, now);
+    }
+  }
+
+  /**
+   * 매 프레임 sin 파형 기반으로 3-레이어 불꽃 실루엣을 재드로우한다.
+   *
+   * 불꽃 형태:
+   *  - 상단: 포물선 envelope 위에 두 개의 sin 파형을 더해 흔들리는 혀 모양
+   *  - 하단: 반타원 (플레이어 발 아래 살짝 감싸는 형태)
+   *
+   * 레이어 순서: 어두운 주황(외곽) → 밝은 주황 → 노란 코어
+   */
+  private redrawBurnFlame(g: Phaser.GameObjects.Graphics, now: number) {
+    g.clear();
+
+    const layers: Array<{
+      color: number;
+      alpha: number;
+      wx: number;
+      wy: number;
+      ts: number;
+      phase: number;
+    }> = [
+      // 외곽층: 붉은-주황, 넓고 느린 흔들림
+      { color: 0xcc2200, alpha: 0.55, wx: 1.0, wy: 1.0,  ts: 1.0, phase: 0.0 },
+      // 중간층: 주황, 중간
+      { color: 0xff6600, alpha: 0.62, wx: 0.78, wy: 0.86, ts: 1.35, phase: 2.1 },
+      // 코어: 노란빛, 좁고 빠른 흔들림
+      { color: 0xffdd00, alpha: 0.48, wx: 0.52, wy: 0.68, ts: 0.85, phase: 4.7 },
+    ];
+
+    for (const L of layers) {
+      this.drawBurnFlameLayer(g, now, L.color, L.alpha, L.wx, L.wy, L.ts, L.phase);
+    }
+  }
+
+  private drawBurnFlameLayer(
+    g: Phaser.GameObjects.Graphics,
+    now: number,
+    color: number,
+    alpha: number,
+    wx: number,
+    wy: number,
+    ts: number,
+    phase: number,
+  ) {
+    // 플레이어는 28×28 px. 불꽃은 플레이어보다 조금 넓고 위로 길게.
+    const W = 15 * wx;     // 좌우 반폭 (px)
+    const topH = 40 * wy;  // 중심 위로 최대 불꽃 높이
+    const botH = 10 * wy;  // 중심 아래 반타원 높이
+
+    g.fillStyle(color, alpha);
+    g.beginPath();
+
+    // ① 상단 흔들리는 불꽃 엣지: 왼쪽(-W) → 오른쪽(+W)
+    const N = 24;
+    for (let i = 0; i <= N; i++) {
+      const u = i / N;        // 0 → 1
+      const nx = u * 2 - 1;  // -1 → 1 (중앙=0)
+      const x = nx * W;
+
+      // 포물선 envelope: 가장자리에서 0, 중앙에서 1
+      const env = 1.0 - nx * nx;
+
+      // 두 sin 파형을 더해 불규칙한 불꽃 혀 모양 생성
+      const f =
+        Math.sin((now * ts) / 165 + nx * 5.2 + phase) * 8.5 * wy +
+        Math.sin((now * ts) / 95 + nx * 10.8 + phase + 0.7) * 4.0 * wy;
+
+      // y < 0 = 위쪽; envelope이 높이를 조절하고 f가 흔들림을 준다
+      const y = -(topH * env) + f;
+
+      if (i === 0) g.moveTo(x, y);
+      else g.lineTo(x, y);
+    }
+
+    // ② 하단 반타원: 오른쪽(+W,0) → 바닥(0,botH) → 왼쪽(-W,0)
+    const botN = 16;
+    for (let i = 0; i <= botN; i++) {
+      const angle = (i / botN) * Math.PI; // 0 → π
+      const x = Math.cos(angle) * W;
+      const y = Math.sin(angle) * botH;
+      g.lineTo(x, y);
+    }
+
+    g.closePath();
+    g.fillPath();
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
 
   create() {
     getOrCreatePlayerId();
@@ -1874,13 +1978,15 @@ class MainScene extends Phaser.Scene {
         );
         collider.setVisible(this.debugEnabled);
         collider.setStrokeStyle(2, 0xffedd5, 0.95);
-        root.add([shadow, sprite, weaponOverlay, collider]);
+        const burnFlame = this.add.graphics();
+        root.add([shadow, burnFlame, sprite, weaponOverlay, collider]);
         rendered = {
           root,
           shadow,
           sprite,
           weaponOverlay,
           collider,
+          burnFlame,
           label: this.add.text(player.position.x, player.position.y - 28, player.name, {
             fontSize: "12px",
             color: "#f9fafb",
@@ -2588,6 +2694,7 @@ class MainScene extends Phaser.Scene {
     this.pruneDismissedDamageEvents(this.time.now);
     this.updateDeathEchoes(this.time.now);
     this.updateHitParticles(this.time.now);
+    this.updateBurnFlames(this.time.now);
 
     if (this.attackFlashUntil !== 0 && this.time.now > this.attackFlashUntil) {
       this.attackFlash.clear();

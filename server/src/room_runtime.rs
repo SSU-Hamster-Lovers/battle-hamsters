@@ -199,6 +199,8 @@ impl RoomState {
             self.handle_weapon_attack(player_id, now_ms, &mut deaths, &mut dying_this_tick);
         }
 
+        self.tick_burn_effects(now_ms, &mut deaths, &mut dying_this_tick);
+
         for (player_id, cause) in deaths {
             // 점수 추적: killer +1 kill, victim +1 death
             if let DeathCause::Weapon { ref killer_id, .. } = cause {

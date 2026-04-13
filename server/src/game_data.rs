@@ -262,6 +262,14 @@ pub(crate) enum RuntimeWeaponSpecialEffect {
     HealBlock {
         duration_ms: u64,
     },
+    Burn {
+        #[serde(rename = "durationMs")]
+        duration_ms: u64,
+        #[serde(rename = "tickDamage")]
+        tick_damage: u16,
+        #[serde(rename = "tickIntervalMs")]
+        tick_interval_ms: u64,
+    },
 }
 
 pub(crate) fn runtime_map_data() -> &'static RuntimeMapData {
