@@ -145,9 +145,9 @@ const HUD_LEFT_CARD_X = 8;
 const HUD_RIGHT_CARD_X = VIEWPORT_WIDTH - 8 - HUD_CARD_W; // 514
 const HUD_HP_BAR_OFFSET_X = 4;
 const HUD_HP_BAR_W = 12;
-const HUD_FACE_SIZE = 28;
-const HUD_FACE_OFFSET_X = 15;
-const HUD_TEXT_OFFSET_X = 50;
+const HUD_FACE_SIZE = 20;
+const HUD_FACE_OFFSET_X = 13;
+const HUD_TEXT_OFFSET_X = 68;
 const HUD_MAX_HP = 100;
 const HUD_TIMER_PANEL_W = 184;
 const HUD_TIMER_PANEL_H = 56;
@@ -455,8 +455,12 @@ class MainScene extends Phaser.Scene {
   private hudCenterGraphics!: Phaser.GameObjects.Graphics;
   private hudLeftNameText!: Phaser.GameObjects.Text;
   private hudLeftStatText!: Phaser.GameObjects.Text;
+  private hudLeftLifeText!: Phaser.GameObjects.Text;
+  private hudLeftKillText!: Phaser.GameObjects.Text;
   private hudRightNameText!: Phaser.GameObjects.Text;
   private hudRightStatText!: Phaser.GameObjects.Text;
+  private hudRightLifeText!: Phaser.GameObjects.Text;
+  private hudRightKillText!: Phaser.GameObjects.Text;
   private hudLeftWeaponIcon!: Phaser.GameObjects.Image;
   private hudRightWeaponIcon!: Phaser.GameObjects.Image;
   private hudTimerText!: Phaser.GameObjects.Text;
@@ -1019,7 +1023,6 @@ class MainScene extends Phaser.Scene {
           `입장: ${message.payload.name}`,
           "join",
           `join:${message.payload.playerId}:${message.timestamp}`,
-          message.timestamp,
         );
         return;
       }
@@ -1031,7 +1034,6 @@ class MainScene extends Phaser.Scene {
           `퇴장: ${leavingName}`,
           "left",
           `left:${message.payload.playerId}:${message.timestamp}`,
-          message.timestamp,
         );
         this.removeRenderedPlayer(message.payload.playerId);
         this.knownPlayerNames.delete(message.payload.playerId);
@@ -1228,7 +1230,6 @@ class MainScene extends Phaser.Scene {
     label: string,
     kind: "join" | "left",
     id: string,
-    occurredAt: number,
   ) {
     if (this.renderedKillFeed.has(id) || this.dismissedKillFeedIds.has(id)) {
       return;
@@ -1250,7 +1251,7 @@ class MainScene extends Phaser.Scene {
     this.renderedKillFeed.set(id, {
       container,
       cardW: totalW,
-      receivedAt: occurredAt,
+      receivedAt: this.time.now,
       justEntered: true,
       slideInTween: null,
     });
@@ -1427,6 +1428,24 @@ class MainScene extends Phaser.Scene {
       .text(0, 0, "", textStyle)
       .setDepth(textDepth)
       .setScrollFactor(0);
+    this.hudLeftLifeText = this.add
+      .text(0, 0, "", {
+        ...textStyle,
+        fontSize: "10px",
+        color: "#f8e4a2",
+        fontStyle: "bold",
+      })
+      .setDepth(textDepth)
+      .setScrollFactor(0);
+    this.hudLeftKillText = this.add
+      .text(0, 0, "", {
+        ...textStyle,
+        fontSize: "10px",
+        color: "#f7c2a2",
+        fontStyle: "bold",
+      })
+      .setDepth(textDepth)
+      .setScrollFactor(0);
     this.hudLeftWeaponIcon = this.add
       .image(0, 0, getWeaponHudTextureKey("paws"))
       .setDepth(textDepth)
@@ -1440,6 +1459,24 @@ class MainScene extends Phaser.Scene {
       .setScrollFactor(0);
     this.hudRightStatText = this.add
       .text(0, 0, "", textStyle)
+      .setDepth(textDepth)
+      .setScrollFactor(0);
+    this.hudRightLifeText = this.add
+      .text(0, 0, "", {
+        ...textStyle,
+        fontSize: "10px",
+        color: "#f8e4a2",
+        fontStyle: "bold",
+      })
+      .setDepth(textDepth)
+      .setScrollFactor(0);
+    this.hudRightKillText = this.add
+      .text(0, 0, "", {
+        ...textStyle,
+        fontSize: "10px",
+        color: "#f7c2a2",
+        fontStyle: "bold",
+      })
       .setDepth(textDepth)
       .setScrollFactor(0);
     this.hudRightWeaponIcon = this.add
@@ -1480,6 +1517,8 @@ class MainScene extends Phaser.Scene {
       this.hudLeftGraphics,
       this.hudLeftNameText,
       this.hudLeftStatText,
+      this.hudLeftLifeText,
+      this.hudLeftKillText,
       this.hudLeftWeaponIcon,
       HUD_LEFT_CARD_X,
       HUD_BAR_Y + HUD_CARD_PAD_Y,
@@ -1491,6 +1530,8 @@ class MainScene extends Phaser.Scene {
       this.hudRightGraphics,
       this.hudRightNameText,
       this.hudRightStatText,
+      this.hudRightLifeText,
+      this.hudRightKillText,
       this.hudRightWeaponIcon,
       HUD_RIGHT_CARD_X,
       HUD_BAR_Y + HUD_CARD_PAD_Y,
@@ -1587,6 +1628,8 @@ class MainScene extends Phaser.Scene {
     g: Phaser.GameObjects.Graphics,
     nameText: Phaser.GameObjects.Text,
     statText: Phaser.GameObjects.Text,
+    lifeText: Phaser.GameObjects.Text,
+    killText: Phaser.GameObjects.Text,
     weaponIcon: Phaser.GameObjects.Image,
     cardX: number,
     cardY: number,
@@ -1610,12 +1653,16 @@ class MainScene extends Phaser.Scene {
         .setText(isLocal ? "joining..." : "waiting...")
         .setColor("#6f5a48")
         .setVisible(true);
+      lifeText.setVisible(false);
+      killText.setVisible(false);
       weaponIcon.setVisible(false);
       return;
     }
 
     nameText.setVisible(true);
     statText.setVisible(true);
+    lifeText.setVisible(true);
+    killText.setVisible(true);
     weaponIcon.setVisible(true);
 
     // ── 카드 배경 ──
@@ -1626,7 +1673,7 @@ class MainScene extends Phaser.Scene {
     g.fillStyle(0x2a1c14, 0.85);
     g.fillRoundedRect(cardX + 10, cardY + 8, HUD_CARD_W - 20, 18, 6);
     g.fillStyle(0x120c09, 0.42);
-    g.fillRoundedRect(cardX + 56, cardY + 31, HUD_CARD_W - 66, 20, 6);
+    g.fillRoundedRect(cardX + 62, cardY + 31, HUD_CARD_W - 72, 18, 6);
     g.lineStyle(1.5, 0x6b4427, 1);
     g.strokeRoundedRect(cardX, cardY, HUD_CARD_W, HUD_CARD_H, 8);
 
@@ -1675,12 +1722,12 @@ class MainScene extends Phaser.Scene {
 
     // 귀
     g.fillStyle(earColor, 1);
-    g.fillCircle(faceX - 13, faceY - 14, 7);
-    g.fillCircle(faceX + 13, faceY - 14, 7);
+    g.fillCircle(faceX - 8, faceY - 9, 4.4);
+    g.fillCircle(faceX + 8, faceY - 9, 4.4);
     // 귀 안쪽 (핑크)
     g.fillStyle(0xff8fab, 0.55);
-    g.fillCircle(faceX - 13, faceY - 14, 4);
-    g.fillCircle(faceX + 13, faceY - 14, 4);
+    g.fillCircle(faceX - 8, faceY - 9, 2.2);
+    g.fillCircle(faceX + 8, faceY - 9, 2.2);
     // 얼굴 몸
     g.fillStyle(bodyColor, 1);
     g.fillCircle(faceX, faceY, faceR);
@@ -1705,19 +1752,19 @@ class MainScene extends Phaser.Scene {
     g.fillStyle(0xf5c518, 0.95);
     g.fillEllipse(infoBaseX + 6, livesY, 7, 9);
     g.fillStyle(0xe87040, 0.9);
-    g.fillCircle(infoBaseX + 66, killsY, 5);
+    g.fillCircle(infoBaseX + 50, killsY, 5);
     g.lineStyle(1.1, 0x0f0a06, 0.9);
-    g.lineBetween(infoBaseX + 63.4, killsY - 2.2, infoBaseX + 65.4, killsY - 0.4);
-    g.lineBetween(infoBaseX + 65.4, killsY - 2.2, infoBaseX + 63.4, killsY - 0.4);
-    g.lineBetween(infoBaseX + 66.6, killsY - 2.2, infoBaseX + 68.6, killsY - 0.4);
-    g.lineBetween(infoBaseX + 68.6, killsY - 2.2, infoBaseX + 66.6, killsY - 0.4);
+    g.lineBetween(infoBaseX + 47.4, killsY - 2.2, infoBaseX + 49.4, killsY - 0.4);
+    g.lineBetween(infoBaseX + 49.4, killsY - 2.2, infoBaseX + 47.4, killsY - 0.4);
+    g.lineBetween(infoBaseX + 50.6, killsY - 2.2, infoBaseX + 52.6, killsY - 0.4);
+    g.lineBetween(infoBaseX + 52.6, killsY - 2.2, infoBaseX + 50.6, killsY - 0.4);
 
     // ── 텍스트 업데이트 ──
     const nickX = cardX + HUD_TEXT_OFFSET_X + 2;
     const nickY = cardY + 10;
     nameText
       .setPosition(nickX, nickY)
-      .setText(player.name.length > 12 ? `${player.name.slice(0, 12)}…` : player.name)
+      .setText(player.name.length > 8 ? `${player.name.slice(0, 8)}…` : player.name)
       .setColor(isLocal ? "#fde7c7" : "#e8d4bd");
 
     const ammo =
@@ -1729,13 +1776,19 @@ class MainScene extends Phaser.Scene {
     if (this.textures.exists(weaponIconKey)) {
       weaponIcon.setTexture(weaponIconKey);
     }
-    weaponIcon.setPosition(cardX + HUD_CARD_W - 18, cardY + 17).setScale(0.95);
+    weaponIcon.setPosition(cardX + HUD_CARD_W - 16, cardY + 17).setScale(0.82);
     statText
       .setPosition(nickX, nickY + 18)
       .setColor("#cdb498")
-      .setText(
-        `${resolveWeaponAbbrev(player.equippedWeaponId)} [${ammo}]   HP ${player.hp}\n×${player.lives}                     ×${player.kills}`,
-      );
+      .setText(`${resolveWeaponAbbrev(player.equippedWeaponId)} [${ammo}]  HP ${player.hp}`);
+    lifeText
+      .setPosition(infoBaseX + 14, livesY - 7)
+      .setText(String(player.lives))
+      .setColor("#f8e4a2");
+    killText
+      .setPosition(infoBaseX + 58, killsY - 7)
+      .setText(String(player.kills))
+      .setColor("#f7c2a2");
   }
 
   private updateMatchOverlay(
