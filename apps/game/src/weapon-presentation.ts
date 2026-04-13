@@ -22,6 +22,8 @@ export type WeaponEquipPresentation = {
   offsetX: number;
   offsetY: number;
   flipWithDirection: boolean;
+  /** 이미지 센터에서 총구 끝까지의 거리(px). 총구 이펙트 원점 계산에 사용. */
+  muzzleFromCenter: number;
 };
 
 export type WeaponFireStyle =
@@ -88,6 +90,8 @@ export function resolveWeaponEquipPresentation(
       offsetX: 13,
       offsetY: 1,
       flipWithDirection: true,
+      // 텍스처 28px, 이미지 센터 x=14, 총구 끝 x=24 → 총구까지 10px
+      muzzleFromCenter: 10,
     };
   }
 
@@ -96,6 +100,7 @@ export function resolveWeaponEquipPresentation(
     offsetX: 0,
     offsetY: 0,
     flipWithDirection: false,
+    muzzleFromCenter: 0,
   };
 }
 

@@ -481,6 +481,7 @@ class MainScene extends Phaser.Scene {
   private queuedPickupWeapon = false;
   private queuedDropWeapon = false;
   private attackWasDown = false;
+  private latestAim = { x: 1, y: 0 };
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private keys!: {
     w: Phaser.Input.Keyboard.Key;
@@ -1920,7 +1921,12 @@ class MainScene extends Phaser.Scene {
 
       rendered.snapshot = player;
       const isRespawning = player.state === "respawning";
-      this.updateWeaponOverlay(rendered, player, isRespawning);
+      this.updateWeaponOverlay(
+        rendered,
+        player,
+        isRespawning,
+        isLocalPlayer ? this.latestAim : undefined,
+      );
       rendered.root.setVisible(!isRespawning);
       rendered.label.setVisible(!isRespawning);
       rendered.collider.setVisible(this.debugEnabled && !isRespawning);
@@ -2131,20 +2137,42 @@ class MainScene extends Phaser.Scene {
     rendered: RenderedPlayer,
     snapshot: PlayerSnapshot,
     isRespawning: boolean,
+    aim?: { x: number; y: number },
   ) {
     const presentation = resolveWeaponEquipPresentation(snapshot.equippedWeaponId);
     const visible = presentation.textureKey !== null && !isRespawning;
 
     if (presentation.textureKey !== null) {
       rendered.weaponOverlay.setTexture(presentation.textureKey);
+
+      const dir = snapshot.direction;
+      const effectiveAim =
+        aim ?? (dir === "left" ? { x: -1, y: 0 } : { x: 1, y: 0 });
+
+      // anchorY 보간: 위 조준 시 총구가 올라가고, 아래 조준 시 내려간다
+      const anchorYOffset = effectiveAim.y * 8;
+      // 수직 조준일수록 X를 몸통 방향으로 당겨 공중부양처럼 보이지 않게 한다
+      const xPull = Math.abs(effectiveAim.y) * 3;
+
+      const xSign = dir === "left" ? -1 : 1;
       rendered.weaponOverlay.setPosition(
-        snapshot.direction === "left"
-          ? -presentation.offsetX
-          : presentation.offsetX,
-        presentation.offsetY,
+        xSign * Math.max(0, presentation.offsetX - xPull),
+        presentation.offsetY + anchorYOffset,
       );
+
+      // rotation: Phaser transform 순서 = Scale(flipX) → Rotate → Translate
+      // right-facing: 배럴 팁 (+6,0) → Rotate(a) → (6cosA, 6sinA) = aim
+      //   → a = atan2(aim.y, aim.x)
+      // left-facing : 배럴 팁 (+6,0) → flipX → (-6,0) → Rotate(a) → (-6cosA, -6sinA) = aim
+      //   → cosA = -aim.x, sinA = -aim.y → a = atan2(-aim.y, -aim.x)
+      const angle =
+        dir === "left"
+          ? Math.atan2(-effectiveAim.y, -effectiveAim.x)
+          : Math.atan2(effectiveAim.y, effectiveAim.x);
+      rendered.weaponOverlay.setRotation(angle);
+
       rendered.weaponOverlay.setFlipX(
-        presentation.flipWithDirection && snapshot.direction === "left",
+        presentation.flipWithDirection && dir === "left",
       );
     }
 
@@ -2381,6 +2409,7 @@ class MainScene extends Phaser.Scene {
     const aimY = pointer.worldY - originY;
     const aimLength = Math.hypot(aimX, aimY) || 1;
     const aim = { x: aimX / aimLength, y: aimY / aimLength };
+    this.latestAim = aim;
 
     const moveX =
       Number(this.cursors.right.isDown || this.keys.d.isDown) -
@@ -2390,13 +2419,30 @@ class MainScene extends Phaser.Scene {
     const attackPressed =
       this.queuedClickAttack || (attackHeld && !this.attackWasDown);
     if (attackPressed) {
-      this.showAttackFlash(
-        localPlayer?.snapshot.equippedWeaponId ?? "paws",
-        originX,
-        originY,
-        aim.x,
-        aim.y,
-      );
+      const equippedId = localPlayer?.snapshot.equippedWeaponId ?? "paws";
+      const pres = resolveWeaponEquipPresentation(equippedId);
+      let muzzleWorldX: number;
+      let muzzleWorldY: number;
+
+      if (pres.textureKey !== null && localPlayer) {
+        // updateWeaponOverlay 와 동일한 수식으로 총구 세계 좌표를 역산한다.
+        // 증명: 이미지 센터에서 총구까지의 벡터는 회전/flip 후 항상 aim * muzzleFromCenter 이므로
+        //   muzzle_world = player + weapon_center_offset + muzzleFromCenter * aim
+        const dir = localPlayer.snapshot.direction;
+        const xSign = dir === "left" ? -1 : 1;
+        const xPull = Math.abs(aim.y) * 3;
+        const anchorYOffset = aim.y * 8;
+        const weaponCenterX = xSign * Math.max(0, pres.offsetX - xPull);
+        const weaponCenterY = pres.offsetY + anchorYOffset;
+        muzzleWorldX = originX + weaponCenterX + pres.muzzleFromCenter * aim.x;
+        muzzleWorldY = originY + weaponCenterY + pres.muzzleFromCenter * aim.y;
+      } else {
+        // overlay 없는 무기(paws 등)는 캐릭터 중심 기준 고정 오프셋
+        muzzleWorldX = originX + aim.x * 15;
+        muzzleWorldY = originY + aim.y * 15;
+      }
+
+      this.showAttackFlash(equippedId, muzzleWorldX, muzzleWorldY, aim.x, aim.y);
     }
     this.attackWasDown = attackHeld;
     const pickupWeaponPressed =
@@ -2429,15 +2475,13 @@ class MainScene extends Phaser.Scene {
 
   private showAttackFlash(
     weaponId: string,
-    originX: number,
-    originY: number,
+    muzzleX: number,
+    muzzleY: number,
     aimX: number,
     aimY: number,
   ) {
     this.attackFlash.clear();
     const fireStyle = resolveWeaponFireStyle(weaponId);
-    const muzzleX = originX + aimX * 15;
-    const muzzleY = originY + aimY * 15;
 
     if (fireStyle === "muzzle_flash") {
       const tracerEndX = muzzleX + aimX * 62;
@@ -2473,14 +2517,14 @@ class MainScene extends Phaser.Scene {
       const nearHW = 6;
       const farHW = 24;
 
-      const p1x = originX + aimX * nearDist + perpX * nearHW;
-      const p1y = originY + aimY * nearDist + perpY * nearHW;
-      const p2x = originX + aimX * nearDist - perpX * nearHW;
-      const p2y = originY + aimY * nearDist - perpY * nearHW;
-      const p3x = originX + aimX * farDist - perpX * farHW;
-      const p3y = originY + aimY * farDist - perpY * farHW;
-      const p4x = originX + aimX * farDist + perpX * farHW;
-      const p4y = originY + aimY * farDist + perpY * farHW;
+      const p1x = muzzleX + aimX * nearDist + perpX * nearHW;
+      const p1y = muzzleY + aimY * nearDist + perpY * nearHW;
+      const p2x = muzzleX + aimX * nearDist - perpX * nearHW;
+      const p2y = muzzleY + aimY * nearDist - perpY * nearHW;
+      const p3x = muzzleX + aimX * farDist - perpX * farHW;
+      const p3y = muzzleY + aimY * farDist - perpY * farHW;
+      const p4x = muzzleX + aimX * farDist + perpX * farHW;
+      const p4y = muzzleY + aimY * farDist + perpY * farHW;
 
       this.attackFlash.fillStyle(0xfb923c, 0.72);
       this.attackFlash.fillPoints(
@@ -2508,13 +2552,13 @@ class MainScene extends Phaser.Scene {
 
     this.attackFlash.lineStyle(3, 0xfef08a, 0.95);
     this.attackFlash.lineBetween(
-      originX,
-      originY,
-      originX + aimX * 46,
-      originY + aimY * 46,
+      muzzleX,
+      muzzleY,
+      muzzleX + aimX * 46,
+      muzzleY + aimY * 46,
     );
     this.attackFlash.fillStyle(0xfef08a, 0.9);
-    this.attackFlash.fillCircle(originX + aimX * 20, originY + aimY * 20, 3);
+    this.attackFlash.fillCircle(muzzleX + aimX * 20, muzzleY + aimY * 20, 3);
     this.attackFlashUntil = this.time.now + 80;
   }
 
