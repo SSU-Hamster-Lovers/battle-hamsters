@@ -24,6 +24,7 @@ import type {
   HazardZone,
   JoinRoomMessage,
   KillFeedEntry,
+  PingMessage,
   PlayerInputMessage,
   PlayerSnapshot,
   SpawnPoint,
@@ -137,22 +138,24 @@ const KILL_FEED_EXIT_RISE = 12;
 // HUD 하단 바
 const HUD_BAR_HEIGHT = 88;
 const HUD_BAR_Y = VIEWPORT_HEIGHT - HUD_BAR_HEIGHT; // 512
-const HUD_CARD_W = 278;
+const HUD_CARD_W = 184;
 const HUD_CARD_H = 80;
 const HUD_CARD_PAD_Y = 4;
 const HUD_LEFT_CARD_X = 8;
 const HUD_RIGHT_CARD_X = VIEWPORT_WIDTH - 8 - HUD_CARD_W; // 514
 const HUD_HP_BAR_OFFSET_X = 4;
 const HUD_HP_BAR_W = 12;
-const HUD_FACE_SIZE = 36;
-const HUD_FACE_OFFSET_X = 20;
-const HUD_TEXT_OFFSET_X = 64;
+const HUD_FACE_SIZE = 28;
+const HUD_FACE_OFFSET_X = 15;
+const HUD_TEXT_OFFSET_X = 50;
 const HUD_MAX_HP = 100;
 const HUD_TIMER_PANEL_W = 184;
 const HUD_TIMER_PANEL_H = 56;
 const HUD_TIMER_FREE_PLAY_THRESHOLD_MS = 99 * 60 * 60 * 1000;
+const HUD_RECENT_TARGET_TTL_MS = 6_000;
 const KILL_FEED_SLIDE_IN_MS = 200;
 const DAMAGE_EVENT_DISMISSED_RETENTION_MS = 1_200;
+const NETWORK_PING_INTERVAL_MS = 2_000;
 
 const COLLISION_PRIMITIVES: CollisionPrimitive[] = MAP_DEFINITION.collision;
 const HAZARDS: HazardZone[] = MAP_DEFINITION.hazards;
@@ -213,6 +216,8 @@ type RenderedWeaponPickup = {
   detailText: Phaser.GameObjects.Text;
   targetX: number;
   targetY: number;
+  spawnedAt: number;
+  despawnAt: number | null;
 };
 
 type RenderedItemPickup = {
@@ -220,6 +225,8 @@ type RenderedItemPickup = {
   label: Phaser.GameObjects.Text;
   targetX: number;
   targetY: number;
+  spawnedAt: number;
+  despawnAt: number | null;
 };
 
 type VisibilityControlledObject =
@@ -413,11 +420,13 @@ function killFeedColorForCause(kind: KillFeedEntry["cause"]["kind"]): string {
   }
 }
 
+function notificationColor(kind: "join" | "left"): string {
+  return kind === "join" ? "#86efac" : "#fca5a5";
+}
+
 class MainScene extends Phaser.Scene {
   private socket: WebSocket | null = null;
-  private statusText!: Phaser.GameObjects.Text;
-  private infoText!: Phaser.GameObjects.Text;
-  private connectionText!: Phaser.GameObjects.Text;
+  private networkStatusText!: Phaser.GameObjects.Text;
   private attackFlash!: Phaser.GameObjects.Graphics;
   private attackFlashUntil = 0;
   private matchOverlayBg!: Phaser.GameObjects.Rectangle;
@@ -456,12 +465,17 @@ class MainScene extends Phaser.Scene {
   private dismissedDamageEventIds = new Map<string, number>();
   private playerName = getOrCreatePlayerName();
   // 미래 계정 연동용 — 현재는 로컬 저장만 하고 서버에 아직 전달하지 않음
-  private readonly _playerId = getOrCreatePlayerId();
   private readonly debugAccess = resolveOpsAccess();
   private debugEnabled = resolveInitialDebugVisible(this.debugAccess);
   private localPlayerId: string | null = null;
-  private latestTick = 0;
   private sequence = 0;
+  private latestPingMs: number | null = null;
+  private networkState: "connecting" | "joining" | "online" | "offline" | "error" = "connecting";
+  private pendingPingNonce: string | null = null;
+  private pendingPingSentAt: number | null = null;
+  private knownPlayerNames = new Map<string, string>();
+  private recentAttackTargetId: string | null = null;
+  private recentAttackAt = 0;
   private queuedClickAttack = false;
   private queuedPickupWeapon = false;
   private queuedDropWeapon = false;
@@ -639,6 +653,7 @@ class MainScene extends Phaser.Scene {
   }
 
   create() {
+    getOrCreatePlayerId();
     this.cameras.main.setBackgroundColor("#111827");
     ensureHamsterPlaceholderTextures(this);
     ensureWeaponPickupTextures(this);
@@ -646,33 +661,16 @@ class MainScene extends Phaser.Scene {
     this.drawStage();
     this.setDebugVisible(this.debugEnabled);
 
-    this.statusText = this.add
-      .text(24, 20, "Battle Hamsters", {
-        fontSize: "28px",
-        color: "#f9fafb",
-      })
-      .setDepth(10)
-      .setScrollFactor(0);
-
-    this.connectionText = this.add
-      .text(24, 58, `Connecting to ${WS_URL}`, {
-        fontSize: "16px",
+    this.networkStatusText = this.add
+      .text(16, 12, "WS connecting", {
+        fontSize: "11px",
         color: "#93c5fd",
+        backgroundColor: "#00000066",
+        padding: { left: 5, right: 5, top: 2, bottom: 2 },
       })
       .setDepth(10)
       .setScrollFactor(0);
-
-    this.infoText = this.add
-      .text(24, 88, "", {
-        fontSize: "13px",
-        color: "#9ca3af",
-        lineSpacing: 5,
-        backgroundColor: "#00000066",
-        padding: { left: 6, right: 6, top: 4, bottom: 4 },
-      })
-      .setDepth(10)
-      .setScrollFactor(0)
-      .setVisible(false); // debug 모드에서만 표시
+    this.refreshNetworkStatusText();
 
     this.attackFlash = this.add.graphics().setDepth(9);
 
@@ -743,6 +741,11 @@ class MainScene extends Phaser.Scene {
       delay: INPUT_SEND_INTERVAL_MS,
       loop: true,
       callback: () => this.sendLatestInput(),
+    });
+    this.time.addEvent({
+      delay: NETWORK_PING_INTERVAL_MS,
+      loop: true,
+      callback: () => this.sendPing(),
     });
 
     this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -950,12 +953,12 @@ class MainScene extends Phaser.Scene {
 
   private connect() {
     this.socket = new WebSocket(WS_URL);
+    this.networkState = "connecting";
+    this.refreshNetworkStatusText();
 
     this.socket.addEventListener("open", () => {
-      this.connectionText.setText(
-        `Connected as ${this.playerName} [${this._playerId.slice(0, 8)}]`,
-      );
-      this.connectionText.setColor("#86efac");
+      this.networkState = "joining";
+      this.refreshNetworkStatusText();
       this.send({
         type: "join_room",
         timestamp: Date.now(),
@@ -964,6 +967,7 @@ class MainScene extends Phaser.Scene {
           playerName: this.playerName,
         },
       } satisfies JoinRoomMessage);
+      this.sendPing();
     });
 
     this.socket.addEventListener("message", (event) => {
@@ -972,10 +976,8 @@ class MainScene extends Phaser.Scene {
     });
 
     this.socket.addEventListener("close", () => {
-      this.connectionText.setText(
-        "Disconnected from server. Retrying in 2s...",
-      );
-      this.connectionText.setColor("#fca5a5");
+      this.networkState = "offline";
+      this.refreshNetworkStatusText();
       this.localPlayerId = null;
       this.clearRenderedPlayers();
       this.clearRenderedWeaponPickups();
@@ -991,18 +993,16 @@ class MainScene extends Phaser.Scene {
     });
 
     this.socket.addEventListener("error", () => {
-      this.connectionText.setText("WebSocket error. Check the Rust server.");
-      this.connectionText.setColor("#fca5a5");
+      this.networkState = "error";
+      this.refreshNetworkStatusText();
     });
   }
 
   private handleServerMessage(message: ServerToClientMessage) {
     switch (message.type) {
       case "welcome": {
-        this.connectionText.setText(
-          `Connected (${message.payload.connectionId}) / waiting for room join...`,
-        );
-        this.connectionText.setColor("#86efac");
+        this.networkState = "online";
+        this.refreshNetworkStatusText();
         return;
       }
       case "room_snapshot": {
@@ -1014,22 +1014,46 @@ class MainScene extends Phaser.Scene {
         return;
       }
       case "player_joined": {
-        this.connectionText.setText(`Player joined: ${message.payload.name}`);
-        this.connectionText.setColor("#93c5fd");
+        this.knownPlayerNames.set(message.payload.playerId, message.payload.name);
+        this.pushSystemNotification(
+          `입장: ${message.payload.name}`,
+          "join",
+          `join:${message.payload.playerId}:${message.timestamp}`,
+          message.timestamp,
+        );
         return;
       }
       case "player_left": {
+        const leavingName =
+          this.knownPlayerNames.get(message.payload.playerId) ??
+          message.payload.playerId.slice(0, 8);
+        this.pushSystemNotification(
+          `퇴장: ${leavingName}`,
+          "left",
+          `left:${message.payload.playerId}:${message.timestamp}`,
+          message.timestamp,
+        );
         this.removeRenderedPlayer(message.payload.playerId);
-        this.connectionText.setText(`Player left: ${message.payload.playerId}`);
-        this.connectionText.setColor("#fca5a5");
+        this.knownPlayerNames.delete(message.payload.playerId);
         return;
       }
       case "pong": {
+        if (
+          this.pendingPingNonce !== null &&
+          this.pendingPingSentAt !== null &&
+          message.payload.nonce === this.pendingPingNonce
+        ) {
+          this.latestPingMs = Math.max(0, Date.now() - this.pendingPingSentAt);
+          this.pendingPingNonce = null;
+          this.pendingPingSentAt = null;
+          this.networkState = "online";
+          this.refreshNetworkStatusText();
+        }
         return;
       }
       case "error": {
-        this.connectionText.setText(`Server error: ${message.payload.code}`);
-        this.connectionText.setColor("#fca5a5");
+        this.networkState = "error";
+        this.refreshNetworkStatusText(message.payload.code);
       }
     }
   }
@@ -1038,6 +1062,8 @@ class MainScene extends Phaser.Scene {
     if (message.payload.selfPlayerId) {
       this.localPlayerId = message.payload.selfPlayerId;
     }
+    this.cachePlayerNames(message.payload.players);
+    this.captureRecentAttackTarget(message.payload.damageEvents);
     const damageEventMap = this.buildDamageEventMap(message.payload.damageEvents);
     this.renderPlayers(message.payload.players, damageEventMap);
     this.renderWeaponPickups(message.payload.weaponPickups);
@@ -1049,7 +1075,8 @@ class MainScene extends Phaser.Scene {
   }
 
   private applyWorldSnapshot(message: WorldSnapshotMessage) {
-    this.latestTick = message.payload.serverTick;
+    this.cachePlayerNames(message.payload.players);
+    this.captureRecentAttackTarget(message.payload.damageEvents);
     const damageEventMap = this.buildDamageEventMap(message.payload.damageEvents);
     this.renderPlayers(message.payload.players, damageEventMap);
     this.renderWeaponPickups(message.payload.weaponPickups);
@@ -1063,6 +1090,25 @@ class MainScene extends Phaser.Scene {
       message.payload.timeRemainingMs,
       message.payload.countdownMs ?? null,
     );
+  }
+
+  private cachePlayerNames(players: PlayerSnapshot[]) {
+    for (const player of players) {
+      this.knownPlayerNames.set(player.id, player.name);
+    }
+  }
+
+  private captureRecentAttackTarget(events: DamageAppliedEvent[]) {
+    if (!this.localPlayerId) {
+      return;
+    }
+    for (const event of events) {
+      if (event.attackerId !== this.localPlayerId || event.victimId === this.localPlayerId) {
+        continue;
+      }
+      this.recentAttackTargetId = event.victimId;
+      this.recentAttackAt = this.time.now;
+    }
   }
 
   private buildDamageEventMap(
@@ -1178,6 +1224,39 @@ class MainScene extends Phaser.Scene {
     this.layoutKillFeed();
   }
 
+  private pushSystemNotification(
+    label: string,
+    kind: "join" | "left",
+    id: string,
+    occurredAt: number,
+  ) {
+    if (this.renderedKillFeed.has(id) || this.dismissedKillFeedIds.has(id)) {
+      return;
+    }
+    const pad = { x: 8, y: 4 };
+    const accentColor = notificationColor(kind);
+    const depth = 12;
+    const container = this.add.container(0, 0).setDepth(depth).setScrollFactor(0).setAlpha(0);
+    const labelText = this.add.text(pad.x + 18, pad.y, label, {
+      fontSize: "13px",
+      color: accentColor,
+    });
+    const icon = this.add.circle(pad.x + 8, KILL_FEED_CARD_H / 2, 4, kind === "join" ? 0x22c55e : 0xef4444, 0.95);
+    const totalW = labelText.width + pad.x * 2 + 18;
+    const bg = this.add.rectangle(0, 0, totalW, KILL_FEED_CARD_H, 0x0b1220, 0.85);
+    bg.setOrigin(0, 0);
+    bg.setStrokeStyle(1, 0x334155, 0.6);
+    container.add([bg, icon, labelText]);
+    this.renderedKillFeed.set(id, {
+      container,
+      cardW: totalW,
+      receivedAt: occurredAt,
+      justEntered: true,
+      slideInTween: null,
+    });
+    this.layoutKillFeed();
+  }
+
   private pruneKillFeed(now: number) {
     let removed = false;
     for (const [id, rendered] of this.renderedKillFeed) {
@@ -1288,18 +1367,6 @@ class MainScene extends Phaser.Scene {
     timeRemainingMs: number | null,
     countdownMs: number | null,
   ) {
-    if (this.debugEnabled) {
-      const localPlayer = players.find((p) => p.id === this.localPlayerId);
-      this.infoText.setVisible(true).setText([
-        `room: ${ROOM_ID}  players: ${players.length}  match: ${matchState}`,
-        `hp: ${localPlayer?.hp ?? 0}  kills: ${localPlayer?.kills ?? 0}  deaths: ${localPlayer?.deaths ?? 0}`,
-        `weapon: ${localPlayer ? (weaponDefinitionById[localPlayer.equippedWeaponId]?.name ?? localPlayer.equippedWeaponId) : "?"}  ammo: ${localPlayer?.equippedWeaponResource ?? "∞"}`,
-        `lives: ${localPlayer?.lives ?? 0}  time: ${timeRemainingMs === null ? "∞" : `${Math.ceil(timeRemainingMs / 1000)}s`}`,
-      ]);
-    } else {
-      this.infoText.setVisible(false);
-    }
-
     this.updateHud(players, timeRemainingMs);
     this.updateMatchOverlay(players, matchState, countdownMs);
   }
@@ -1407,12 +1474,7 @@ class MainScene extends Phaser.Scene {
     timeRemainingMs: number | null,
   ) {
     const localPlayer = players.find((p) => p.id === this.localPlayerId) ?? null;
-
-    // 상대: 로컬이 아닌 플레이어 중 킬 최다
-    const opponent =
-      players
-        .filter((p) => p.id !== this.localPlayerId)
-        .sort((a, b) => b.kills - a.kills)[0] ?? null;
+    const opponent = this.selectHudOpponent(players, timeRemainingMs);
 
     this.drawPlayerCard(
       this.hudLeftGraphics,
@@ -1437,6 +1499,31 @@ class MainScene extends Phaser.Scene {
     );
 
     this.updateHudTimer(timeRemainingMs);
+  }
+
+  private selectHudOpponent(
+    players: PlayerSnapshot[],
+    timeRemainingMs: number | null,
+  ): PlayerSnapshot | null {
+    const opponents = players.filter((p) => p.id !== this.localPlayerId);
+    if (opponents.length === 0) {
+      return null;
+    }
+
+    const isFreePlay =
+      timeRemainingMs === null || timeRemainingMs >= HUD_TIMER_FREE_PLAY_THRESHOLD_MS;
+    if (
+      isFreePlay &&
+      this.recentAttackTargetId !== null &&
+      this.time.now - this.recentAttackAt <= HUD_RECENT_TARGET_TTL_MS
+    ) {
+      const recentTarget = opponents.find((p) => p.id === this.recentAttackTargetId);
+      if (recentTarget) {
+        return recentTarget;
+      }
+    }
+
+    return opponents.sort((a, b) => b.kills - a.kills || a.deaths - b.deaths)[0] ?? null;
   }
 
   private updateHudTimer(timeRemainingMs: number | null) {
@@ -1509,19 +1596,18 @@ class MainScene extends Phaser.Scene {
     g.clear();
 
     if (!player) {
-      // 빈 카드 — 점선 테두리만
       g.fillStyle(0x120c09, 0.48);
       g.fillRoundedRect(cardX, cardY, HUD_CARD_W, HUD_CARD_H, 8);
       g.lineStyle(1, 0x5c3d1e, 0.28);
       g.strokeRoundedRect(cardX, cardY, HUD_CARD_W, HUD_CARD_H, 6);
       nameText
-        .setPosition(cardX + 16, cardY + 16)
-        .setText(isLocal ? "PLAYER SLOT OFFLINE" : "WAITING FOR RIVAL")
+        .setPosition(cardX + 14, cardY + 18)
+        .setText(isLocal ? "YOU" : "RIVAL")
         .setColor("#7d6651")
         .setVisible(true);
       statText
-        .setPosition(cardX + 16, cardY + 36)
-        .setText(isLocal ? "입장 중..." : "상대 플레이어가 아직 없습니다")
+        .setPosition(cardX + 14, cardY + 40)
+        .setText(isLocal ? "joining..." : "waiting...")
         .setColor("#6f5a48")
         .setVisible(true);
       weaponIcon.setVisible(false);
@@ -1538,13 +1624,11 @@ class MainScene extends Phaser.Scene {
     g.fillStyle(isLocal ? 0x8c5a30 : 0x56463c, 0.9);
     g.fillRoundedRect(cardX + 1, cardY + 1, 8, HUD_CARD_H - 2, 6);
     g.fillStyle(0x2a1c14, 0.85);
-    g.fillRoundedRect(cardX + 10, cardY + 8, HUD_CARD_W - 20, 20, 6);
+    g.fillRoundedRect(cardX + 10, cardY + 8, HUD_CARD_W - 20, 18, 6);
     g.fillStyle(0x120c09, 0.42);
-    g.fillRoundedRect(cardX + 60, cardY + 34, HUD_CARD_W - 72, 28, 6);
+    g.fillRoundedRect(cardX + 56, cardY + 31, HUD_CARD_W - 66, 20, 6);
     g.lineStyle(1.5, 0x6b4427, 1);
     g.strokeRoundedRect(cardX, cardY, HUD_CARD_W, HUD_CARD_H, 8);
-    g.lineStyle(1, 0x342118, 0.85);
-    g.lineBetween(cardX + 60, cardY + 66, cardX + HUD_CARD_W - 12, cardY + 66);
 
     // ── HP 바 (수직) ──
     const hpBarX = cardX + HUD_HP_BAR_OFFSET_X;
@@ -1615,78 +1699,43 @@ class MainScene extends Phaser.Scene {
     g.lineStyle(1, 0x5c3d1e, 0.5);
     g.strokeCircle(faceX, faceY, faceR);
 
-    const infoBaseX = cardX + HUD_TEXT_OFFSET_X + 6;
-    const livesLabelY = cardY + 51;
-    const killsLabelY = cardY + 68;
-    const maxSeedDisplay = 4;
-    const seedCount = Math.min(player.lives, maxSeedDisplay);
-    const seedSpacing = 10;
-    g.fillStyle(0xb08a5c, 1);
-    for (let i = 0; i < seedCount; i++) {
-      const seedX = infoBaseX + 34 + i * seedSpacing;
-      g.fillStyle(0xf5c518, 0.95);
-      g.fillEllipse(seedX, livesLabelY, 6, 8);
-    }
-    if (player.lives > maxSeedDisplay) {
-      g.fillStyle(0xd6c0a4, 1);
-      g.fillCircle(infoBaseX + 34 + maxSeedDisplay * seedSpacing + 4, livesLabelY, 1.5);
-    }
-
-    const maxSkullDisplay = 5;
-    const visibleKills = Math.min(player.kills, maxSkullDisplay);
-    const skullR = 4.5;
-    const skullGap = 11;
-    for (let i = 0; i < visibleKills; i++) {
-      const skX = infoBaseX + 34 + i * skullGap;
-      const skY = killsLabelY;
-      g.fillStyle(0xe87040, 0.9);
-      g.fillCircle(skX, skY, skullR);
-      g.lineStyle(1.1, 0x0f0a06, 0.9);
-      g.lineBetween(skX - 2.6, skY - 2.2, skX - 0.6, skY - 0.4);
-      g.lineBetween(skX - 0.6, skY - 2.2, skX - 2.6, skY - 0.4);
-      g.lineBetween(skX + 0.6, skY - 2.2, skX + 2.6, skY - 0.4);
-      g.lineBetween(skX + 2.6, skY - 2.2, skX + 0.6, skY - 0.4);
-    }
-    if (player.kills > maxSkullDisplay) {
-      g.fillStyle(0xd6c0a4, 1);
-      g.fillCircle(infoBaseX + 34 + maxSkullDisplay * skullGap + 4, killsLabelY, 1.5);
-    }
+    const infoBaseX = cardX + HUD_TEXT_OFFSET_X + 2;
+    const livesY = cardY + 59;
+    const killsY = cardY + 59;
+    g.fillStyle(0xf5c518, 0.95);
+    g.fillEllipse(infoBaseX + 6, livesY, 7, 9);
+    g.fillStyle(0xe87040, 0.9);
+    g.fillCircle(infoBaseX + 66, killsY, 5);
+    g.lineStyle(1.1, 0x0f0a06, 0.9);
+    g.lineBetween(infoBaseX + 63.4, killsY - 2.2, infoBaseX + 65.4, killsY - 0.4);
+    g.lineBetween(infoBaseX + 65.4, killsY - 2.2, infoBaseX + 63.4, killsY - 0.4);
+    g.lineBetween(infoBaseX + 66.6, killsY - 2.2, infoBaseX + 68.6, killsY - 0.4);
+    g.lineBetween(infoBaseX + 68.6, killsY - 2.2, infoBaseX + 66.6, killsY - 0.4);
 
     // ── 텍스트 업데이트 ──
-    const nickX = cardX + HUD_TEXT_OFFSET_X + 6;
-    const nickY = cardY + 11;
+    const nickX = cardX + HUD_TEXT_OFFSET_X + 2;
+    const nickY = cardY + 10;
     nameText
       .setPosition(nickX, nickY)
-      .setText(`${isLocal ? "YOU" : "TOP"}  ${player.name}`)
+      .setText(player.name.length > 12 ? `${player.name.slice(0, 12)}…` : player.name)
       .setColor(isLocal ? "#fde7c7" : "#e8d4bd");
 
-    const weaponName =
-      weaponDefinitionById[player.equippedWeaponId]?.name ??
-      player.equippedWeaponId;
     const ammo =
       player.equippedWeaponResource !== null &&
       player.equippedWeaponResource !== undefined
         ? String(player.equippedWeaponResource)
         : "∞";
-    const livesExtra = player.lives > maxSeedDisplay ? ` +${player.lives - maxSeedDisplay}` : "";
-    const killsExtra = player.kills > maxSkullDisplay ? ` +${player.kills - maxSkullDisplay}` : "";
     const weaponIconKey = getWeaponHudTextureKey(player.equippedWeaponId);
     if (this.textures.exists(weaponIconKey)) {
       weaponIcon.setTexture(weaponIconKey);
     }
-    weaponIcon.setPosition(cardX + HUD_CARD_W - 24, cardY + 18);
+    weaponIcon.setPosition(cardX + HUD_CARD_W - 18, cardY + 17).setScale(0.95);
     statText
-      .setPosition(nickX, nickY + 20)
+      .setPosition(nickX, nickY + 18)
       .setColor("#cdb498")
       .setText(
-        `${weaponName} [${ammo}]\nHP ${player.hp}   LIFE ${player.lives}${livesExtra}   KILL ${player.kills}${killsExtra}`,
+        `${resolveWeaponAbbrev(player.equippedWeaponId)} [${ammo}]   HP ${player.hp}\n×${player.lives}                     ×${player.kills}`,
       );
-
-    // Graphics로 텍스트를 직접 그릴 수 없으므로 기존 statText에 수치 요약을 두고,
-    // 아래 탭은 LIFE / KILL 구간을 나누는 시각 구분선 역할만 한다.
-    g.fillStyle(0x352319, 0.9);
-    g.fillRoundedRect(infoBaseX - 2, livesLabelY - 7, 28, 10, 4);
-    g.fillRoundedRect(infoBaseX - 2, killsLabelY - 7, 28, 10, 4);
   }
 
   private updateMatchOverlay(
@@ -2133,12 +2182,16 @@ class MainScene extends Phaser.Scene {
           detailText,
           targetX: pickup.position.x,
           targetY: pickup.position.y,
+          spawnedAt: pickup.spawnedAt,
+          despawnAt: pickup.despawnAt ?? null,
         };
         this.renderedWeaponPickups.set(pickup.id, rendered);
       }
 
       rendered.targetX = pickup.position.x;
       rendered.targetY = pickup.position.y;
+      rendered.spawnedAt = pickup.spawnedAt;
+      rendered.despawnAt = pickup.despawnAt ?? null;
       if (
         shouldSnapToTarget(
           rendered.root.x,
@@ -2204,6 +2257,8 @@ class MainScene extends Phaser.Scene {
           ),
           targetX: pickup.position.x,
           targetY: pickup.position.y,
+          spawnedAt: pickup.spawnedAt,
+          despawnAt: pickup.despawnAt ?? null,
         };
         rendered.body.setStrokeStyle(2, strokeColor, 0.95);
         rendered.body.setAngle(45);
@@ -2221,6 +2276,8 @@ class MainScene extends Phaser.Scene {
       );
       rendered.targetX = pickup.position.x;
       rendered.targetY = pickup.position.y;
+      rendered.spawnedAt = pickup.spawnedAt;
+      rendered.despawnAt = pickup.despawnAt ?? null;
       if (
         shouldSnapToTarget(
           rendered.body.x,
@@ -2400,7 +2457,7 @@ class MainScene extends Phaser.Scene {
     this.attackFlashUntil = this.time.now + 80;
   }
 
-  private send(message: JoinRoomMessage | PlayerInputMessage) {
+  private send(message: JoinRoomMessage | PlayerInputMessage | PingMessage) {
     this.socket?.send(JSON.stringify(message));
   }
 
@@ -2445,20 +2502,76 @@ class MainScene extends Phaser.Scene {
         rendered.targetY,
         PICKUP_LERP,
       );
+      rendered.root.setAlpha(this.resolvePickupBlinkAlpha(rendered.spawnedAt, rendered.despawnAt));
     }
 
     for (const [, rendered] of this.renderedItemPickups) {
       rendered.body.x = Phaser.Math.Linear(rendered.body.x, rendered.targetX, PICKUP_LERP);
       rendered.body.y = Phaser.Math.Linear(rendered.body.y, rendered.targetY, PICKUP_LERP);
+      const alpha = this.resolvePickupBlinkAlpha(rendered.spawnedAt, rendered.despawnAt);
+      rendered.body.setAlpha(alpha);
+      rendered.label.setAlpha(alpha);
       rendered.label.setPosition(
         rendered.body.x - rendered.label.width / 2,
         rendered.body.y - 20,
       );
     }
+  }
 
-    this.statusText.setText(
-      `Battle Hamsters  |  server tick ${this.latestTick}  |  room ${ROOM_ID}${this.debugEnabled ? "  |  DEBUG" : ""}`,
-    );
+  private sendPing() {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    this.pendingPingNonce = nonce;
+    this.pendingPingSentAt = Date.now();
+    this.send({
+      type: "ping",
+      timestamp: Date.now(),
+      payload: { nonce },
+    } satisfies PingMessage);
+  }
+
+  private refreshNetworkStatusText(errorCode?: string) {
+    let label = "WS connecting";
+    let color = "#93c5fd";
+    if (this.networkState === "joining") {
+      label = "WS joining";
+    } else if (this.networkState === "online") {
+      label = this.latestPingMs !== null ? `WS ${this.latestPingMs}ms` : "WS online";
+      color = this.latestPingMs !== null && this.latestPingMs >= 180 ? "#fca5a5" : "#86efac";
+    } else if (this.networkState === "offline") {
+      label = "WS offline";
+      color = "#fca5a5";
+    } else if (this.networkState === "error") {
+      label = errorCode ? `WS error ${errorCode}` : "WS error";
+      color = "#fca5a5";
+    }
+    this.networkStatusText.setText(label).setColor(color);
+  }
+
+  private resolvePickupBlinkAlpha(spawnedAt: number, despawnAt: number | null): number {
+    if (despawnAt === null || despawnAt <= spawnedAt) {
+      return 1;
+    }
+    const total = despawnAt - spawnedAt;
+    const remaining = despawnAt - this.time.now;
+    if (remaining <= 0) {
+      return 0.22;
+    }
+    const ratio = remaining / total;
+    if (ratio > 0.35) {
+      return 1;
+    }
+
+    let period = 220;
+    if (ratio <= 0.08) {
+      period = 70;
+    } else if (ratio <= 0.18) {
+      period = 140;
+    }
+    const phase = Math.floor(remaining / period) % 2 === 0;
+    return phase ? 1 : 0.22;
   }
 
   private pruneDismissedDamageEvents(now: number) {
