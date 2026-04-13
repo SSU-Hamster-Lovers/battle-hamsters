@@ -2245,4 +2245,43 @@ mod tests {
             armory_shelf_lower_top_y - PLAYER_HALF_SIZE,
         );
     }
+
+    // 버튼을 계속 누르고 있을 때 쿨다운이 만료되면 자동으로 재발사되어야 한다.
+    // 기존 버그: attack_queued는 attack_pressed(edge trigger)에서만 설정되므로,
+    // 버튼을 누르고 있어도 쿨다운 후 자동 재발사가 이루어지지 않았음.
+    #[test]
+    fn held_attack_auto_requeues_after_cooldown_expires() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(140.0, 120.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "seed_shotgun".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(4);
+        shooter.latest_input.sequence = 1;
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.latest_input.attack = true; // 버튼 누르고 있음 (held)
+        shooter.latest_input.attack_pressed = false; // 처음 누른 순간이 아님
+        shooter.attack_queued = false; // 이전 발사 후 queued 해제됨
+        shooter.attack_was_down = true; // 버튼 계속 누르고 있음
+        shooter.next_attack_at = 500; // 쿨다운 만료 (now_ms=1000 > 500)
+
+        room.players.insert("shooter".to_string(), shooter);
+
+        room.tick(1000);
+
+        // auto-requeue로 발사되었어야 함
+        assert!(
+            !room.projectiles.is_empty(),
+            "버튼을 누르고 있는 동안 쿨다운이 만료되면 자동으로 재발사되어야 함"
+        );
+        let shooter_after = room.players.get("shooter").unwrap();
+        assert_eq!(
+            shooter_after.snapshot.equipped_weapon_resource,
+            Some(3),
+            "발사 시 resource가 소비되어야 함"
+        );
+    }
 }
