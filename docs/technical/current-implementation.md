@@ -251,19 +251,18 @@
 - `aimProfile`의 `deadZoneBehavior: "block"` 계열 설계는 아직 없다.
 - 현재는 허용 각도를 벗어나면 clamp만 하고, 발사 차단/경고 연출은 하지 않는다.
 
-### 현재 원웨이 플랫폼 하강 한계
+### 원웨이 플랫폼 하강 (fix/one-way-drop-through-v1 완료)
 
-- 현재 `dropThroughUntil`은 특정 플랫폼 1개가 아니라 모든 `one_way_platform`을 잠시 무시한다.
-- 그래서 세로로 가까운 플랫폼 조합에서는 하강 시 두 개를 한 번에 통과할 수 있다.
-- 후속 논의/설계는 `docs/technical/mini-spec-one-way-drop-through-v1.md`에 정리되어 있다.
+- `drop_through_platform_id`로 source 플랫폼 1개만 무시한다. 전역 시간 무시는 제거됨.
+- 플레이어 바닥이 source 플랫폼 아래 8px를 넘으면 자동 해제되어 source 플랫폼도 다시 착지 후보가 됨.
+- 세로로 가까운 플랫폼 조합(armory shelf 등)에서도 두 번째 플랫폼에 정상 착지한다.
 
 ## 다음 구현 우선순위
 
-1. 원웨이 플랫폼 drop-through 안정화 v1
-2. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체 (투사체 texture hookup 포함)
-3. Burn DoT를 전용 무기에 연결
-4. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
-5. `develop` preview / staging 배포 전략 분리
+1. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체 (투사체 texture hookup 포함)
+2. Burn DoT를 전용 무기에 연결
+3. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
+4. `develop` preview / staging 배포 전략 분리
 
 ## 참고
 
@@ -272,7 +271,7 @@
 - 문서 동기화 + 배포 전략 미니 스펙: `docs/archive/mini-specs/mini-spec-doc-sync-deploy-strategy-v1.md`
 - 사망 연출 + 디버그 토글 미니 스펙: `docs/archive/mini-specs/mini-spec-death-feedback-debug-toggle-v1.md`
 - 로컬 개발 환경 정리 미니 스펙: `docs/archive/mini-specs/mini-spec-local-dev-env-runner-v1.md`
-- 원웨이 플랫폼 하강 논의 미니 스펙: `docs/technical/mini-spec-one-way-drop-through-v1.md`
+- 원웨이 플랫폼 하강 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-one-way-drop-through-v1.md`
 - 서버 aim clamp 미니 스펙: `docs/technical/mini-spec-server-aim-clamp-v1.md`
 - 점프 아이템 세부 규칙 후속은 `docs/technical/mini-spec-jump-item-integration-v1.md` 참조
 - 전투 표현 polish 후속은 `docs/technical/mini-spec-combat-presentation-polish-v0.md` 참조

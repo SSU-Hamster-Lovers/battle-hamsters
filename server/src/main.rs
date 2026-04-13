@@ -194,6 +194,9 @@ struct PlayerRuntime {
     attack_was_down: bool,
     last_hit_by: Option<LastHitInfo>,
     active_burn: Option<BurnEffect>,
+    /// 현재 drop-through 중인 source 플랫폼 ID. 이 ID의 플랫폼만 착지 판정에서 제외한다.
+    /// 서버 런타임 전용 — 스냅샷에 포함하지 않는다.
+    drop_through_platform_id: Option<String>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -458,6 +461,7 @@ impl RoomState {
                 attack_was_down: false,
                 last_hit_by: None,
                 active_burn: None,
+                drop_through_platform_id: None,
             },
         );
 
@@ -939,6 +943,7 @@ mod tests {
             attack_was_down: false,
             last_hit_by: None,
             active_burn: None,
+            drop_through_platform_id: None,
         }
     }
 
@@ -1334,6 +1339,7 @@ mod tests {
             attack_was_down: true,
             last_hit_by: None,
             active_burn: None,
+            drop_through_platform_id: None,
         };
 
         let target = PlayerRuntime {
@@ -1369,6 +1375,7 @@ mod tests {
             attack_was_down: false,
             last_hit_by: None,
             active_burn: None,
+            drop_through_platform_id: None,
         };
 
         room.players.insert("shooter".to_string(), shooter);
@@ -2191,6 +2198,51 @@ mod tests {
         assert!(
             player.last_hit_by.is_none(),
             "last_hit_by must be cleared on respawn"
+        );
+    }
+
+    // platform_left: topY=480, x=180-560
+    // armory_shelf_lower: topY=520, x=80-420
+    // x=300 은 두 플랫폼 x 범위 모두에 포함되고, 수직 간격은 40px.
+    // 버그 조건: 기존 전역 시간 무시(drop_active)는 armory_shelf_lower까지 함께 건너뜀 → 두 플랫폼을 한 번에 통과
+    // 수정 후: source 플랫폼(platform_left)만 무시하고 armory_shelf_lower에 정상 착지해야 함
+    #[test]
+    fn drop_through_skips_only_source_platform_not_adjacent_platform_below() {
+        let platform_left_top_y = 480.0;
+        let armory_shelf_lower_top_y = 520.0;
+        let test_x = 300.0;
+
+        let mut player = test_player(test_x, platform_left_top_y - PLAYER_HALF_SIZE);
+        player.snapshot.grounded = true;
+
+        // Tick 0: jump + down → drop-through 트리거
+        player.latest_input.jump = true;
+        player.latest_input.movement = Vector2 { x: 0.0, y: 1.0 };
+        step_player(&mut player, 0);
+
+        assert!(!player.snapshot.grounded, "drop 직후에는 공중이어야 함");
+        assert!(
+            player.snapshot.drop_through_until.is_some(),
+            "drop_through_until이 설정되어 있어야 함"
+        );
+
+        // Tick 1~8: down 유지(급강하), jump 해제
+        player.latest_input.jump = false;
+        for i in 1..=8u64 {
+            let now = i * 50;
+            step_player(&mut player, now);
+            if player.snapshot.grounded {
+                break;
+            }
+        }
+
+        assert!(
+            player.snapshot.grounded,
+            "armory_shelf_lower에 착지해야 함 (두 플랫폼을 한 번에 통과하면 안 됨)"
+        );
+        assert_approx_eq(
+            player.snapshot.position.y,
+            armory_shelf_lower_top_y - PLAYER_HALF_SIZE,
         );
     }
 }
