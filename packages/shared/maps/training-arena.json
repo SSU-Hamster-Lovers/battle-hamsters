@@ -27,10 +27,13 @@
     "bottom": 980
   },
   "spawnPoints": [
-    { "id": "spawn_a", "x": 160,  "y": 80 },
-    { "id": "spawn_b", "x": 440,  "y": 80 },
-    { "id": "spawn_c", "x": 1160, "y": 80 },
-    { "id": "spawn_d", "x": 1440, "y": 80 }
+    { "id": "spawn_topleft", "x": 200, "y": 60 },
+    { "id": "spawn_center_high", "x": 800, "y": 60 },
+    { "id": "spawn_topright", "x": 1400, "y": 60 },
+    { "id": "spawn_midleft", "x": 250, "y": 336 },
+    { "id": "spawn_midright", "x": 1350, "y": 336 },
+    { "id": "spawn_lowleft", "x": 230, "y": 556 },
+    { "id": "spawn_lowright", "x": 1370, "y": 556 }
   ],
   "terrain": [],
   "collision": [
@@ -49,39 +52,95 @@
       "topY": 680
     },
     {
-      "id": "armory_shelf_upper",
+      "id": "left_bunker_lower",
       "type": "one_way_platform",
-      "leftX": 80,
-      "rightX": 420,
-      "topY": 340
+      "leftX": 120,
+      "rightX": 340,
+      "topY": 570
     },
     {
-      "id": "armory_shelf_lower",
-      "type": "one_way_platform",
-      "leftX": 80,
-      "rightX": 420,
-      "topY": 520
-    },
-    {
-      "id": "platform_left",
-      "type": "one_way_platform",
-      "leftX": 180,
-      "rightX": 560,
-      "topY": 480
-    },
-    {
-      "id": "platform_center",
+      "id": "center_bridge",
       "type": "one_way_platform",
       "leftX": 680,
       "rightX": 920,
-      "topY": 440
+      "topY": 570
     },
     {
-      "id": "platform_right",
+      "id": "right_bunker_lower",
       "type": "one_way_platform",
-      "leftX": 1040,
-      "rightX": 1420,
-      "topY": 480
+      "leftX": 1260,
+      "rightX": 1480,
+      "topY": 570
+    },
+    {
+      "id": "left_bunker_upper",
+      "type": "one_way_platform",
+      "leftX": 160,
+      "rightX": 380,
+      "topY": 460
+    },
+    {
+      "id": "left_mid_lane",
+      "type": "one_way_platform",
+      "leftX": 480,
+      "rightX": 620,
+      "topY": 460
+    },
+    {
+      "id": "center_terrace",
+      "type": "one_way_platform",
+      "leftX": 720,
+      "rightX": 880,
+      "topY": 460
+    },
+    {
+      "id": "right_mid_lane",
+      "type": "one_way_platform",
+      "leftX": 980,
+      "rightX": 1120,
+      "topY": 460
+    },
+    {
+      "id": "right_bunker_upper",
+      "type": "one_way_platform",
+      "leftX": 1220,
+      "rightX": 1440,
+      "topY": 460
+    },
+    {
+      "id": "left_roof_perch",
+      "type": "one_way_platform",
+      "leftX": 120,
+      "rightX": 280,
+      "topY": 350
+    },
+    {
+      "id": "center_crown",
+      "type": "one_way_platform",
+      "leftX": 760,
+      "rightX": 840,
+      "topY": 350
+    },
+    {
+      "id": "right_roof_perch",
+      "type": "one_way_platform",
+      "leftX": 1320,
+      "rightX": 1480,
+      "topY": 350
+    },
+    {
+      "id": "left_bunker_wall_outer",
+      "type": "solid_wall",
+      "x": 90,
+      "topY": 460,
+      "bottomY": 680
+    },
+    {
+      "id": "left_bunker_wall_inner",
+      "type": "solid_wall",
+      "x": 350,
+      "topY": 460,
+      "bottomY": 620
     },
     {
       "id": "pit_wall_left",
@@ -91,11 +150,39 @@
       "bottomY": 980
     },
     {
+      "id": "center_half_wall_left",
+      "type": "solid_wall",
+      "x": 720,
+      "topY": 460,
+      "bottomY": 620
+    },
+    {
+      "id": "center_half_wall_right",
+      "type": "solid_wall",
+      "x": 880,
+      "topY": 460,
+      "bottomY": 620
+    },
+    {
       "id": "pit_wall_right",
       "type": "solid_wall",
       "x": 960,
       "topY": 680,
       "bottomY": 980
+    },
+    {
+      "id": "right_bunker_wall_inner",
+      "type": "solid_wall",
+      "x": 1250,
+      "topY": 460,
+      "bottomY": 620
+    },
+    {
+      "id": "right_bunker_wall_outer",
+      "type": "solid_wall",
+      "x": 1510,
+      "topY": 460,
+      "bottomY": 680
     }
   ],
   "hazards": [
@@ -108,68 +195,79 @@
       "height": 120
     },
     {
-      "id": "spike_strip_right",
+      "id": "spike_left",
       "type": "instant_kill_hazard",
-      "x": 1120,
+      "x": 360,
       "y": 662,
-      "width": 200,
+      "width": 160,
+      "height": 18
+    },
+    {
+      "id": "spike_pit_edge_left",
+      "type": "instant_kill_hazard",
+      "x": 620,
+      "y": 662,
+      "width": 20,
+      "height": 18
+    },
+    {
+      "id": "spike_pit_edge_right",
+      "type": "instant_kill_hazard",
+      "x": 960,
+      "y": 662,
+      "width": 20,
+      "height": 18
+    },
+    {
+      "id": "spike_right",
+      "type": "instant_kill_hazard",
+      "x": 1080,
+      "y": 662,
+      "width": 160,
       "height": 18
     }
   ],
   "weaponSpawns": [
     {
-      "id": "weapon_left_candidate",
+      "id": "weapon_bunker_left_acorn",
       "weaponId": "acorn_blaster",
-      "x": 320,
-      "y": 420,
+      "x": 230,
+      "y": 563,
       "respawnMs": 5000,
       "despawnAfterMs": 7000,
-      "spawnStyle": "airdrop",
+      "spawnStyle": "fade_in",
       "despawnStyle": "shrink_pop",
-      "mode": "random_candidates",
-      "spawnGroupId": "weapon_group"
+      "mode": "fixed"
     },
     {
-      "id": "weapon_right_candidate",
+      "id": "weapon_mid_left_acorn",
       "weaponId": "acorn_blaster",
-      "x": 1280,
-      "y": 420,
+      "x": 550,
+      "y": 453,
       "respawnMs": 5000,
       "despawnAfterMs": 7000,
       "spawnStyle": "airdrop",
       "despawnStyle": "shrink_pop",
       "mode": "random_candidates",
-      "spawnGroupId": "weapon_group"
+      "spawnGroupId": "weapon_group_left"
     },
     {
-      "id": "weapon_seed_shotgun_left",
+      "id": "weapon_mid_left_seed",
       "weaponId": "seed_shotgun",
-      "x": 320,
-      "y": 420,
+      "x": 550,
+      "y": 453,
       "respawnMs": 5000,
       "despawnAfterMs": 7000,
       "spawnStyle": "airdrop",
       "despawnStyle": "shrink_pop",
       "mode": "random_candidates",
-      "spawnGroupId": "weapon_group"
+      "spawnGroupId": "weapon_group_left"
     },
     {
-      "id": "weapon_seed_shotgun_right",
-      "weaponId": "seed_shotgun",
-      "x": 1280,
-      "y": 420,
-      "respawnMs": 5000,
-      "despawnAfterMs": 7000,
-      "spawnStyle": "airdrop",
-      "despawnStyle": "shrink_pop",
-      "mode": "random_candidates",
-      "spawnGroupId": "weapon_group"
-    },
-    {
-      "id": "weapon_walnut_cannon_fixed",
+      "id": "weapon_walnut_cannon_center",
       "weaponId": "walnut_cannon",
       "x": 800,
-      "y": 340,
+      "y": 240,
       "respawnMs": 5000,
       "despawnAfterMs": 7000,
       "spawnStyle": "airdrop",
@@ -177,46 +275,59 @@
       "mode": "fixed"
     },
     {
-      "id": "weapon_armory_acorn",
+      "id": "weapon_mid_right_acorn",
       "weaponId": "acorn_blaster",
-      "x": 130,
-      "y": 333,
-      "respawnMs": 2500,
-      "despawnAfterMs": 6000,
-      "spawnStyle": "fade_in",
+      "x": 1050,
+      "y": 453,
+      "respawnMs": 5000,
+      "despawnAfterMs": 7000,
+      "spawnStyle": "airdrop",
       "despawnStyle": "shrink_pop",
-      "mode": "fixed"
+      "mode": "random_candidates",
+      "spawnGroupId": "weapon_group_right"
     },
     {
-      "id": "weapon_armory_seed",
+      "id": "weapon_mid_right_seed",
       "weaponId": "seed_shotgun",
-      "x": 250,
-      "y": 333,
-      "respawnMs": 2500,
-      "despawnAfterMs": 6000,
-      "spawnStyle": "fade_in",
+      "x": 1050,
+      "y": 453,
+      "respawnMs": 5000,
+      "despawnAfterMs": 7000,
+      "spawnStyle": "airdrop",
       "despawnStyle": "shrink_pop",
-      "mode": "fixed"
+      "mode": "random_candidates",
+      "spawnGroupId": "weapon_group_right"
     },
     {
-      "id": "weapon_armory_walnut",
-      "weaponId": "walnut_cannon",
-      "x": 370,
-      "y": 333,
-      "respawnMs": 2500,
-      "despawnAfterMs": 6000,
-      "spawnStyle": "fade_in",
-      "despawnStyle": "shrink_pop",
-      "mode": "fixed"
-    },
-    {
-      "id": "weapon_armory_ember",
+      "id": "weapon_ground_left_ember",
       "weaponId": "ember_sprinkler",
-      "x": 490,
-      "y": 333,
+      "x": 560,
+      "y": 673,
       "respawnMs": 5000,
       "despawnAfterMs": 8000,
       "spawnStyle": "fade_in",
+      "despawnStyle": "shrink_pop",
+      "mode": "fixed"
+    },
+    {
+      "id": "weapon_bunker_right_seed",
+      "weaponId": "seed_shotgun",
+      "x": 1370,
+      "y": 563,
+      "respawnMs": 5000,
+      "despawnAfterMs": 7000,
+      "spawnStyle": "fade_in",
+      "despawnStyle": "shrink_pop",
+      "mode": "fixed"
+    },
+    {
+      "id": "weapon_highground_right_pine",
+      "weaponId": "pine_sniper",
+      "x": 1400,
+      "y": 343,
+      "respawnMs": 15000,
+      "despawnAfterMs": 10000,
+      "spawnStyle": "airdrop",
       "despawnStyle": "shrink_pop",
       "mode": "fixed"
     }
@@ -226,7 +337,7 @@
       "id": "item_jump_center",
       "itemId": "jump_boost_small",
       "x": 800,
-      "y": 412,
+      "y": 343,
       "respawnMs": 12000,
       "spawnStyle": "fade_in",
       "mode": "fixed"
@@ -234,8 +345,8 @@
     {
       "id": "item_heal_left_candidate",
       "itemId": "health_pack_small",
-      "x": 220,
-      "y": 220,
+      "x": 250,
+      "y": 280,
       "respawnMs": 15000,
       "spawnStyle": "airdrop",
       "mode": "random_candidates",
@@ -244,8 +355,8 @@
     {
       "id": "item_heal_right_candidate",
       "itemId": "health_pack_small",
-      "x": 1380,
-      "y": 220,
+      "x": 1350,
+      "y": 280,
       "respawnMs": 15000,
       "spawnStyle": "airdrop",
       "mode": "random_candidates",

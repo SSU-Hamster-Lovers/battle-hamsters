@@ -1107,33 +1107,50 @@ mod tests {
     #[test]
     fn room_starts_with_spawned_weapon_pickup() {
         let room = RoomState::new();
-        // weapon_group 후보 1개 + 중앙 walnut_cannon 1개 + 좌측 armory 4개(acorn/seed/walnut/ember) = 6개
-        assert_eq!(room.weapon_pickups.len(), 6);
+        // 좌/우 random 후보 각 1개 + 고정 5개(acorn/walnut/ember/seed/pine_sniper) = 7개
+        assert_eq!(room.weapon_pickups.len(), 7);
 
         let pickups: Vec<_> = room.weapon_pickups.values().collect();
 
-        // weapon_group 에서 스폰된 픽업: x=320 또는 x=1280 위치
-        let group_pickup = pickups
+        let random_group_pickups = pickups
             .iter()
-            .find(|p| matches!(p.position.x as u32, 320 | 1280))
-            .expect("weapon_group pickup should exist");
-        assert!(
-            group_pickup.weapon_id == "acorn_blaster"
-                || group_pickup.weapon_id == "seed_shotgun",
-            "weapon_group pickup should be acorn_blaster or seed_shotgun"
+            .filter(|p| matches!(p.position.x as u32, 550 | 1050))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            random_group_pickups.len(),
+            2,
+            "좌/우 random 후보군에서 각각 1개씩 스폰되어야 함"
         );
+        assert!(random_group_pickups.iter().all(|pickup| {
+            pickup.weapon_id == "acorn_blaster" || pickup.weapon_id == "seed_shotgun"
+        }));
 
-        // walnut_cannon fixed 스폰: x=800
         let cannon_pickup = pickups
             .iter()
             .find(|p| p.weapon_id == "walnut_cannon" && p.position.x as u32 == 800)
             .expect("walnut_cannon pickup should exist");
         assert_eq!(cannon_pickup.position.x as u32, 800);
 
-        assert!(pickups.iter().any(|p| p.weapon_id == "acorn_blaster" && p.position.x as u32 == 130));
-        assert!(pickups.iter().any(|p| p.weapon_id == "seed_shotgun" && p.position.x as u32 == 250));
-        assert!(pickups.iter().any(|p| p.weapon_id == "walnut_cannon" && p.position.x as u32 == 370));
-        assert!(pickups.iter().any(|p| p.weapon_id == "ember_sprinkler" && p.position.x as u32 == 490));
+        assert!(
+            pickups
+                .iter()
+                .any(|p| p.weapon_id == "acorn_blaster" && p.position.x as u32 == 230)
+        );
+        assert!(
+            pickups
+                .iter()
+                .any(|p| p.weapon_id == "ember_sprinkler" && p.position.x as u32 == 560)
+        );
+        assert!(
+            pickups
+                .iter()
+                .any(|p| p.weapon_id == "seed_shotgun" && p.position.x as u32 == 1370)
+        );
+        assert!(
+            pickups
+                .iter()
+                .any(|p| p.weapon_id == "pine_sniper" && p.position.x as u32 == 1400)
+        );
     }
 
     #[test]
@@ -1153,7 +1170,7 @@ mod tests {
             .values()
             .find(|pickup| pickup.item_id == "health_pack_small")
             .expect("heal pickup should exist");
-        assert!(matches!(heal_pickup.position.x, 220.0 | 1380.0));
+        assert!(matches!(heal_pickup.position.x, 250.0 | 1350.0));
     }
 
     #[test]
@@ -1521,7 +1538,7 @@ mod tests {
                 id: "proj_down".to_string(),
                 owner_id: "shooter".to_string(),
                 weapon_id: "walnut_cannon".to_string(),
-                position: Vector2 { x: 800.0, y: 410.0 },
+                position: Vector2 { x: 800.0, y: 430.0 },
                 velocity: Vector2 { x: 0.0, y: 800.0 },
                 gravity_per_sec2: 0.0,
                 damage: 80,
@@ -2202,18 +2219,18 @@ mod tests {
         );
     }
 
-    // platform_left: topY=480, x=180-560
-    // armory_shelf_lower: topY=520, x=80-420
-    // x=300 은 두 플랫폼 x 범위 모두에 포함되고, 수직 간격은 40px.
-    // 버그 조건: 기존 전역 시간 무시(drop_active)는 armory_shelf_lower까지 함께 건너뜀 → 두 플랫폼을 한 번에 통과
-    // 수정 후: source 플랫폼(platform_left)만 무시하고 armory_shelf_lower에 정상 착지해야 함
+    // left_bunker_upper: topY=460, x=160-380
+    // left_bunker_lower: topY=570, x=120-340
+    // x=260 은 두 플랫폼 x 범위 모두에 포함되고, 수직 간격은 110px.
+    // 버그 조건: 기존 전역 시간 무시(drop_active)는 lower platform까지 함께 건너뜀 → 두 플랫폼을 한 번에 통과
+    // 수정 후: source 플랫폼(left_bunker_upper)만 무시하고 left_bunker_lower에 정상 착지해야 함
     #[test]
     fn drop_through_skips_only_source_platform_not_adjacent_platform_below() {
-        let platform_left_top_y = 480.0;
-        let armory_shelf_lower_top_y = 520.0;
-        let test_x = 300.0;
+        let left_bunker_upper_top_y = 460.0;
+        let left_bunker_lower_top_y = 570.0;
+        let test_x = 260.0;
 
-        let mut player = test_player(test_x, platform_left_top_y - PLAYER_HALF_SIZE);
+        let mut player = test_player(test_x, left_bunker_upper_top_y - PLAYER_HALF_SIZE);
         player.snapshot.grounded = true;
 
         // Tick 0: jump + down → drop-through 트리거
@@ -2239,11 +2256,11 @@ mod tests {
 
         assert!(
             player.snapshot.grounded,
-            "armory_shelf_lower에 착지해야 함 (두 플랫폼을 한 번에 통과하면 안 됨)"
+            "left_bunker_lower에 착지해야 함 (두 플랫폼을 한 번에 통과하면 안 됨)"
         );
         assert_approx_eq(
             player.snapshot.position.y,
-            armory_shelf_lower_top_y - PLAYER_HALF_SIZE,
+            left_bunker_lower_top_y - PLAYER_HALF_SIZE,
         );
     }
 

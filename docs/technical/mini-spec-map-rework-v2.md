@@ -1,4 +1,4 @@
-# 미니 스펙: 훈련 아레나 맵 재설계 v2
+# 미니 스펙: 훈련 아레나 맵 재설계 v2 ✅ 완료
 
 ## 작업명
 
@@ -30,14 +30,14 @@
 ```
 y=60:  [플레이어 스폰 존 — 맵 전역 분산]
 
-y=320: [상단 레벨 — 건물 지붕 + 고위험 지역]
-y=430: [중간 레벨 — 건물 내부 플랫폼]
+y=350: [상단 레벨 — 건물 지붕 + 고위험 지역]
+y=460: [중간 레벨 — 건물 내부 / mid-lane]
 y=570: [저층 레벨 — 지상 인접, 건물 입구]
 y=680: [지상 — 좌우 바닥 + 중앙 피트]
 y=980: [낙사 존]
 ```
 
-각 레이어 간 수직 차이: 110~140px → 점프 1회로 이동 가능.
+각 레이어 간 수직 차이: 110px 전후 → 점프 1회로 순차 이동 가능.
 
 ---
 
@@ -49,7 +49,8 @@ y=980: [낙사 존]
 - 구성:
   - 좌우 `solid_wall` (입구 갭 포함)
   - 내부 저층 `one_way_platform` at y=570
-  - 지붕 `floor` at y=430
+  - 상층 `one_way_platform` at y=460
+  - 지붕 perch `one_way_platform` at y=350
 - 역할: 초반 피난처, 내부 무기 스폰 1개
 
 ### 건물 B — 중앙 타워 (중형)
@@ -57,7 +58,8 @@ y=980: [낙사 존]
 - 위치: x=680~920 (기존 피트 위)
 - 구성:
   - 피트 위 `one_way_platform` 브릿지 at y=570
-  - 상단 `floor` 테라스 at y=430
+  - 상단 `one_way_platform` 테라스 at y=460
+  - 중앙 crown `one_way_platform` at y=350
   - 좌우 반벽으로 위에서 내려쏘기 가능
 - 역할: 고-위험/고-보상 중앙 제어 지점, 중앙 무기 스폰
 
@@ -94,11 +96,12 @@ y=980: [낙사 존]
 | 건물 B 상단 | walnut_cannon | fixed (airdrop) |
 | 건물 C 내부 | seed_shotgun | fixed |
 | 지상 좌측 | ember_sprinkler | fixed |
-| 지상 우측 | 신규 무기 슬롯 | fixed |
 | 중간 레벨 좌 | acorn_blaster / seed_shotgun | random_candidates |
 | 중간 레벨 우 | acorn_blaster / seed_shotgun | random_candidates |
 
 기존 armory 고정 스폰 4개 → 삭제.
+
+우측 신규 무기 슬롯은 이번 브랜치에서 좌표만 예약하고 런타임 스폰에는 넣지 않는다.
 
 ---
 
@@ -110,11 +113,11 @@ y=980: [낙사 존]
 |----|------|------|
 | spawn_topleft | x=200, y=60 | 상단 좌 |
 | spawn_topright | x=1400, y=60 | 상단 우 |
-| spawn_midleft | x=300, y=380 | 중간 좌 |
-| spawn_midright | x=1300, y=380 | 중간 우 |
+| spawn_midleft | x=250, y=336 | 좌측 roof perch |
+| spawn_midright | x=1350, y=336 | 우측 roof perch |
 | spawn_center_high | x=800, y=60 | 상단 중앙 |
-| spawn_lowleft | x=200, y=580 | 저층 좌 |
-| spawn_lowright | x=1400, y=580 | 저층 우 |
+| spawn_lowleft | x=230, y=556 | 저층 좌 |
+| spawn_lowright | x=1370, y=556 | 저층 우 |
 
 `spawnPoints` 배열, 서버 random 선택.
 

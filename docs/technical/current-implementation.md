@@ -62,8 +62,8 @@
 - 무기 확장 v2:
   - `Seed Shotgun` (`seed_shotgun.json`): projectile, 5 pellet, spreadDeg 22°, 탄창 4발, `projectileSpeed: 600px/s`
   - `Walnut Cannon` (`walnut-cannon.json`): 전 Hand Cannon. 이름/ID 변경 (`hand_cannon` → `walnut_cannon`). projectile, 1 pellet, 고데미지/고넉백, 탄창 4발, `projectileSpeed: 900px/s`
-  - 맵 `weapon_group` 랜덤 후보에 Seed Shotgun 추가 (acorn_blaster와 동일 위치)
-  - Walnut Cannon은 맵 중앙(x=800) 고정 스폰, 25s 리스폰
+  - 훈련 맵은 좌/우 `mid_lane` 후보군에서 `Acorn Blaster / Seed Shotgun` 랜덤 스폰을 각각 1개씩 굴린다.
+  - `Walnut Cannon`은 맵 중앙 고지대(x=800) 고정 `airdrop` 스폰이다.
 - 투사체 런타임 1차:
   - `ProjectileRuntime` + `RoomState.projectiles` + `server/src/room_projectiles.rs` 추가
   - 투사체는 spawn tick부터 바로 직선 이동/충돌 판정을 시작한다.
@@ -76,11 +76,11 @@
     - `Seed Shotgun`: `520 px/s²`
     - `Walnut Cannon`: `260 px/s²`
   - 세로 넉백은 내부 `vertical_velocity`와 `external_velocity`를 분리해 skyrocket형 누적 버그를 막는다.
-- 자유맵 테스트용 armory 1차:
-  - 훈련 맵 좌측에 상/하단 shelf 플랫폼을 추가했다.
-  - 상단 shelf에 `Acorn Blaster`, `Seed Shotgun`, `Walnut Cannon`, `Ember Sprinkler` 고정 스폰을 배치했다.
-  - armory 무기 respawn/despawn 주기는 짧게(`respawnMs: 2500`, `despawnAfterMs: 6000`) 설정했다.
-  - 기존 전장 스폰 무기들도 테스트 편의를 위해 respawn/despawn를 더 짧게 조정했다.
+- 훈련 아레나 맵 재설계 v2:
+  - armory 집중 배치를 제거하고 좌/우 벙커 + 중앙 브릿지/고지대 구조로 전면 재배치했다.
+  - 지상(680) → 저층(570) → 중층(460) → 고지대(350) 순으로 단일 점프 이동 루트를 만든다.
+  - 무기 스폰은 좌측 벙커 / 좌측 지상 / 중앙 고지대 / 우측 벙커 / 좌우 mid-lane 후보군으로 분산했다.
+  - `instant_kill_hazard`는 좌우 지상 가시와 피트 입구 가시로 나뉘고, `fall_zone`은 중앙 피트 아래를 유지한다.
 - 전투 1차:
   - `Acorn Blaster` 히트스캔 발사
   - `Seed Shotgun` 투사체 5-pellet 산탄: `pelletCount > 1`일 때 spread_deg 범위 내 균등 분산 후 pellet별 독립 투사체 생성
@@ -118,6 +118,7 @@
 - 파라미터가 없으면 자유맵으로 자동 입장한다.
 - 닉네임/플레이어 ID 는 `localStorage` 에 저장되어 재접속 시 동일 신원 유지
 - 테스트 맵용 바닥 / 플랫폼 / pit wall / hazard / spawn 위치를 `trainingArenaMap` 공통 데이터에서 읽어 렌더링한다.
+- `instant_kill_hazard`는 단색 사각형 대신 상향 가시 strip으로 렌더링한다. `fall_zone`은 기존 논리/디버그 표현을 유지한다.
 - 플레이어는 코드 기반 임시 텍스처로 만든 캐주얼 햄스터 silhouette로 렌더링되며, `idle / run / jump / fall / respawning` 상태를 기본 구분한다.
 - remote player / local player / pickup 에 1차 보간을 적용했다.
 - 월드 무기 pickup은 기본 fallback 도형/라벨을 유지하되, `Acorn Blaster` 는 1차 전용 pickup sprite + `AB` glyph + source accent 로 렌더링한다.
@@ -271,7 +272,7 @@
 
 - **서버**: `packages/shared/weapons/ember-sprinkler.json` 추가. melee cone 타입(`near_half_width: 5, far_half_width: 60`), 100ms 연사, `specialEffect: burn(2500ms/3dmg/400ms 틱)`.
 - **서버**: `find_melee_target`에 `near_half_width` / `far_half_width` 파라미터 추가. weapon JSON 값이 없으면 Paws 기본값으로 fallback.
-- **맵**: `training-arena.json` 아머리(x=490, y=333)에 고정 스폰 추가.
+- **맵**: `training-arena.json` 좌측 지상(x=560, y=673)에 고정 스폰 배치.
 - **클라이언트**: `ember_sprinkler` pickup 전용 스프라이트 (orange/red 실린더 + 화염) + HUD 아이콘.
 - **클라이언트**: `WeaponFireStyle: "flame_stream"`. attack 버튼 누르는 동안 `sendLatestInput` 50ms 틱마다 중력(0.31 px/frame²) + 퍼짐 불꽃 파티클 2-3개 생성. 기존 `hitParticles` 시스템 재사용.
 - **단위 테스트 2개 추가**: `ember_sprinkler_applies_burn_on_hit`, `ember_sprinkler_wider_cone_hits_target_outside_paws_range`.
@@ -284,17 +285,27 @@
 - **클라이언트**: `pine_sniper` pickup 스프라이트 (72×40, 긴 금속 총신 + 솔방울 개머리판 + 스코프) + equip 오버레이 (52×16) + HUD 아이콘 (24×24).
 - **클라이언트**: `WeaponFireStyle: "sniper_flash"`. 길고 얇은 흰색 트레이서(500px, 2px 두께) + muzzle 섬광(반지름 5) + 스코프 시안 글린트. 지속 80ms.
 - **단위 테스트 2개 추가**: `pine_sniper_hits_target_in_range`, `pine_sniper_consumes_resource_per_shot`.
-- **맵 스폰 포인트 미포함**: `training-arena.json` 수정은 map-rework-v2 브랜치에서 처리.
+- **맵 스폰**: `training-arena.json` 우측 고지대(x=1400, y=343) 고정 스폰. map-rework-v2와 함께 반영.
+
+### 훈련 아레나 맵 리워크 (feat/map-rework-v2 완료)
+
+- **맵 레이아웃**: 지상(680) → 저층(570) → 중층(460) → 고지대(350) 4단 구조. 단일 점프로 인접 층 이동 가능.
+- **플랫폼 재배치**: 좌/우 벙커(상·하층) + 좌/우 mid-lane + 중앙 테라스 + 좌/우/중앙 고지대 3개.
+- **pit wall** 제거, `solid_wall` 경계는 좌/우 맵 끝에만 유지.
+- **무기 스폰 재배치**: 좌측 벙커(acorn) / 좌측 지상(ember) / 중앙 고지대(walnut_cannon, airdrop) / 우측 벙커(seed) / 우측 고지대(pine_sniper, airdrop) / 좌우 mid-lane 랜덤 후보군.
+- **스폰포인트 7개**: 상단 3 + 중층 2 + 저층 2.
+- **클라이언트**: `instant_kill_hazard`를 단색 사각형 대신 상향 가시 strip으로 렌더링.
+- **서버 테스트 갱신**: 스폰 카운트 7, 새 좌표 기준 어설션, 플랫폼 이름 갱신.
 
 ### 원웨이 플랫폼 하강 (fix/one-way-drop-through-v1 완료)
 
 - `drop_through_platform_id`로 source 플랫폼 1개만 무시한다. 전역 시간 무시는 제거됨.
 - 플레이어 바닥이 source 플랫폼 아래 8px를 넘으면 자동 해제되어 source 플랫폼도 다시 착지 후보가 됨.
-- 세로로 가까운 플랫폼 조합(armory shelf 등)에서도 두 번째 플랫폼에 정상 착지한다.
+- 세로로 가까운 플랫폼 조합(좌측 벙커 상/하층 등)에서도 두 번째 플랫폼에 정상 착지한다.
 
 ## 다음 구현 우선순위
 
-1. 무기 추가 계속 (목표 16~20종) — 현재 6종 구현
+1. 무기 추가 계속 (목표 16~20종) — 현재 6종 구현 (map-rework-v2 이후 pine_sniper 맵 등재 포함)
 2. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체 (투사체 texture hookup 포함)
 3. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
 4. `develop` preview / staging 배포 전략 분리
@@ -327,4 +338,5 @@
 - 픽업 소멸 VFX 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-pickup-despawn-vfx-v1.md`
 - 불씨 뿌리개(flamethrower) 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-flamethrower-v1.md`
 - 솔방울 저격총(pine sniper) 완료 미니 스펙: `docs/technical/mini-spec-pine-sniper-v1.md`
+- 훈련 아레나 맵 리워크 v2 완료 미니 스펙: `docs/technical/mini-spec-map-rework-v2.md`
 - 씨앗 샷건 + 호두 대포 스프라이트 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-weapon-sprites-v2.md`
