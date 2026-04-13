@@ -4,7 +4,7 @@
 
 ## 최신 기준
 
-- 기준 브랜치: `develop` (feat/paws-combat-hud-v1 병합 후 기준)
+- 기준 브랜치: `develop` (feat/hud-compact-combat-bar-v2 병합 후 기준)
 - 마지막 동기화 기준: 2026-04-13
 
 ## 현재 구현된 것
@@ -192,11 +192,10 @@
 
 ## 다음 구현 우선순위
 
-1. HUD를 compact combat bar v2 구조로 단순화 (`mini-spec-hud-compact-combat-bar-v2.md` 참조)
-2. 무기 각도 / Dead zone / 오버레이 앵커 1차 (`mini-spec-weapon-angle-deadzone-v0.md` 참조)
-3. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체
-4. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
-5. `develop` preview / staging 배포 전략 분리
+1. 무기 오버레이 rotation + 에임 기반 facing 1차 (`mini-spec-weapon-aim-angle-v1.md` 참조)
+2. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체
+3. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
+4. `develop` preview / staging 배포 전략 분리
 
 ## 참고
 
@@ -207,6 +206,10 @@
 - 로컬 개발 환경 정리 미니 스펙: `docs/archive/mini-specs/mini-spec-local-dev-env-runner-v1.md`
 - 점프 아이템 세부 규칙 후속은 `docs/technical/mini-spec-jump-item-integration-v1.md` 참조
 - 전투 표현 polish 후속은 `docs/technical/mini-spec-combat-presentation-polish-v0.md` 참조
-- HUD compact 후속은 `docs/technical/mini-spec-hud-compact-combat-bar-v2.md` 참조
-- 무기 각도/Dead zone 초안은 `docs/technical/mini-spec-weapon-angle-deadzone-v0.md` 참조
-- Paws 근접 전투 + HUD 1차 미니 스펙: `docs/archive/mini-specs/mini-spec-paws-combat-hud-v1.md`
+- HUD compact 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-hud-compact-combat-bar-v2.md`
+- HUD polish 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-hud-polish-v1.md`
+- 알림 로그/pickup 점멸 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-hud-notification-pickup-polish-v1.md`
+- 피격 피드백 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-impact-feedback-v1.md`
+- 무기 각도/Dead zone 초안: `docs/technical/mini-spec-weapon-angle-deadzone-v0.md`
+- 무기 에임 각도 1차 미니 스펙: `docs/technical/mini-spec-weapon-aim-angle-v1.md`
+- Paws 근접 전투 + HUD 1차 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-paws-combat-hud-v1.md`
