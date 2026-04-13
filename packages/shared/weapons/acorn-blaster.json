@@ -1,7 +1,7 @@
 {
   "version": 1,
   "id": "acorn_blaster",
-  "name": "Acorn Blaster",
+  "name": "도토리 총",
   "hitType": "hitscan",
   "fireMode": "single",
   "resourceModel": "magazine",
