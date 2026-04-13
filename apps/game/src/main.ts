@@ -2901,7 +2901,7 @@ class MainScene extends Phaser.Scene {
       const { scale: wScale, xOffset: wXOffset } = resolvePickupCollapseTransform(
         rendered.spawnedAt,
         rendered.despawnAt,
-        this.time.now,
+        Date.now(),
       );
       rendered.root.x =
         Phaser.Math.Linear(rendered.root.x, rendered.targetX, PICKUP_LERP) + wXOffset;
@@ -2939,7 +2939,7 @@ class MainScene extends Phaser.Scene {
       const { scale: iScale, xOffset: iXOffset } = resolvePickupCollapseTransform(
         rendered.spawnedAt,
         rendered.despawnAt,
-        this.time.now,
+        Date.now(),
       );
       rendered.body.x =
         Phaser.Math.Linear(rendered.body.x, rendered.targetX, PICKUP_LERP) + iXOffset;
@@ -2993,7 +2993,7 @@ class MainScene extends Phaser.Scene {
       return 1;
     }
     const total = despawnAt - spawnedAt;
-    const remaining = despawnAt - this.time.now;
+    const remaining = despawnAt - Date.now();
     if (remaining <= 0) {
       return 0.22;
     }
