@@ -7,9 +7,13 @@ const HUD_ICON_SIZE = 24;
 const WEAPON_PICKUP_TEXTURE_PREFIX = "weapon-pickup";
 const ACORN_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-acorn-blaster`;
 const EMBER_SPRINKLER_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-ember-sprinkler`;
+const SEED_SHOTGUN_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-seed-shotgun`;
+const WALNUT_CANNON_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-walnut-cannon`;
 const WEAPON_EQUIP_TEXTURE_PREFIX = "weapon-equip";
 const ACORN_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-acorn-blaster`;
 const EMBER_SPRINKLER_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-ember-sprinkler`;
+const SEED_SHOTGUN_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-seed-shotgun`;
+const WALNUT_CANNON_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-walnut-cannon`;
 
 type WeaponPickupSource = "spawn" | "dropped" | "reward";
 
@@ -32,12 +36,16 @@ export type WeaponFireStyle =
   | "generic_line"
   | "paws_pulse"
   | "muzzle_flash"
-  | "flame_stream";
+  | "flame_stream"
+  | "shotgun_spread"
+  | "cannon_blast";
 
 export type WeaponImpactStyle =
   | "generic_spark"
   | "acorn_spark"
-  | "paws_dust";
+  | "paws_dust"
+  | "seed_burst"
+  | "cannon_impact";
 
 export function ensureWeaponPickupTextures(scene: Phaser.Scene) {
   if (!scene.textures.exists(ACORN_PICKUP_TEXTURE_KEY)) {
@@ -67,6 +75,34 @@ export function ensureWeaponPickupTextures(scene: Phaser.Scene) {
     graphics.generateTexture(EMBER_SPRINKLER_EQUIP_TEXTURE_KEY, 36, 20);
     graphics.destroy();
   }
+
+  if (!scene.textures.exists(SEED_SHOTGUN_PICKUP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawSeedShotgunPickupTexture(graphics);
+    graphics.generateTexture(SEED_SHOTGUN_PICKUP_TEXTURE_KEY, 60, 36);
+    graphics.destroy();
+  }
+
+  if (!scene.textures.exists(SEED_SHOTGUN_EQUIP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawSeedShotgunEquipTexture(graphics);
+    graphics.generateTexture(SEED_SHOTGUN_EQUIP_TEXTURE_KEY, 40, 14);
+    graphics.destroy();
+  }
+
+  if (!scene.textures.exists(WALNUT_CANNON_PICKUP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawWalnutCannonPickupTexture(graphics);
+    graphics.generateTexture(WALNUT_CANNON_PICKUP_TEXTURE_KEY, 56, 40);
+    graphics.destroy();
+  }
+
+  if (!scene.textures.exists(WALNUT_CANNON_EQUIP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawWalnutCannonEquipTexture(graphics);
+    graphics.generateTexture(WALNUT_CANNON_EQUIP_TEXTURE_KEY, 32, 18);
+    graphics.destroy();
+  }
 }
 
 export function resolveWeaponPickupPresentation(
@@ -84,6 +120,22 @@ export function resolveWeaponPickupPresentation(
     return {
       textureKey: EMBER_SPRINKLER_PICKUP_TEXTURE_KEY,
       code: "ES",
+      showNameLabel: false,
+    };
+  }
+
+  if (weaponId === "seed_shotgun") {
+    return {
+      textureKey: SEED_SHOTGUN_PICKUP_TEXTURE_KEY,
+      code: "SS",
+      showNameLabel: false,
+    };
+  }
+
+  if (weaponId === "walnut_cannon") {
+    return {
+      textureKey: WALNUT_CANNON_PICKUP_TEXTURE_KEY,
+      code: "WC",
       showNameLabel: false,
     };
   }
@@ -131,6 +183,28 @@ export function resolveWeaponEquipPresentation(
     };
   }
 
+  if (weaponId === "seed_shotgun") {
+    return {
+      textureKey: SEED_SHOTGUN_EQUIP_TEXTURE_KEY,
+      offsetX: 14,
+      offsetY: 1,
+      flipWithDirection: true,
+      // 캔버스 40px, 센터 x=20, 총구 x=37 → 17px
+      muzzleFromCenter: 17,
+    };
+  }
+
+  if (weaponId === "walnut_cannon") {
+    return {
+      textureKey: WALNUT_CANNON_EQUIP_TEXTURE_KEY,
+      offsetX: 12,
+      offsetY: 2,
+      flipWithDirection: true,
+      // 캔버스 32px, 센터 x=16, 포구 x=28 → 12px
+      muzzleFromCenter: 12,
+    };
+  }
+
   return {
     textureKey: null,
     offsetX: 0,
@@ -153,6 +227,14 @@ export function resolveWeaponFireStyle(weaponId: string): WeaponFireStyle {
     return "flame_stream";
   }
 
+  if (weaponId === "seed_shotgun") {
+    return "shotgun_spread";
+  }
+
+  if (weaponId === "walnut_cannon") {
+    return "cannon_blast";
+  }
+
   return "generic_line";
 }
 
@@ -163,6 +245,14 @@ export function resolveWeaponImpactStyle(weaponId: string): WeaponImpactStyle {
 
   if (weaponId === "paws") {
     return "paws_dust";
+  }
+
+  if (weaponId === "seed_shotgun") {
+    return "seed_burst";
+  }
+
+  if (weaponId === "walnut_cannon") {
+    return "cannon_impact";
   }
 
   return "generic_spark";
@@ -178,6 +268,8 @@ export function ensureWeaponHudTextures(scene: Phaser.Scene) {
     if (weaponId === "paws") drawPawsHudIcon(g);
     else if (weaponId === "acorn_blaster") drawAcornBlasterHudIcon(g);
     else if (weaponId === "ember_sprinkler") drawEmberSprinklerHudIcon(g);
+    else if (weaponId === "seed_shotgun") drawSeedShotgunHudIcon(g);
+    else if (weaponId === "walnut_cannon") drawWalnutCannonHudIcon(g);
     else drawFallbackHudIcon(g);
     g.generateTexture(key, HUD_ICON_SIZE, HUD_ICON_SIZE);
     g.destroy();
@@ -364,6 +456,245 @@ function drawEmberSprinklerEquipTexture(graphics: Phaser.GameObjects.Graphics) {
   graphics.fillEllipse(33, 7, 3, 3);
   graphics.fillStyle(0xfb923c, 0.75);
   graphics.fillEllipse(33, 11, 3, 3);
+}
+
+// ── 씨앗 샷건 (seed_shotgun) ─────────────────────────────────────────────
+
+function drawSeedShotgunHudIcon(g: Phaser.GameObjects.Graphics) {
+  g.clear();
+  const wood = 0x8b5e3c;
+  const darkWood = 0x5a3822;
+  const pump = 0x6b4226;
+  const seedGreen = 0x55cc44;
+
+  // 총신 (가로형)
+  g.fillStyle(wood, 1);
+  g.fillRoundedRect(3, 9, 17, 5, 2);
+  // 총구 끝 (더 짧고 굵게)
+  g.fillStyle(darkWood, 1);
+  g.fillRoundedRect(19, 10, 3, 3, 1);
+  // 개머리판
+  g.fillStyle(wood, 1);
+  g.fillRoundedRect(1, 8, 5, 7, 2);
+  // 펌프
+  g.fillStyle(pump, 1);
+  g.fillRoundedRect(8, 13, 7, 3, 1);
+  // 씨앗 도트
+  g.fillStyle(seedGreen, 1);
+  g.fillCircle(14, 11, 2);
+  // 아웃라인
+  g.lineStyle(1.5, darkWood, 1);
+  g.strokeRoundedRect(3, 9, 17, 5, 2);
+  g.strokeRoundedRect(1, 8, 5, 7, 2);
+}
+
+function drawSeedShotgunEquipTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+  const wood = 0x8b5e3c;
+  const darkWood = 0x5a3822;
+  const pump = 0x6b4226;
+  const seedGreen = 0x55cc44;
+
+  // 개머리판 (왼쪽)
+  graphics.fillStyle(wood, 1);
+  graphics.fillRoundedRect(0, 2, 8, 10, 2);
+  // 총신 (메인)
+  graphics.fillStyle(wood, 1);
+  graphics.fillRoundedRect(6, 3, 28, 6, 2);
+  // 총구 (오른쪽 끝, 살짝 어둡게)
+  graphics.fillStyle(darkWood, 1);
+  graphics.fillRoundedRect(33, 4, 5, 4, 1);
+  // 펌프 (총신 아래)
+  graphics.fillStyle(pump, 1);
+  graphics.fillRoundedRect(14, 8, 10, 4, 1);
+  // 씨앗 도트
+  graphics.fillStyle(seedGreen, 1);
+  graphics.fillCircle(24, 6, 1.5);
+  // 아웃라인
+  graphics.lineStyle(1.5, darkWood, 1);
+  graphics.strokeRoundedRect(6, 3, 28, 6, 2);
+  graphics.strokeRoundedRect(0, 2, 8, 10, 2);
+}
+
+function drawSeedShotgunPickupTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+  const wood = 0x8b5e3c;
+  const woodLight = 0xb8844e;
+  const darkWood = 0x5a3822;
+  const pump = 0x6b4226;
+  const seedGreen = 0x55cc44;
+  const seedDark = 0x3d8a2e;
+
+  // 개머리판
+  graphics.fillStyle(wood, 1);
+  graphics.fillRoundedRect(2, 8, 14, 22, 4);
+  graphics.fillStyle(woodLight, 1);
+  graphics.fillRoundedRect(4, 10, 10, 8, 2);
+  graphics.lineStyle(2, darkWood, 1);
+  graphics.strokeRoundedRect(2, 8, 14, 22, 4);
+
+  // 총신
+  graphics.fillStyle(wood, 1);
+  graphics.fillRoundedRect(14, 11, 34, 12, 3);
+  graphics.fillStyle(woodLight, 0.5);
+  graphics.fillRoundedRect(16, 12, 30, 4, 2);
+  graphics.lineStyle(2, darkWood, 1);
+  graphics.strokeRoundedRect(14, 11, 34, 12, 3);
+
+  // 펌프 (총신 아래)
+  graphics.fillStyle(pump, 1);
+  graphics.fillRoundedRect(22, 22, 16, 7, 2);
+  graphics.lineStyle(1.5, darkWood, 1);
+  graphics.strokeRoundedRect(22, 22, 16, 7, 2);
+
+  // 총구 마개
+  graphics.fillStyle(darkWood, 1);
+  graphics.fillRoundedRect(47, 12, 8, 10, 2);
+  graphics.lineStyle(1.5, darkWood, 1);
+  graphics.strokeRoundedRect(47, 12, 8, 10, 2);
+
+  // 씨앗 도트 3개
+  graphics.fillStyle(seedGreen, 1);
+  graphics.fillCircle(30, 17, 3.5);
+  graphics.fillCircle(38, 17, 3.5);
+  graphics.fillStyle(seedDark, 0.6);
+  graphics.fillCircle(30, 17, 1.5);
+  graphics.fillCircle(38, 17, 1.5);
+}
+
+// ── 호두 대포 (walnut_cannon) ─────────────────────────────────────────────
+
+function drawWalnutCannonHudIcon(g: Phaser.GameObjects.Graphics) {
+  g.clear();
+  const barrel = 0xc8a05a;
+  const barrelDark = 0x8b6040;
+  const wheel = 0x706050;
+  const wheelDark = 0x4a3830;
+  const walnut = 0xb8834a;
+
+  // 포 바퀴 (좌우)
+  g.fillStyle(wheel, 1);
+  g.fillCircle(5, 18, 4);
+  g.fillCircle(18, 18, 4);
+  g.lineStyle(1.5, wheelDark, 1);
+  g.strokeCircle(5, 18, 4);
+  g.strokeCircle(18, 18, 4);
+  // 바퀴 살
+  g.lineStyle(1, wheelDark, 0.7);
+  g.lineBetween(5, 14, 5, 22);
+  g.lineBetween(1, 18, 9, 18);
+  g.lineBetween(18, 14, 18, 22);
+  g.lineBetween(14, 18, 22, 18);
+  // 포신
+  g.fillStyle(barrel, 1);
+  g.fillRoundedRect(3, 7, 18, 9, 3);
+  // 포신 어두운 면
+  g.fillStyle(barrelDark, 1);
+  g.fillRoundedRect(3, 13, 18, 3, 3);
+  // 포구 링
+  g.lineStyle(2, barrelDark, 1);
+  g.strokeRoundedRect(3, 7, 18, 9, 3);
+  // 호두 그림 (포신 위)
+  g.fillStyle(walnut, 1);
+  g.fillEllipse(12, 10, 8, 6);
+  g.lineStyle(1, barrelDark, 0.8);
+  g.strokeEllipse(12, 10, 8, 6);
+}
+
+function drawWalnutCannonEquipTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+  const barrel = 0xc8a05a;
+  const barrelDark = 0x8b6040;
+  const ring = 0x706050;
+
+  // 포신 몸체 (짧고 굵음)
+  graphics.fillStyle(barrel, 1);
+  graphics.fillRoundedRect(2, 3, 24, 10, 3);
+  // 어두운 하단 면
+  graphics.fillStyle(barrelDark, 1);
+  graphics.fillRoundedRect(2, 10, 24, 3, 3);
+  // 포구 링 (오른쪽 끝)
+  graphics.fillStyle(ring, 1);
+  graphics.fillRoundedRect(25, 4, 5, 8, 2);
+  // 장약 링 (포신 1/3 지점)
+  graphics.fillStyle(ring, 0.8);
+  graphics.fillRoundedRect(8, 3, 4, 10, 1);
+  // 아웃라인
+  graphics.lineStyle(1.5, barrelDark, 1);
+  graphics.strokeRoundedRect(2, 3, 24, 10, 3);
+  graphics.strokeRoundedRect(25, 4, 5, 8, 2);
+}
+
+function drawWalnutCannonPickupTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+  const barrel = 0xc8a05a;
+  const barrelLight = 0xe0c08a;
+  const barrelDark = 0x8b6040;
+  const ring = 0x706050;
+  const ringDark = 0x4a3830;
+  const walnut = 0xb8834a;
+  const walnutDark = 0x7a5030;
+
+  // 바퀴 (왼쪽)
+  graphics.fillStyle(ring, 1);
+  graphics.fillCircle(8, 30, 9);
+  graphics.lineStyle(2, ringDark, 1);
+  graphics.strokeCircle(8, 30, 9);
+  // 바퀴 살
+  graphics.lineStyle(1.5, ringDark, 0.7);
+  graphics.lineBetween(8, 21, 8, 39);
+  graphics.lineBetween(-1, 30, 17, 30);
+  graphics.lineBetween(2, 24, 14, 36);
+  graphics.lineBetween(14, 24, 2, 36);
+
+  // 바퀴 (오른쪽)
+  graphics.fillStyle(ring, 1);
+  graphics.fillCircle(48, 30, 9);
+  graphics.lineStyle(2, ringDark, 1);
+  graphics.strokeCircle(48, 30, 9);
+  graphics.lineStyle(1.5, ringDark, 0.7);
+  graphics.lineBetween(48, 21, 48, 39);
+  graphics.lineBetween(39, 30, 57, 30);
+  graphics.lineBetween(42, 24, 54, 36);
+  graphics.lineBetween(54, 24, 42, 36);
+
+  // 포신 몸체
+  graphics.fillStyle(barrel, 1);
+  graphics.fillRoundedRect(10, 9, 36, 16, 5);
+  // 포신 하이라이트
+  graphics.fillStyle(barrelLight, 0.6);
+  graphics.fillRoundedRect(12, 10, 32, 5, 3);
+  // 포신 어두운 면
+  graphics.fillStyle(barrelDark, 0.7);
+  graphics.fillRoundedRect(10, 21, 36, 4, 5);
+
+  // 포신 장약 링 2개
+  graphics.fillStyle(ring, 1);
+  graphics.fillRoundedRect(15, 9, 5, 16, 2);
+  graphics.fillRoundedRect(24, 9, 5, 16, 2);
+  graphics.lineStyle(1, ringDark, 0.7);
+  graphics.strokeRoundedRect(15, 9, 5, 16, 2);
+  graphics.strokeRoundedRect(24, 9, 5, 16, 2);
+
+  // 포구 마개
+  graphics.fillStyle(ring, 1);
+  graphics.fillRoundedRect(43, 10, 10, 14, 3);
+  graphics.lineStyle(1.5, ringDark, 1);
+  graphics.strokeRoundedRect(43, 10, 10, 14, 3);
+
+  // 포신 아웃라인
+  graphics.lineStyle(2, barrelDark, 1);
+  graphics.strokeRoundedRect(10, 9, 36, 16, 5);
+
+  // 호두 아이콘 (포신 중앙)
+  graphics.fillStyle(walnut, 1);
+  graphics.fillEllipse(32, 17, 14, 10);
+  graphics.lineStyle(1.5, walnutDark, 1);
+  graphics.strokeEllipse(32, 17, 14, 10);
+  // 호두 결 선
+  graphics.lineStyle(1, walnutDark, 0.6);
+  graphics.lineBetween(32, 12, 32, 22);
+  graphics.lineBetween(27, 14, 37, 20);
 }
 
 function drawEmberSprinklerPickupTexture(graphics: Phaser.GameObjects.Graphics) {

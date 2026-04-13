@@ -1107,7 +1107,7 @@ mod tests {
     #[test]
     fn room_starts_with_spawned_weapon_pickup() {
         let room = RoomState::new();
-        // weapon_group 후보 1개 + 중앙 hand_cannon 1개 + 좌측 armory 4개(acorn/seed/hand/ember) = 6개
+        // weapon_group 후보 1개 + 중앙 walnut_cannon 1개 + 좌측 armory 4개(acorn/seed/walnut/ember) = 6개
         assert_eq!(room.weapon_pickups.len(), 6);
 
         let pickups: Vec<_> = room.weapon_pickups.values().collect();
@@ -1123,16 +1123,16 @@ mod tests {
             "weapon_group pickup should be acorn_blaster or seed_shotgun"
         );
 
-        // hand_cannon fixed 스폰: x=800
+        // walnut_cannon fixed 스폰: x=800
         let cannon_pickup = pickups
             .iter()
-            .find(|p| p.weapon_id == "hand_cannon" && p.position.x as u32 == 800)
-            .expect("hand_cannon pickup should exist");
+            .find(|p| p.weapon_id == "walnut_cannon" && p.position.x as u32 == 800)
+            .expect("walnut_cannon pickup should exist");
         assert_eq!(cannon_pickup.position.x as u32, 800);
 
         assert!(pickups.iter().any(|p| p.weapon_id == "acorn_blaster" && p.position.x as u32 == 130));
         assert!(pickups.iter().any(|p| p.weapon_id == "seed_shotgun" && p.position.x as u32 == 250));
-        assert!(pickups.iter().any(|p| p.weapon_id == "hand_cannon" && p.position.x as u32 == 370));
+        assert!(pickups.iter().any(|p| p.weapon_id == "walnut_cannon" && p.position.x as u32 == 370));
         assert!(pickups.iter().any(|p| p.weapon_id == "ember_sprinkler" && p.position.x as u32 == 490));
     }
 
@@ -1437,14 +1437,14 @@ mod tests {
     #[test]
     fn projectile_step_hits_target_after_multiple_ticks() {
         let mut room = RoomState::new();
-        assert_eq!(weapon_definition("hand_cannon").damage, 80);
+        assert_eq!(weapon_definition("walnut_cannon").damage, 80);
 
         let mut shooter = test_player(140.0, 120.0);
         shooter.snapshot.id = "shooter".to_string();
         shooter.snapshot.name = "shooter".to_string();
         shooter.snapshot.direction = Direction::Right;
         shooter.snapshot.grounded = true;
-        shooter.snapshot.equipped_weapon_id = "hand_cannon".to_string();
+        shooter.snapshot.equipped_weapon_id = "walnut_cannon".to_string();
         shooter.snapshot.equipped_weapon_resource = Some(1);
         shooter.latest_input.sequence = 1;
         shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
@@ -1488,7 +1488,7 @@ mod tests {
             ProjectileRuntime {
                 id: "proj_up".to_string(),
                 owner_id: "shooter".to_string(),
-                weapon_id: "hand_cannon".to_string(),
+                weapon_id: "walnut_cannon".to_string(),
                 position: Vector2 { x: 800.0, y: 470.0 },
                 velocity: Vector2 { x: 0.0, y: -800.0 },
                 gravity_per_sec2: 0.0,
@@ -1520,7 +1520,7 @@ mod tests {
             ProjectileRuntime {
                 id: "proj_down".to_string(),
                 owner_id: "shooter".to_string(),
-                weapon_id: "hand_cannon".to_string(),
+                weapon_id: "walnut_cannon".to_string(),
                 position: Vector2 { x: 800.0, y: 410.0 },
                 velocity: Vector2 { x: 0.0, y: 800.0 },
                 gravity_per_sec2: 0.0,

@@ -166,8 +166,8 @@
       "spawnGroupId": "weapon_group"
     },
     {
-      "id": "weapon_hand_cannon_fixed",
-      "weaponId": "hand_cannon",
+      "id": "weapon_walnut_cannon_fixed",
+      "weaponId": "walnut_cannon",
       "x": 800,
       "y": 340,
       "respawnMs": 5000,
@@ -199,8 +199,8 @@
       "mode": "fixed"
     },
     {
-      "id": "weapon_armory_hand",
-      "weaponId": "hand_cannon",
+      "id": "weapon_armory_walnut",
+      "weaponId": "walnut_cannon",
       "x": 370,
       "y": 333,
       "respawnMs": 2500,
