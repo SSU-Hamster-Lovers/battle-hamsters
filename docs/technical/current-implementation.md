@@ -4,7 +4,7 @@
 
 ## 최신 기준
 
-- 기준 브랜치: `develop` (pickup-despawn-vfx-v1 + fire-and-forget-v1 포함)
+- 기준 브랜치: `develop` (flamethrower-v1 + doc-cleanup-apr13 포함)
 - 마지막 동기화 기준: 2026-04-13
 
 ## 현재 구현된 것
@@ -309,4 +309,4 @@
 - 투사체 충돌 정책 v2 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-projectile-collision-policy-v2.md`
 - Fire & Forget 수정 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-fire-and-forget-v1.md`
 - 픽업 소멸 VFX 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-pickup-despawn-vfx-v1.md`
-- 불씨 뿌리개(flamethrower) 완료 미니 스펙: `docs/technical/mini-spec-flamethrower-v1.md`
+- 불씨 뿌리개(flamethrower) 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-flamethrower-v1.md`
