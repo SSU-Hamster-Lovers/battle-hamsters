@@ -19,13 +19,13 @@ Seed Shotgun과 Hand Cannon은 현재 **hitscan**으로 구현되어 있다. 빠
 
 - `packages/shared/weapons/seed-shotgun.json`
   - `hitType`: `"hitscan"` → `"projectile"`
-  - `projectileSpeed`: 600 (px/tick 단위, 20 TPS 기준 → 약 12,000 px/s)
-    - 근거: Acorn 사거리(~400px) 기준 0.03초 도달 → 거의 hitscan 수준이나 장거리에서 회피 가능
+  - `projectileSpeed`: 600 (px/s 단위, 20 TPS 기준 약 30px/tick)
+    - 근거: Acorn 사거리(~400px) 기준 약 0.67초 도달 → 눈으로 보이면서도 충분히 빠른 산탄
 
 - `packages/shared/weapons/hand-cannon.json`
   - `hitType`: `"hitscan"` → `"projectile"`
-  - `projectileSpeed`: 900 (px/tick, ~18,000 px/s)
-    - 근거: 고화력 단발 특성상 더 빠른 속도 적절
+  - `projectileSpeed`: 900 (px/s, 20 TPS 기준 약 45px/tick)
+    - 근거: 고화력 단발 특성상 산탄보다 더 빠르되, 화면에서 추적 가능한 속도
 
 ### 2. 서버: 투사체 런타임 추가
 
@@ -36,7 +36,7 @@ struct ProjectileRuntime {
     owner_id: String,
     weapon_id: String,
     position: Vector2,
-    velocity: Vector2,      // 픽셀/틱
+    velocity: Vector2,      // 픽셀/초
     damage: u16,
     knockback: f64,
     range_remaining: f64,   // 남은 최대 사거리

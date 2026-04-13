@@ -271,6 +271,7 @@
   "attackIntervalMs": 220,
   "range": 620,
   "projectileSpeed": 0,
+  "projectileGravityPerSec2": 0,
   "spreadDeg": 2,
   "pelletCount": 1,
   "maxResource": 8,
@@ -300,6 +301,7 @@
 | `maxResource`                | 최대 탄/에너지                  |
 | `resourcePerShot`            | 발사당 소모량                   |
 | `resourcePerSecond`          | 채널형 무기 초당 소모량         |
+| `projectileGravityPerSec2`   | 투사체 중력 가속도 (`px/s²`)    |
 | `discardOnEmpty`             | 자원 고갈 시 무기 제거 여부     |
 | `worldDespawnMs`             | 월드에 놓였을 때 자동 소멸 시간 |
 | `specialEffect`              | `grab                           | explode  | none` 등   |
@@ -341,6 +343,7 @@ type WeaponAimProfile = {
   "attackIntervalMs": 100,
   "range": 520,
   "projectileSpeed": 0,
+  "projectileGravityPerSec2": 0,
   "spreadDeg": 0,
   "pelletCount": 1,
   "maxResource": 100,

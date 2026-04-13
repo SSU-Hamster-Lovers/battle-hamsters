@@ -45,6 +45,7 @@ export interface WeaponDefinition {
   attackIntervalMs: number;
   range: number;
   projectileSpeed: number;
+  projectileGravityPerSec2: number;
   spreadDeg: number;
   pelletCount: number;
   maxResource: number;

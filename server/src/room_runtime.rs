@@ -60,7 +60,7 @@ impl RoomState {
             countdown_ms,
             server_tick: self.server_tick,
             players: self.player_snapshots(),
-            projectiles: vec![],
+            projectiles: self.projectile_snapshots(),
             weapon_pickups: self.weapon_pickup_snapshots(),
             item_pickups: self.item_pickup_snapshots(),
             time_remaining_ms: self.time_remaining_ms,
@@ -114,6 +114,7 @@ impl RoomState {
         }
 
         // 무기/아이템 초기화
+        self.projectiles.clear();
         self.weapon_pickups.clear();
         self.item_pickups.clear();
         self.next_spawn_respawn_at.clear();
@@ -141,6 +142,7 @@ impl RoomState {
             player.snapshot.last_death_cause = None;
         }
 
+        self.projectiles.clear();
         self.weapon_pickups.clear();
         self.item_pickups.clear();
         self.next_spawn_respawn_at.clear();
@@ -199,6 +201,7 @@ impl RoomState {
             self.handle_weapon_attack(player_id, now_ms, &mut deaths, &mut dying_this_tick);
         }
 
+        self.step_projectiles(now_ms, &mut deaths, &mut dying_this_tick);
         self.tick_burn_effects(now_ms, &mut deaths, &mut dying_this_tick);
 
         for (player_id, cause) in deaths {
@@ -277,17 +280,17 @@ pub(crate) fn step_player(player: &mut PlayerRuntime, now_ms: u64) {
             player.snapshot.drop_through_until = Some(now_ms + DROP_THROUGH_MS);
             player.snapshot.grounded = false;
             player.snapshot.position.y += 2.0;
-            player.snapshot.velocity.y = 2.0;
+            player.vertical_velocity = 2.0;
         } else if player.snapshot.jump_count_used < player.snapshot.max_jump_count {
-            player.snapshot.velocity.y = JUMP_VELOCITY;
+            player.vertical_velocity = JUMP_VELOCITY;
             player.snapshot.grounded = false;
             player.snapshot.jump_count_used += 1;
         }
     }
 
     if !player.snapshot.grounded {
-        if down_pressed && player.snapshot.velocity.y < 0.0 {
-            player.snapshot.velocity.y = 0.0;
+        if down_pressed && player.vertical_velocity < 0.0 {
+            player.vertical_velocity = 0.0;
         }
 
         let gravity = if down_pressed {
@@ -300,12 +303,12 @@ pub(crate) fn step_player(player: &mut PlayerRuntime, now_ms: u64) {
         } else {
             MAX_FALL_SPEED
         };
-        player.snapshot.velocity.y = (player.snapshot.velocity.y + gravity).min(max_fall_speed);
+        player.vertical_velocity = (player.vertical_velocity + gravity).min(max_fall_speed);
     }
 
     let desired_velocity_x = move_x * RUN_SPEED_PER_TICK;
     let combined_velocity_x = desired_velocity_x + player.external_velocity.x;
-    let combined_velocity_y = player.snapshot.velocity.y + player.external_velocity.y;
+    let combined_velocity_y = player.vertical_velocity + player.external_velocity.y;
 
     let previous_position = player.snapshot.position.clone();
     player.snapshot.position.x += combined_velocity_x;
@@ -372,6 +375,7 @@ fn is_on_one_way_platform(player: &PlayerSnapshot) -> bool {
 fn land_on_surface(player: &mut PlayerRuntime, top_y: f64) {
     player.snapshot.position.y = top_y - PLAYER_HALF_SIZE;
     player.snapshot.velocity.y = 0.0;
+    player.vertical_velocity = 0.0;
     player.snapshot.grounded = true;
     player.snapshot.jump_count_used = 0;
     player.external_velocity.y = 0.0;

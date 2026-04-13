@@ -96,6 +96,12 @@ oneWayPlatformTopY = 380
 - 아래에서 위로 통과는 허용한다.
 - `아래 + 점프` 입력 시 일정 시간 동안 해당 플랫폼 충돌을 무시할 수 있다.
 
+### 현재 알려진 구현 한계
+
+- 현재 런타임은 `dropThroughUntil` 시간 창 동안 모든 `one_way_platform` 착지를 함께 무시한다.
+- 그래서 세로 간격이 가까운 플랫폼 조합에서는, 의도한 첫 번째 플랫폼만이 아니라 바로 아래 두 번째 플랫폼까지 한 번에 통과할 수 있다.
+- 후속 논의안은 `docs/technical/mini-spec-one-way-drop-through-v1.md`를 따른다.
+
 ### 필요한 데이터
 - `leftX`
 - `rightX`
@@ -107,6 +113,27 @@ oneWayPlatformTopY = 380
 - 현재 프레임의 player bottom이 `topY` 아래로 내려왔고
 - `dropThrough` 상태가 아니면
 - 착지 처리 가능
+
+## 투사체 / 원웨이 플랫폼 계약
+
+### 현재 v2 정책
+
+- `floor` 와 `solid_wall` 은 투사체를 항상 막는다.
+- `one_way_platform` 은 **top surface를 위에서 아래로 통과할 때만** 투사체를 막는다.
+- 아래에서 위로 지나가는 투사체는 통과한다.
+- 옆으로 스치는 얇은 플랫폼 edge 차단은 현재 하지 않는다. one-way는 두께가 있는 벽이 아니라 top surface로 본다.
+
+### 이유
+
+- 플레이어 착지 규칙과 같은 직관을 유지할 수 있다.
+- 아래쪽 armory / lower route에서 위쪽 전장을 향해 쏘는 탄이 자연스럽게 통과한다.
+- 향후 무기별 예외 규칙(예: 폭발탄은 플랫폼에 부딪힘, 관통탄은 통과)을 추가하더라도 기본 계약이 단순하다.
+
+### 향후 확장 포인트
+
+- 무기별 `collisionProfile` 또는 동등한 정책 필드
+- `one_way_platform`을 위에서 맞히면 터지고, 아래에서는 통과하는 폭발탄
+- 포물선 탄도에서 착탄면과 충돌 반응 세분화
 
 ## solid wall 계약
 

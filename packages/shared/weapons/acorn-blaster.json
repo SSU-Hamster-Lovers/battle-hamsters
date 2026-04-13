@@ -15,6 +15,7 @@
   "attackIntervalMs": 220,
   "range": 620,
   "projectileSpeed": 0,
+  "projectileGravityPerSec2": 0,
   "spreadDeg": 2,
   "pelletCount": 1,
   "maxResource": 16,

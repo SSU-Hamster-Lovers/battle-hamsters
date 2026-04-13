@@ -4,7 +4,7 @@
 
 ## 최신 기준
 
-- 기준 브랜치: `feat/weapon-system-phase2-4` (Phase 2 visual clamp + Phase 3 weapon expansion + Phase 4 burn 통합)
+- 기준 브랜치: `feat/projectile-gravity-v1` (서버 aim clamp + 투사체 포물선 1차 반영)
 - 마지막 동기화 기준: 2026-04-13
 
 ## 현재 구현된 것
@@ -18,6 +18,7 @@
 - `packages/shared/maps/training-arena.json` 공통 테스트 맵 파일과 `trainingArenaMap` export가 있다.
 - `PlayerSnapshot`에는 `kills`, `deaths`, `lastDeathCause`가 포함되어 매치 점수와 최근 사망 원인을 함께 전달한다.
 - `PlayerSnapshot.effects: StatusEffectInstance[]`로 현재 활성 상태이상을 클라이언트에 전달한다. 현재 `kind: "burn"` 1종만 구현.
+- `ProjectileSnapshot` 타입과 `MatchSnapshot.projectiles: ProjectileSnapshot[]` 계약이 추가되었다.
 
 ### Server
 
@@ -59,14 +60,31 @@
   - `random_candidates` + `spawnGroupId` 구조 처리
   - `jump_boost_small`, `health_pack_small` 아이템 정의를 shared JSON에서 읽어 적용
 - 무기 확장 v2:
-  - `Seed Shotgun` (`seed_shotgun.json`): hitscan, 5 pellet, spreadDeg 22°, 탄창 4발
-  - `Hand Cannon` (`hand-cannon.json`): hitscan, 1 pellet, 고데미지/고넉백, 탄창 4발
+  - `Seed Shotgun` (`seed_shotgun.json`): projectile, 5 pellet, spreadDeg 22°, 탄창 4발, `projectileSpeed: 600px/s`
+  - `Hand Cannon` (`hand-cannon.json`): projectile, 1 pellet, 고데미지/고넉백, 탄창 4발, `projectileSpeed: 900px/s`
   - 맵 `weapon_group` 랜덤 후보에 Seed Shotgun 추가 (acorn_blaster와 동일 위치)
   - Hand Cannon은 맵 중앙(x=800) 고정 스폰, 25s 리스폰
+- 투사체 런타임 1차:
+  - `ProjectileRuntime` + `RoomState.projectiles` + `server/src/room_projectiles.rs` 추가
+  - 투사체는 spawn tick부터 바로 직선 이동/충돌 판정을 시작한다.
+  - sweep(선분) 충돌로 플레이어/지형 충돌을 판정하고, 명중/사거리 소진/지형 충돌 시 소멸한다.
+  - `world_snapshot.projectiles`에 현재 활성 투사체를 실어 보낸다.
+  - `floor / solid_wall`은 항상 투사체를 막고, `one_way_platform`은 위에서 아래로 top surface를 가로지를 때만 막는다.
+  - 현재는 무기별 관통/통과 규칙은 없고, 현재 projectile 무기는 공통 정책을 사용한다.
+  - `projectileGravityPerSec2`가 있으면 틱 평균 속도 적분으로 포물선 이동을 계산한다.
+  - 현재 값:
+    - `Seed Shotgun`: `520 px/s²`
+    - `Hand Cannon`: `260 px/s²`
+  - 세로 넉백은 내부 `vertical_velocity`와 `external_velocity`를 분리해 skyrocket형 누적 버그를 막는다.
+- 자유맵 테스트용 armory 1차:
+  - 훈련 맵 좌측에 상/하단 shelf 플랫폼을 추가했다.
+  - 상단 shelf에 `Acorn Blaster`, `Seed Shotgun`, `Hand Cannon` 고정 스폰을 배치했다.
+  - armory 무기 respawn/despawn 주기는 짧게(`respawnMs: 2500`, `despawnAfterMs: 6000`) 설정했다.
+  - 기존 전장 스폰 무기들도 테스트 편의를 위해 respawn/despawn를 더 짧게 조정했다.
 - 전투 1차:
   - `Acorn Blaster` 히트스캔 발사
-  - `Seed Shotgun` 히트스캔 burst: `pelletCount > 1`일 때 spread_deg 범위 내 균등 분산 후 pellet별 독립 판정
-  - `Hand Cannon` 히트스캔 단발 (기존 단일 레이)
+  - `Seed Shotgun` 투사체 5-pellet 산탄: `pelletCount > 1`일 때 spread_deg 범위 내 균등 분산 후 pellet별 독립 투사체 생성
+  - `Hand Cannon` 투사체 단발 고화력
   - 상대 넉백
   - 자기 반동(`self recoil`)
   - 탄 소모
@@ -78,7 +96,7 @@
   - `duration_ms`(2200ms) 경과 시 자동 소멸
   - Burn 사망은 기존 `DeathCause::Weapon { killer_id, weapon_id }` 재사용
   - `PlayerSnapshot.effects`로 클라이언트에 전달; Burn 중 플레이어 위에 3-레이어 파라메트릭 불꽃(Graphics, 60 FPS 재그리기) 표시
-  - 현재 `Paws`에 임시 연결 (실험용); 리스폰/리셋 시 즉시 해제
+  - 현재는 어떤 기본 무기에도 연결되어 있지 않다. 전용 무기 연결은 후속 작업이다.
 - 사망/리스폰 처리:
   - `PlayerSnapshot.lastDeathCause` 에 최근 사망 원인을 싣는다.
   - `room_snapshot` / `world_snapshot` 은 짧은 TTL의 `damageEvents` 배열을 함께 싣는다.
@@ -104,6 +122,10 @@
 - remote player / local player / pickup 에 1차 보간을 적용했다.
 - 월드 무기 pickup은 기본 fallback 도형/라벨을 유지하되, `Acorn Blaster` 는 1차 전용 pickup sprite + `AB` glyph + source accent 로 렌더링한다.
 - 월드 아이템 pickup을 간단한 다이아몬드 도형/라벨로 렌더링한다.
+- `world_snapshot.projectiles`를 렌더링한다.
+  - Seed Shotgun pellet: 초록 소형 탄 + 4px 꼬리
+  - Hand Cannon bullet: 주황 대형 탄 + 8px 꼬리
+  - 현재는 sprite atlas가 없으면 fallback 도형으로 렌더링하고, `velocity + projectileGravityPerSec2` 기반 짧은 예측/보간으로 계단 현상을 줄인다.
 - `Acorn Blaster` 장착 시 손 앞에 1차 무기 overlay 를 렌더링한다.
 - 무기 오버레이가 에임 벡터 방향으로 실시간 회전한다.
   - 서버에서 캐릭터 `direction`이 이동 방향이 아닌 **에임 방향 기준**으로 결정된다. `abs(aim.x) < 0.12` deadzone에서는 이전 방향 유지.
@@ -113,7 +135,8 @@
   - 원격 플레이어 오버레이는 direction 기반 수평 fallback 유지.
   - `WeaponDefinition.aimProfile`(`minAimDeg` / `maxAimDeg`)이 있으면 오버레이 각도를 표시용으로 clamp한다.
     - Acorn Blaster: -55° ~ +40°, Paws: -30° ~ +30°.
-    - clamp는 시각 표현 전용이며 서버 판정(Step 3)은 미구현.
+    - 서버 공격 판정(melee / hitscan / projectile / self recoil)도 같은 `aimProfile` 기준으로 clamp한다.
+    - 로컬 총구 flash도 같은 clamp 기준을 사용한다.
 - 하단 고정 HUD 바 (y=512~600, 88px):
   - 좌측: 로컬 플레이어 compact combat bar
   - 중앙: 타이머 (10초 이하 적색 강조)
@@ -123,7 +146,7 @@
   - Free Play에서는 우측 카드가 `최근 공격한 대상 -> 킬 최다 상대` 우선순위로 표시된다.
 - 좌상단에는 큰 제목/room/server tick 대신 작은 `WS/ping` 상태만 표시한다.
 - 무기 아이콘 레지스트리: `getWeaponHudTextureKey(weaponId)` → `RenderTexture` 코드 생성 아이콘 (`paws`, `acorn_blaster`, fallback; `seed_shotgun`, `hand_cannon`은 자동 fallback)
-- `aimProfile`이 있는 무기에 대해 클라이언트 오버레이 회전 각도를 `[minAimDeg, maxAimDeg]`로 클램프한다 (표시 전용, 서버 판정 클램프 제외).
+- `aimProfile`이 있는 무기에 대해 클라이언트 오버레이 회전 각도를 `[minAimDeg, maxAimDeg]`로 클램프하고, 서버 공격 판정도 같은 범위를 사용한다.
 - 발사 시 로컬 보조용 무기별 연출을 적용한다.
   - `Acorn Blaster`: 총구 화염 + 짧은 tracer
   - `Paws`: 에임 방향으로 내지르는 사다리꼴 원뿔(truncated cone) flash
@@ -209,22 +232,38 @@
 
 - `Acorn Blaster`, `Paws`, `Seed Shotgun`, `Hand Cannon` 네 무기에 대해 서버 판정을 구현한다.
 - `Paws` 근접 판정: 에임 방향 원뿔(hit_start=14px, hit_end=56px, near_half_w=7px, far_half_w=21px), 가장 가까운 단일 타겟, damage=8, knockback=3, cooldown=350ms.
-  - **Burn DoT 임시 연결**: Paws 명중 시 2200ms duration, 500ms tick, 2 damage/tick burn 적용.
 - `Acorn Blaster` 히트스캔 단발 발사.
-- `Seed Shotgun` 히트스캔 5-pellet 산탄, `Hand Cannon` 히트스캔 단발 고화력.
-- `pelletCount > 1` 무기는 서버에서 `spreadDeg` 범위 내 균등 각도 분산으로 각 pellet 독립 판정.
+- `Seed Shotgun` 투사체 5-pellet 산탄, `Hand Cannon` 투사체 단발 고화력.
+- `pelletCount > 1` 무기는 서버에서 `spreadDeg` 범위 내 균등 각도 분산으로 각 pellet 독립 투사체를 생성한다.
 - 월드 무기는 `E`로 명시적으로 획득하고 `Q`로 드롭한다.
 - 월드 아이템은 닿으면 자동으로 획득한다.
 - `jump_boost_small`은 `maxJumpCount`를 `1..3` 범위에서 증가시키고, `health_pack_small`은 HP를 최대치까지 회복한다.
 - beam / grab / throwable, speed rank / extra life 아이템, 다중 무기 밸런싱은 아직 미구현이다.
 
+### 현재 투사체 한계
+
+- 무기별 탄도 차이(직선탄 vs 포물선탄 vs 관통탄)는 아직 초기 단계다.
+- 현재는 `Seed Shotgun`, `Hand Cannon`만 포물선 튜닝이 들어가 있고, 다른 무기/투사체 타입은 미구현이다.
+- 무기별 개별 충돌 정책(`collisionProfile`)은 아직 없다.
+
+### 현재 조준 각도 한계
+
+- `aimProfile`의 `deadZoneBehavior: "block"` 계열 설계는 아직 없다.
+- 현재는 허용 각도를 벗어나면 clamp만 하고, 발사 차단/경고 연출은 하지 않는다.
+
+### 현재 원웨이 플랫폼 하강 한계
+
+- 현재 `dropThroughUntil`은 특정 플랫폼 1개가 아니라 모든 `one_way_platform`을 잠시 무시한다.
+- 그래서 세로로 가까운 플랫폼 조합에서는 하강 시 두 개를 한 번에 통과할 수 있다.
+- 후속 논의/설계는 `docs/technical/mini-spec-one-way-drop-through-v1.md`에 정리되어 있다.
+
 ## 다음 구현 우선순위
 
-1. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체 (+ Seed Shotgun / Hand Cannon 투사체화 동시 진행)
-2. Burn DoT를 Paws에서 전용 무기로 이전 (Paws의 임시 연결 해제)
-3. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
-4. `develop` preview / staging 배포 전략 분리
-5. 서버 aim clamp (Step 3 — 현재 clamp는 클라이언트 표시 전용)
+1. 원웨이 플랫폼 drop-through 안정화 v1
+2. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체 (투사체 texture hookup 포함)
+3. Burn DoT를 전용 무기에 연결
+4. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
+5. `develop` preview / staging 배포 전략 분리
 
 ## 참고
 
@@ -233,6 +272,8 @@
 - 문서 동기화 + 배포 전략 미니 스펙: `docs/archive/mini-specs/mini-spec-doc-sync-deploy-strategy-v1.md`
 - 사망 연출 + 디버그 토글 미니 스펙: `docs/archive/mini-specs/mini-spec-death-feedback-debug-toggle-v1.md`
 - 로컬 개발 환경 정리 미니 스펙: `docs/archive/mini-specs/mini-spec-local-dev-env-runner-v1.md`
+- 원웨이 플랫폼 하강 논의 미니 스펙: `docs/technical/mini-spec-one-way-drop-through-v1.md`
+- 서버 aim clamp 미니 스펙: `docs/technical/mini-spec-server-aim-clamp-v1.md`
 - 점프 아이템 세부 규칙 후속은 `docs/technical/mini-spec-jump-item-integration-v1.md` 참조
 - 전투 표현 polish 후속은 `docs/technical/mini-spec-combat-presentation-polish-v0.md` 참조
 - HUD compact 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-hud-compact-combat-bar-v2.md`
@@ -244,4 +285,6 @@
 - Paws 근접 전투 + HUD 1차 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-paws-combat-hud-v1.md`
 - 무기 확장 v2 완료 미니 스펙: `docs/technical/mini-spec-weapon-expansion-v2.md`
 - 상태이상 1차 (Burn DoT) 완료 미니 스펙: `docs/technical/mini-spec-status-effects-trim-v1.md`
-- 투사체 무기 1차 미니 스펙 (예정): `docs/technical/mini-spec-projectile-weapons-v1.md`
+- 투사체 중력 / 포물선 1차 미니 스펙: `docs/technical/mini-spec-projectile-gravity-v1.md`
+- 투사체 무기 1차 미니 스펙: `docs/technical/mini-spec-projectile-weapons-v1.md`
+- 투사체 충돌 정책 v2 미니 스펙: `docs/technical/mini-spec-projectile-collision-policy-v2.md`

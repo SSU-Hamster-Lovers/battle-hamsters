@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::{
-    game_data::RuntimeWeaponSpecialEffect,
+    game_data::{RuntimeWeaponDefinition, RuntimeWeaponSpecialEffect},
     room_config::RoomGameplayConfig,
     weapon_definition,
     BurnEffect, DeathCause, Direction, HitType, LastHitInfo, PlayerRuntime, PlayerState,
@@ -27,12 +27,13 @@ impl RoomState {
         }
 
         let weapon_id = shooter_view.snapshot.equipped_weapon_id.clone();
+        let weapon = weapon_definition(&weapon_id).clone();
 
         // Melee weapons (infinite resource, cone-based hit detection)
-        if matches!(weapon_definition(&weapon_id).hit_type, HitType::Melee) {
-            let weapon = weapon_definition(&weapon_id);
+        if matches!(weapon.hit_type, HitType::Melee) {
             let shooter_position = shooter_view.snapshot.position.clone();
-            let aim_direction = normalize_or_fallback(
+            let aim_direction = resolve_weapon_aim_direction(
+                &weapon,
                 shooter_view.latest_input.aim.clone(),
                 shooter_view.snapshot.direction,
             );
@@ -119,8 +120,7 @@ impl RoomState {
             return;
         }
 
-        let weapon = weapon_definition(&weapon_id).clone();
-        if !matches!(weapon.hit_type, HitType::Hitscan) {
+        if !matches!(weapon.hit_type, HitType::Hitscan | HitType::Projectile) {
             return;
         }
 
@@ -139,7 +139,8 @@ impl RoomState {
 
         let shooter_position = shooter_view.snapshot.position.clone();
         let shooter_grounded = shooter_view.snapshot.grounded;
-        let aim_direction = normalize_or_fallback(
+        let aim_direction = resolve_weapon_aim_direction(
+            &weapon,
             shooter_view.latest_input.aim.clone(),
             shooter_view.snapshot.direction,
         );
@@ -202,7 +203,12 @@ impl RoomState {
             }
         }
 
-        // 펠릿별 독립 판정
+        if matches!(weapon.hit_type, HitType::Projectile) {
+            self.spawn_projectiles(player_id, &weapon, &pellet_aims, &shooter_position, now_ms);
+            return;
+        }
+
+        // hitscan 펠릿별 독립 판정
         for pellet_aim in &pellet_aims {
             let target_id = self.find_hitscan_target(
                 player_id,
@@ -469,6 +475,7 @@ pub(crate) fn reset_general_combat_state(
     player.snapshot.equipped_weapon_id = "paws".to_string();
     player.snapshot.equipped_weapon_resource = None;
     player.snapshot.velocity = Vector2 { x: 0.0, y: 0.0 };
+    player.vertical_velocity = 0.0;
     player.external_velocity = Vector2 { x: 0.0, y: 0.0 };
     player.snapshot.grounded = false;
     player.attack_queued = false;
@@ -550,6 +557,37 @@ fn rotate_vector(vector: Vector2, angle_deg: f64) -> Vector2 {
     Vector2 {
         x: vector.x * cos - vector.y * sin,
         y: vector.x * sin + vector.y * cos,
+    }
+}
+
+pub(crate) fn resolve_weapon_aim_direction(
+    weapon: &RuntimeWeaponDefinition,
+    input_aim: Vector2,
+    direction: Direction,
+) -> Vector2 {
+    let normalized_aim = normalize_or_fallback(input_aim, direction);
+    let Some(aim_profile) = weapon.aim_profile else {
+        return normalized_aim;
+    };
+
+    let local_angle = match direction {
+        Direction::Left => normalized_aim.y.atan2(-normalized_aim.x),
+        Direction::Right => normalized_aim.y.atan2(normalized_aim.x),
+    };
+    let clamped_angle = local_angle.clamp(
+        aim_profile.min_aim_deg.to_radians(),
+        aim_profile.max_aim_deg.to_radians(),
+    );
+
+    match direction {
+        Direction::Left => Vector2 {
+            x: -clamped_angle.cos(),
+            y: clamped_angle.sin(),
+        },
+        Direction::Right => Vector2 {
+            x: clamped_angle.cos(),
+            y: clamped_angle.sin(),
+        },
     }
 }
 
