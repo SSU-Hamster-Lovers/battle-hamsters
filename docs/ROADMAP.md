@@ -90,9 +90,10 @@
 ### 즉시 할 일 (Next Sprint)
 
 1. 무기 각도 / Dead zone / 오버레이 앵커 1차
-2. 사망 더미를 실제 래그돌/시체 연출로 확장
-3. PostgreSQL 스키마 및 마이그레이션 구조 정의
-4. `develop` preview / staging 배포 전략 분리
+2. HUD를 compact combat bar v2 구조로 단순화
+3. 사망 더미를 실제 래그돌/시체 연출로 확장
+4. PostgreSQL 스키마 및 마이그레이션 구조 정의
+5. `develop` preview / staging 배포 전략 분리
 
 ### 나중에 할 일
 
@@ -110,6 +111,7 @@
    - `docs/technical/mini-spec-impact-feedback-v1.md`
    - `docs/technical/mini-spec-weapon-angle-deadzone-v0.md`
    - `docs/technical/mini-spec-combat-presentation-polish-v0.md`
+   - `docs/technical/mini-spec-hud-compact-combat-bar-v2.md`
 
 ---
 
