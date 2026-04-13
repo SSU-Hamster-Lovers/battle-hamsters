@@ -2326,18 +2326,21 @@ class MainScene extends Phaser.Scene {
     aimX: number,
     aimY: number,
   ) {
+    // 색상: 안쪽(노란/주황) ~ 바깥쪽(주황/붉은)으로 섞임
     const flameColors = [0xffdd44, 0xff9900, 0xff6600, 0xff3300, 0xffaa00];
     const perpX = -aimY;
     const perpY = aimX;
     const count = Phaser.Math.Between(2, 3);
 
     for (let i = 0; i < count; i++) {
-      const speed = Phaser.Math.FloatBetween(5, 8);
-      const side = Phaser.Math.FloatBetween(-0.35, 0.35);
+      // speed 4.5~7.5 px/frame, drag 0.98 → 최대 ~155px 이동 (hit range 170px 내)
+      const speed = Phaser.Math.FloatBetween(4.5, 7.5);
+      const side = Phaser.Math.FloatBetween(-0.3, 0.3);
       const vx = (aimX + side * perpX) * speed;
-      const vy = (aimY + side * perpY) * speed - Phaser.Math.FloatBetween(0.1, 0.4);
-      const size = Phaser.Math.FloatBetween(4, 7);
-      const lifetime = Phaser.Math.Between(380, 620);
+      const vy = (aimY + side * perpY) * speed - Phaser.Math.FloatBetween(0.1, 0.35);
+      const size = Phaser.Math.FloatBetween(4, 6.5);
+      // 수명 280~430ms: 최고속도 파티클이 범위 경계 근처에서 페이드아웃
+      const lifetime = Phaser.Math.Between(280, 430);
       const node = this.add
         .ellipse(
           muzzleX + Phaser.Math.FloatBetween(-2, 2),
@@ -2355,10 +2358,10 @@ class MainScene extends Phaser.Scene {
         velocityY: vy,
         angularVelocity: Phaser.Math.FloatBetween(-0.02, 0.02),
         gravity: 0.31,
-        drag: 0.985,
+        drag: 0.98,
         scaleXVelocity: 0.022,
         scaleYVelocity: 0.018,
-        fadeAt: this.time.now + lifetime * 0.55,
+        fadeAt: this.time.now + lifetime * 0.5,
         destroyAt: this.time.now + lifetime,
         baseAlpha: 0.85,
       });
@@ -2797,12 +2800,23 @@ class MainScene extends Phaser.Scene {
         aim,
         localPlayer.snapshot.direction,
       );
-      this.spawnFlameParticles(
-        originX + flamAim.x * 18,
-        originY + flamAim.y * 18,
-        flamAim.x,
-        flamAim.y,
-      );
+      const flamPres = resolveWeaponEquipPresentation("ember_sprinkler");
+      let flamMuzzleX: number;
+      let flamMuzzleY: number;
+      if (flamPres.textureKey !== null) {
+        const dir = localPlayer.snapshot.direction;
+        const xSign = dir === "left" ? -1 : 1;
+        const xPull = Math.abs(flamAim.y) * 3;
+        const anchorYOffset = flamAim.y * 8;
+        const weaponCenterX = xSign * Math.max(0, flamPres.offsetX - xPull);
+        const weaponCenterY = flamPres.offsetY + anchorYOffset;
+        flamMuzzleX = originX + weaponCenterX + flamPres.muzzleFromCenter * flamAim.x;
+        flamMuzzleY = originY + weaponCenterY + flamPres.muzzleFromCenter * flamAim.y;
+      } else {
+        flamMuzzleX = originX + flamAim.x * 14;
+        flamMuzzleY = originY + flamAim.y * 14;
+      }
+      this.spawnFlameParticles(flamMuzzleX, flamMuzzleY, flamAim.x, flamAim.y);
     }
 
     this.attackWasDown = attackHeld;

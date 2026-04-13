@@ -9,6 +9,7 @@ const ACORN_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-acorn-blaster`
 const EMBER_SPRINKLER_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-ember-sprinkler`;
 const WEAPON_EQUIP_TEXTURE_PREFIX = "weapon-equip";
 const ACORN_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-acorn-blaster`;
+const EMBER_SPRINKLER_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-ember-sprinkler`;
 
 type WeaponPickupSource = "spawn" | "dropped" | "reward";
 
@@ -57,6 +58,13 @@ export function ensureWeaponPickupTextures(scene: Phaser.Scene) {
     const graphics = new Phaser.GameObjects.Graphics(scene);
     drawEmberSprinklerPickupTexture(graphics);
     graphics.generateTexture(EMBER_SPRINKLER_PICKUP_TEXTURE_KEY, 56, 40);
+    graphics.destroy();
+  }
+
+  if (!scene.textures.exists(EMBER_SPRINKLER_EQUIP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawEmberSprinklerEquipTexture(graphics);
+    graphics.generateTexture(EMBER_SPRINKLER_EQUIP_TEXTURE_KEY, 36, 20);
     graphics.destroy();
   }
 }
@@ -109,6 +117,17 @@ export function resolveWeaponEquipPresentation(
       flipWithDirection: true,
       // 텍스처 28px, 이미지 센터 x=14, 총구 끝 x=24 → 총구까지 10px
       muzzleFromCenter: 10,
+    };
+  }
+
+  if (weaponId === "ember_sprinkler") {
+    return {
+      textureKey: EMBER_SPRINKLER_EQUIP_TEXTURE_KEY,
+      offsetX: 13,
+      offsetY: 2,
+      flipWithDirection: true,
+      // 캔버스 36px, 센터 x=18, 노즐 출구 x=33 → 센터에서 15px
+      muzzleFromCenter: 15,
     };
   }
 
@@ -317,6 +336,34 @@ function drawAcornBlasterEquipTexture(graphics: Phaser.GameObjects.Graphics) {
   graphics.lineStyle(1.5, outline, 1);
   graphics.strokeRoundedRect(8, 7, 12, 5, 2);
   graphics.strokeRoundedRect(10, 11, 4, 7, 1);
+}
+
+function drawEmberSprinklerEquipTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+
+  // 탱크 몸체 — 가로형 실린더 (36×20 캔버스, 오른쪽 방향 기준)
+  graphics.fillStyle(0xea580c, 1);
+  graphics.fillRoundedRect(1, 3, 20, 14, 4);
+
+  // 하단 음영
+  graphics.fillStyle(0xc2410c, 1);
+  graphics.fillRoundedRect(1, 12, 20, 5, 4);
+
+  // 탱크 아웃라인
+  graphics.lineStyle(1.5, 0x7c2d12, 1);
+  graphics.strokeRoundedRect(1, 3, 20, 14, 4);
+
+  // 노즐 연결부
+  graphics.fillStyle(0x9a3412, 1);
+  graphics.fillRoundedRect(21, 6, 11, 5, 2);
+  graphics.lineStyle(1, 0x7c2d12, 1);
+  graphics.strokeRoundedRect(21, 6, 11, 5, 2);
+
+  // 노즐 출구 화염 점 (muzzleFromCenter 기준점: x=33)
+  graphics.fillStyle(0xfde047, 0.9);
+  graphics.fillEllipse(33, 7, 3, 3);
+  graphics.fillStyle(0xfb923c, 0.75);
+  graphics.fillEllipse(33, 11, 3, 3);
 }
 
 function drawEmberSprinklerPickupTexture(graphics: Phaser.GameObjects.Graphics) {

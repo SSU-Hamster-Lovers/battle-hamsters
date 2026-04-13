@@ -2298,7 +2298,7 @@ mod tests {
         shooter.snapshot.direction = Direction::Right;
         shooter.snapshot.grounded = true;
         shooter.snapshot.equipped_weapon_id = "ember_sprinkler".to_string();
-        shooter.snapshot.equipped_weapon_resource = None;
+        shooter.snapshot.equipped_weapon_resource = Some(100);
         shooter.latest_input.sequence = 1;
         shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
         shooter.attack_queued = true;
@@ -2334,7 +2334,7 @@ mod tests {
         shooter.snapshot.direction = Direction::Right;
         shooter.snapshot.grounded = true;
         shooter.snapshot.equipped_weapon_id = "ember_sprinkler".to_string();
-        shooter.snapshot.equipped_weapon_resource = None;
+        shooter.snapshot.equipped_weapon_resource = Some(100);
         shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
         shooter.attack_queued = true;
         shooter.attack_was_down = true;
