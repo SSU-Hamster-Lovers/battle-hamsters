@@ -156,6 +156,7 @@
   - `Walnut Cannon`: 크고 둥근 총구 화염(반지름 13) + 연기 링 2개
   - `Pine Sniper`: 길고 얇은 흰색 트레이서(500px) + muzzle 섬광(반지름 5) + 스코프 시안 글린트
   - `Squirrel Gatling`: 짧고 빠른 총구 섬광(반지름 4) + 30px tracer, 50ms 지속 (`auto_flash`)
+  - `Blueberry Mortar`: 크고 둥근 총구 폭발(보라/흰, 반지름 11) + 연기 링, 100ms 지속 (`mortar_arc`)
   - 그 외: 기존 선형 fallback
 - 피격 연출 1차/2차를 적용한다.
   - `damageEvents` 가 있으면 정확한 `impactPoint` / `impactDirection` 기준으로 작은 파편 파티클을 생성한다.
@@ -298,6 +299,18 @@
 - **클라이언트**: `instant_kill_hazard`를 90° 수직 상향 가시 strip으로 렌더링 (회색 배색).
 - **서버 테스트 갱신**: 스폰 카운트 7, 새 좌표 기준 어설션, 플랫폼 이름 갱신.
 
+### 블루베리 박격포 (blueberry_mortar) — feat/blueberry-mortar-v1 완료
+
+- **서버**: `packages/shared/weapons/blueberry-mortar.json` 추가. projectile, damage 30, splashDamage 15, knockback 18, attackIntervalMs 1200, maxResource 5, projectileGravityPerSec2 1800, `aimProfile: -80°~-10°` (고각도 발사).
+- **서버**: `RuntimeWeaponSpecialEffect::Explode`에 `splash_damage: Option<u16>` 추가. `splash_damage()` 메서드 구현.
+- **서버**: `room_projectiles.rs`에 `apply_explosion` 함수 구현. 플레이어 직격 또는 지형 충돌 시 반경 80px 내 모든 적에게 범위 피해 + 거리 비례 넉백.
+- **맵**: `training-arena.json` center_crown(x=800, y=373)에 airdrop 고정 스폰. respawnMs 12000.
+- **공유 타입**: `packages/shared/weapon-data.ts`에 `blueberry_mortar` 등록.
+- **클라이언트**: HUD 아이콘 (발사관 + 블루베리 탄환) + pickup(60×40)/equip(36×18) 스프라이트.
+- **클라이언트**: `WeaponFireStyle: "mortar_arc"`. 크고 둥근 총구 폭발(보라/흰) + 연기 링, 100ms 지속.
+- **클라이언트**: `WeaponImpactStyle: "explosion_burst"`. 방사형 8개 파편 + 3개 원형 코어 파티클.
+- **단위 테스트 2개 추가**: `blueberry_mortar_direct_hit_applies_direct_and_splash_damage`, `blueberry_mortar_splash_damages_nearby_player`.
+
 ### 다람쥐 기관총 (squirrel_gatling) — feat/squirrel-gatling-v1 완료
 
 - **서버**: `packages/shared/weapons/squirrel-gatling.json` 추가. hitscan, `fireMode: "auto"`, damage 5, knockback 2, attackIntervalMs 80, maxResource 30, rarity uncommon, `aimProfile: -55°~+40°`.
@@ -324,7 +337,7 @@
 
 ## 다음 구현 우선순위
 
-1. 무기 추가 계속 (목표 16~20종) — 현재 7종 구현 (squirrel_gatling 포함)
+1. 무기 추가 계속 (목표 16~20종) — 현재 8종 구현 (blueberry_mortar 포함)
 2. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체 (투사체 texture hookup 포함)
 3. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
 4. `develop` preview / staging 배포 전략 분리
@@ -361,4 +374,5 @@
 - 솔방울 저격총(pine sniper) 완료 미니 스펙: `docs/technical/mini-spec-pine-sniper-v1.md`
 - 훈련 아레나 맵 리워크 v2 완료 미니 스펙: `docs/technical/mini-spec-map-rework-v2.md`
 - 다람쥐 기관총(squirrel_gatling) 완료 미니 스펙: 후보 스펙은 `docs/technical/mini-spec-weapons-next-candidates.md` 참조
+- 블루베리 박격포(blueberry_mortar) 완료 미니 스펙: 후보 스펙은 `docs/technical/mini-spec-weapons-next-candidates.md` 참조
 - 씨앗 샷건 + 호두 대포 스프라이트 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-weapon-sprites-v2.md`
