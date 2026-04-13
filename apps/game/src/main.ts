@@ -1642,11 +1642,13 @@ class MainScene extends Phaser.Scene {
       g.strokeRoundedRect(cardX, cardY, HUD_CARD_W, HUD_CARD_H, 6);
       nameText
         .setPosition(cardX + 12, cardY + 20)
+        .setOrigin(0, 0)
         .setText(isLocal ? "YOU" : "RIVAL")
         .setColor("#7d6651")
         .setVisible(true);
       statText
         .setPosition(cardX + 12, cardY + 42)
+        .setOrigin(0, 0)
         .setText(isLocal ? "joining..." : "waiting...")
         .setColor("#6f5a48")
         .setVisible(true);
@@ -1662,66 +1664,73 @@ class MainScene extends Phaser.Scene {
     killText.setVisible(true);
     weaponIcon.setVisible(true);
 
+    const mirrored = !isLocal;
     const faceR = HUD_FACE_SIZE / 2;
-    const faceX = cardX + HUD_CARD_W - 24;
-    const faceY = cardY + 54;
-    const hpBarX = cardX + 12;
-    const hpBarY = cardY + 24;
-    const hpBarW = HUD_CARD_W - 70;
-    const hpBarH = 14;
+    const faceX = mirrored ? cardX + HUD_CARD_W - 18 : cardX + 18;
+    const faceY = cardY + 46;
+    const barX = mirrored ? cardX + 10 : cardX + 38;
+    const barY = cardY + 26;
+    const barW = HUD_CARD_W - 50;
+    const barH = 12;
     const hpRatio = Math.max(0, Math.min(1, player.hp / HUD_MAX_HP));
     const barFillColor =
       hpRatio > 0.5 ? 0x7cfc00 : hpRatio > 0.25 ? 0xeab308 : 0xef4444;
     const bodyColor = isLocal ? 0xc8874a : 0x4a4a4a;
     const earColor = isLocal ? 0xd4a574 : 0x5a5a5a;
     const accent = isLocal ? 0x93c5fd : 0xcbd5e1;
-    const pipY = cardY + 50;
-    const pipStartX = hpBarX + 6;
-    const pipGap = 12;
+    const pipY = cardY + 18;
+    const pipGap = 11;
+    const pipStartX = barX + 6;
     const visibleLifePips = Math.min(player.lives, HUD_MAX_LIFE_PIPS);
+    const nameX = mirrored ? barX + barW - 4 : barX + 4;
+    const nameAlign = mirrored ? 1 : 0;
+    const weaponIconX = mirrored ? barX + barW - 8 : barX + 8;
+    const weaponInfoX = mirrored ? barX + barW - 18 : barX + 18;
+    const killInfoX = mirrored ? barX + 8 : barX + barW - 8;
+    const pipOverflowX = mirrored
+      ? pipStartX - 18
+      : pipStartX + HUD_MAX_LIFE_PIPS * pipGap + 2;
 
-    // ── 카드 배경 ──
-    g.fillStyle(0x120c09, 0.9);
-    g.fillRoundedRect(cardX, cardY + 6, HUD_CARD_W, HUD_CARD_H - 12, 10);
-    g.fillStyle(0x2a1c14, 0.9);
-    g.fillRoundedRect(cardX + 2, cardY + 8, HUD_CARD_W - 4, HUD_CARD_H - 16, 8);
-    g.fillStyle(isLocal ? 0x2e2a18 : 0x231c18, 0.96);
-    g.fillRoundedRect(cardX + 8, cardY + 10, HUD_CARD_W - 16, HUD_CARD_H - 20, 8);
-    g.lineStyle(1.5, 0x6b4427, 0.95);
-    g.strokeRoundedRect(cardX, cardY + 6, HUD_CARD_W, HUD_CARD_H - 12, 10);
-
-    // ── 이름 스트립 ──
-    g.fillStyle(0x1a120e, 0.95);
-    g.fillRoundedRect(cardX + 10, cardY + 10, hpBarW + 10, 12, 5);
+    // ── 컴팩트 바 배경 ──
+    g.fillStyle(0x120c09, 0.72);
+    g.fillRoundedRect(cardX + 4, cardY + 16, HUD_CARD_W - 8, 44, 10);
+    g.fillStyle(0x30231a, 0.95);
+    g.fillRoundedRect(barX - 2, barY - 10, barW + 4, 34, 8);
+    g.fillStyle(0x17110d, 0.96);
+    g.fillRoundedRect(barX, barY - 8, barW, 30, 7);
+    g.lineStyle(1.2, 0x7a5a34, 0.9);
+    g.strokeRoundedRect(barX, barY - 8, barW, 30, 7);
 
     // ── HP 바 (가로) ──
     g.fillStyle(0x20150f, 1);
-    g.fillRoundedRect(hpBarX, hpBarY, hpBarW, hpBarH, 5);
-    g.fillStyle(0x0f0a06, 0.35);
-    g.fillRoundedRect(hpBarX + 2, hpBarY + 2, hpBarW - 4, 4, 2);
+    g.fillRoundedRect(barX, barY, barW, barH, 5);
+    g.fillStyle(0x0f0a06, 0.42);
+    g.fillRoundedRect(barX + 2, barY + 2, barW - 4, 3, 2);
     if (hpRatio > 0) {
-      const filledW = Math.max(10, Math.floor(hpBarW * hpRatio));
+      const filledW = Math.max(8, Math.floor(barW * hpRatio));
       g.fillStyle(barFillColor, 1);
-      g.fillRoundedRect(hpBarX, hpBarY, filledW, hpBarH, 5);
+      g.fillRoundedRect(barX, barY, filledW, barH, 5);
     }
     g.lineStyle(1, 0x0f0a06, 0.4);
     for (let i = 1; i <= 4; i++) {
-      const segX = hpBarX + (hpBarW * i) / 5;
-      g.lineBetween(segX, hpBarY + 1, segX, hpBarY + hpBarH - 1);
+      const segX = barX + (barW * i) / 5;
+      g.lineBetween(segX, barY + 1, segX, barY + barH - 1);
     }
     g.lineStyle(1.2, 0x5c3d1e, 0.9);
-    g.strokeRoundedRect(hpBarX, hpBarY, hpBarW, hpBarH, 5);
+    g.strokeRoundedRect(barX, barY, barW, barH, 5);
 
     // ── 생명 pip ──
     for (let i = 0; i < HUD_MAX_LIFE_PIPS; i++) {
-      const px = pipStartX + i * pipGap;
+      const pipIndex = mirrored ? HUD_MAX_LIFE_PIPS - 1 - i : i;
+      const px = pipStartX + pipIndex * pipGap;
       const alive = i < visibleLifePips;
       g.fillStyle(alive ? 0x7cfc00 : 0x314126, alive ? 0.95 : 0.8);
-      g.fillCircle(px, pipY, 4.6);
+      g.fillCircle(px, pipY, 4.2);
       g.lineStyle(1, alive ? 0xeaffc4 : 0x10160d, alive ? 0.7 : 0.35);
-      g.strokeCircle(px, pipY, 4.6);
+      g.strokeCircle(px, pipY, 4.2);
     }
 
+    // ── 얼굴 받침 ──
     g.fillStyle(0x120c09, 0.55);
     g.fillCircle(faceX, faceY, faceR + 4);
     g.lineStyle(1.2, isLocal ? 0x9d6a3e : 0x6b5a4d, 0.9);
@@ -1754,10 +1763,10 @@ class MainScene extends Phaser.Scene {
     g.strokeCircle(faceX, faceY, faceR);
 
     // ── 텍스트 업데이트 ──
-    const nickX = hpBarX + 4;
     const nickY = cardY + 7;
     nameText
-      .setPosition(nickX, nickY)
+      .setPosition(nameX, nickY)
+      .setOrigin(nameAlign, 0)
       .setText(player.name.length > 10 ? `${player.name.slice(0, 10)}…` : player.name)
       .setColor(isLocal ? "#fde7c7" : "#e8d4bd");
 
@@ -1770,18 +1779,20 @@ class MainScene extends Phaser.Scene {
     if (this.textures.exists(weaponIconKey)) {
       weaponIcon.setTexture(weaponIconKey);
     }
-    weaponIcon.setPosition(hpBarX + 8, cardY + 64).setScale(0.72);
+    weaponIcon.setPosition(weaponIconX, cardY + 44).setScale(0.68);
     statText
-      .setPosition(hpBarX + 18, cardY + 56)
+      .setPosition(weaponInfoX, cardY + 37)
+      .setOrigin(nameAlign, 0)
       .setColor("#cdb498")
       .setText(`${resolveWeaponAbbrev(player.equippedWeaponId)} [${ammo}]`);
     lifeText
-      .setPosition(pipStartX + HUD_MAX_LIFE_PIPS * pipGap + 2, pipY - 7)
+      .setPosition(pipOverflowX, pipY - 7)
+      .setOrigin(mirrored ? 1 : 0, 0)
       .setText(player.lives > HUD_MAX_LIFE_PIPS ? `+${player.lives - HUD_MAX_LIFE_PIPS}` : "")
       .setColor("#d2e6b2");
     killText
-      .setPosition(hpBarX + hpBarW - 8, cardY + 56)
-      .setOrigin(1, 0)
+      .setPosition(killInfoX, cardY + 37)
+      .setOrigin(mirrored ? 0 : 1, 0)
       .setText(`K ${player.kills}`)
       .setColor(accent === 0x93c5fd ? "#dbeafe" : "#e2e8f0");
   }
