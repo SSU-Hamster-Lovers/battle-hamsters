@@ -29,6 +29,11 @@ export type WeaponFireStyle =
   | "paws_pulse"
   | "muzzle_flash";
 
+export type WeaponImpactStyle =
+  | "generic_spark"
+  | "acorn_spark"
+  | "paws_dust";
+
 export function ensureWeaponPickupTextures(scene: Phaser.Scene) {
   if (!scene.textures.exists(ACORN_PICKUP_TEXTURE_KEY)) {
     const graphics = new Phaser.GameObjects.Graphics(scene);
@@ -104,6 +109,18 @@ export function resolveWeaponFireStyle(weaponId: string): WeaponFireStyle {
   }
 
   return "generic_line";
+}
+
+export function resolveWeaponImpactStyle(weaponId: string): WeaponImpactStyle {
+  if (weaponId === "acorn_blaster") {
+    return "acorn_spark";
+  }
+
+  if (weaponId === "paws") {
+    return "paws_dust";
+  }
+
+  return "generic_spark";
 }
 
 // ── HUD 무기 아이콘 ──────────────────────────────────────────────────────

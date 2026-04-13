@@ -304,6 +304,23 @@
 | `worldDespawnMs`             | 월드에 놓였을 때 자동 소멸 시간 |
 | `specialEffect`              | `grab                           | explode  | none` 등   |
 
+### 후속 확장 후보: 조준 각도 / Dead zone
+
+- 현재 `WeaponDefinition` 에는 조준 가능 각도 제한 필드가 없다.
+- 후속 단계에서는 무기별 허용 발사 각도를 위해 아래와 같은 확장 필드를 검토한다.
+
+```ts
+type WeaponAimProfile = {
+  mode: "free" | "horizontal_only" | "vertical_only";
+  minAimDeg: number;
+  maxAimDeg: number;
+  deadZoneBehavior: "clamp" | "block";
+};
+```
+
+- 이 구조는 아직 런타임 계약에 반영되지 않았다.
+- 상세 초안은 `docs/technical/mini-spec-weapon-angle-deadzone-v0.md` 를 참조한다.
+
 ### 예시: beam 무기
 
 ```json

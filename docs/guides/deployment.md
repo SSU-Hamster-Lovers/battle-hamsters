@@ -15,6 +15,10 @@
 ### Game
 - Cloudflare Pages direct upload 배포는 성공 상태다.
 - 최신 성공 production 배포는 `main` 기준 2026-04-12 (`06ba3e8`) 이다.
+- 운영 Pages 호스트는 `/` 경로에 query string 이 붙은 요청에서 `404`를 반환하는 사례가 있었다.
+- 현재 저장소는 Portal → Game 이동 시 room/name/pid 전달을 query 대신 **URL hash** 로 넘기고,
+  Game 클라이언트는 query/hash 둘 다 읽도록 유지한다.
+- `apps/game/public/_redirects` 의 `/* /index.html 200` 규칙도 함께 둬 정적 SPA fallback 을 보강한다.
 
 ### Server
 - Oracle Cloud 배포 워크플로는 아래 단계를 수행한다.

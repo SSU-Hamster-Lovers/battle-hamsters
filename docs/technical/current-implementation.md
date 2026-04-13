@@ -81,7 +81,7 @@
 - Phaser 클라이언트에서 WebSocket 연결 가능
 - `pnpm dev` 기본 실행은 `GAME_HOST` / `GAME_PORT` 를 읽어 LAN/Tailscale 접근 가능한 개발 서버로 뜬다.
 - `join_room`, `room_snapshot`, `world_snapshot` 처리 가능
-- URL 파라미터(`?room=&name=&pid=`)를 파싱해 Portal 로비에서 전달된 정보로 바로 접속한다.
+- URL query 또는 hash(`room=...&name=...&pid=...`)를 파싱해 Portal 로비에서 전달된 정보로 바로 접속한다.
 - 파라미터가 없으면 자유맵으로 자동 입장한다.
 - 닉네임/플레이어 ID 는 `localStorage` 에 저장되어 재접속 시 동일 신원 유지
 - 테스트 맵용 바닥 / 플랫폼 / pit wall / hazard / spawn 위치를 `trainingArenaMap` 공통 데이터에서 읽어 렌더링한다.
@@ -103,6 +103,8 @@
 - 피격 연출 1차/2차를 적용한다.
   - `damageEvents` 가 있으면 정확한 `impactPoint` / `impactDirection` 기준으로 작은 파편 파티클을 생성한다.
   - 정확 이벤트가 없을 때는 `hp` 감소와 넉백 방향으로 fallback 파티클을 생성한다.
+  - `Acorn Blaster`: 밝은 파편 + 짧은 탄 파편 계열
+  - `Paws`: 짧은 먼지 puff + 충격파 타원 계열
 - 우상단에 킬로그 스택을 `Container` 기반 카드로 렌더링한다.
   - `weapon` 킬: 공격자명 | 무기 아이콘(HUD 아이콘 재사용) | 피해자명
   - 낙사/함정/자살: 텍스트 카드
@@ -132,7 +134,7 @@
 - 루트 `portal` 개발 실행 스크립트는 시작 전에 `apps/portal/.next` 를 정리해 stale chunk 캐시 충돌을 줄인다.
 - 닉네임 입력(localStorage), 자유맵 입장, 방 만들기(4자리 코드 표시), 코드로 입장 흐름을 제공한다.
 - 플레이어 ID 는 익명 UUID 로 자동 발급된다.
-- 게임 클라이언트로 이동 시 `?room=&name=&pid=` 파라미터를 URL 로 전달한다.
+- 게임 클라이언트로 이동 시 `room=...&name=...&pid=...` 정보를 hash 기반 URL로 전달한다.
 - 현재 Portal URL에 `ops`, `debug` 파라미터가 있으면 게임 URL로 그대로 전달한다.
 
 ### 배포
@@ -184,7 +186,7 @@
 
 ## 다음 구현 우선순위
 
-1. Paws 피격 파티클 차별화 (짧은 먼지/충격파 계열, `mini-spec-combat-presentation-polish-v0.md` §1 참조)
+1. 무기 각도 / Dead zone / 오버레이 앵커 1차 (`mini-spec-weapon-angle-deadzone-v0.md` 참조)
 2. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체
 3. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
 4. `develop` preview / staging 배포 전략 분리
@@ -198,4 +200,5 @@
 - 로컬 개발 환경 정리 미니 스펙: `docs/archive/mini-specs/mini-spec-local-dev-env-runner-v1.md`
 - 점프 아이템 세부 규칙 후속은 `docs/technical/mini-spec-jump-item-integration-v1.md` 참조
 - 전투 표현 polish 후속은 `docs/technical/mini-spec-combat-presentation-polish-v0.md` 참조
-- Paws 근접 전투 + HUD 1차 미니 스펙: `docs/technical/mini-spec-paws-combat-hud-v1.md` (완료, 아카이브 대기)
+- 무기 각도/Dead zone 초안은 `docs/technical/mini-spec-weapon-angle-deadzone-v0.md` 참조
+- Paws 근접 전투 + HUD 1차 미니 스펙: `docs/archive/mini-specs/mini-spec-paws-combat-hud-v1.md`
