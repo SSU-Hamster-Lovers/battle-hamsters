@@ -347,7 +347,7 @@ function drawSpikeStrip(
     hazard.y + hazard.height - 3,
     hazard.width,
     6,
-    0x7f1d1d,
+    0x374151,
     0.9,
   );
 
@@ -358,16 +358,16 @@ function drawSpikeStrip(
     const spike = scene.add.triangle(
       centerX,
       hazard.y + hazard.height / 2,
-      0,
-      hazard.height / 2,
-      spikeWidth / 2,
-      -hazard.height / 2,
       -spikeWidth / 2,
       hazard.height / 2,
-      0xf97316,
+      0,
+      -hazard.height / 2,
+      spikeWidth / 2,
+      hazard.height / 2,
+      0x9ca3af,
       0.96,
     );
-    spike.setStrokeStyle(1, 0xfef3c7, 0.8);
+    spike.setStrokeStyle(1, 0xe5e7eb, 0.8);
   }
 }
 

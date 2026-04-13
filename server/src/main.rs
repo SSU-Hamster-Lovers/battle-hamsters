@@ -1506,7 +1506,7 @@ mod tests {
                 id: "proj_up".to_string(),
                 owner_id: "shooter".to_string(),
                 weapon_id: "walnut_cannon".to_string(),
-                position: Vector2 { x: 800.0, y: 470.0 },
+                position: Vector2 { x: 800.0, y: 490.0 },
                 velocity: Vector2 { x: 0.0, y: -800.0 },
                 gravity_per_sec2: 0.0,
                 damage: 80,
@@ -1525,7 +1525,7 @@ mod tests {
             .projectiles
             .get("proj_up")
             .expect("projectile should remain");
-        assert!(projectile.position.y < 440.0);
+        assert!(projectile.position.y < 460.0);
         assert!(deaths.is_empty());
     }
 
@@ -1538,7 +1538,7 @@ mod tests {
                 id: "proj_down".to_string(),
                 owner_id: "shooter".to_string(),
                 weapon_id: "walnut_cannon".to_string(),
-                position: Vector2 { x: 800.0, y: 430.0 },
+                position: Vector2 { x: 800.0, y: 450.0 },
                 velocity: Vector2 { x: 0.0, y: 800.0 },
                 gravity_per_sec2: 0.0,
                 damage: 80,
@@ -2219,15 +2219,15 @@ mod tests {
         );
     }
 
-    // left_bunker_upper: topY=460, x=160-380
-    // left_bunker_lower: topY=570, x=120-340
-    // x=260 은 두 플랫폼 x 범위 모두에 포함되고, 수직 간격은 110px.
+    // left_bunker_upper: topY=480, x=160-380
+    // left_bunker_lower: topY=580, x=120-340
+    // x=260 은 두 플랫폼 x 범위 모두에 포함되고, 수직 간격은 100px.
     // 버그 조건: 기존 전역 시간 무시(drop_active)는 lower platform까지 함께 건너뜀 → 두 플랫폼을 한 번에 통과
     // 수정 후: source 플랫폼(left_bunker_upper)만 무시하고 left_bunker_lower에 정상 착지해야 함
     #[test]
     fn drop_through_skips_only_source_platform_not_adjacent_platform_below() {
-        let left_bunker_upper_top_y = 460.0;
-        let left_bunker_lower_top_y = 570.0;
+        let left_bunker_upper_top_y = 480.0;
+        let left_bunker_lower_top_y = 580.0;
         let test_x = 260.0;
 
         let mut player = test_player(test_x, left_bunker_upper_top_y - PLAYER_HALF_SIZE);
