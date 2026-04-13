@@ -148,6 +148,9 @@ const HUD_FACE_SIZE = 36;
 const HUD_FACE_OFFSET_X = 20;
 const HUD_TEXT_OFFSET_X = 64;
 const HUD_MAX_HP = 100;
+const HUD_TIMER_PANEL_W = 184;
+const HUD_TIMER_PANEL_H = 56;
+const HUD_TIMER_FREE_PLAY_THRESHOLD_MS = 99 * 60 * 60 * 1000;
 const KILL_FEED_SLIDE_IN_MS = 200;
 const DAMAGE_EVENT_DISMISSED_RETENTION_MS = 1_200;
 
@@ -440,11 +443,13 @@ class MainScene extends Phaser.Scene {
   private hudBgGraphics!: Phaser.GameObjects.Graphics;
   private hudLeftGraphics!: Phaser.GameObjects.Graphics;
   private hudRightGraphics!: Phaser.GameObjects.Graphics;
+  private hudCenterGraphics!: Phaser.GameObjects.Graphics;
   private hudLeftNameText!: Phaser.GameObjects.Text;
   private hudLeftStatText!: Phaser.GameObjects.Text;
   private hudRightNameText!: Phaser.GameObjects.Text;
   private hudRightStatText!: Phaser.GameObjects.Text;
   private hudTimerText!: Phaser.GameObjects.Text;
+  private hudTimerSubText!: Phaser.GameObjects.Text;
   private dismissedKillFeedIds = new Map<string, number>();
   private dismissedDamageEventIds = new Map<string, number>();
   private playerName = getOrCreatePlayerName();
@@ -1307,10 +1312,18 @@ class MainScene extends Phaser.Scene {
       .graphics()
       .setDepth(depth)
       .setScrollFactor(0);
-    this.hudBgGraphics.fillStyle(0x0f0a06, 0.92);
+    this.hudBgGraphics.fillGradientStyle(
+      0x140d08,
+      0x140d08,
+      0x090706,
+      0x090706,
+      0.95,
+    );
     this.hudBgGraphics.fillRect(0, HUD_BAR_Y, VIEWPORT_WIDTH, HUD_BAR_HEIGHT);
     this.hudBgGraphics.lineStyle(1, 0x3d2610, 1);
     this.hudBgGraphics.lineBetween(0, HUD_BAR_Y, VIEWPORT_WIDTH, HUD_BAR_Y);
+    this.hudBgGraphics.lineStyle(1, 0x24160d, 0.8);
+    this.hudBgGraphics.lineBetween(0, HUD_BAR_Y + 1, VIEWPORT_WIDTH, HUD_BAR_Y + 1);
 
     // 좌측 카드 Graphics (매 업데이트마다 다시 그림)
     this.hudLeftGraphics = this.add
@@ -1324,10 +1337,15 @@ class MainScene extends Phaser.Scene {
       .setDepth(depth + 1)
       .setScrollFactor(0);
 
+    this.hudCenterGraphics = this.add
+      .graphics()
+      .setDepth(depth + 1)
+      .setScrollFactor(0);
+
     const textDepth = depth + 2;
     const textStyle = {
       fontSize: "11px",
-      color: "#d4b89a",
+      color: "#d6c0a4",
       lineSpacing: 3,
     };
 
@@ -1354,11 +1372,20 @@ class MainScene extends Phaser.Scene {
     // 타이머 (중앙)
     this.hudTimerText = this.add
       .text(VIEWPORT_WIDTH / 2, HUD_BAR_Y + HUD_BAR_HEIGHT / 2, "", {
-        fontSize: "24px",
+        fontSize: "26px",
         fontStyle: "bold",
-        color: "#f9e4c8",
+        color: "#f8ead4",
       })
-      .setOrigin(0.5)
+      .setOrigin(0.5, 0.6)
+      .setDepth(textDepth)
+      .setScrollFactor(0);
+    this.hudTimerSubText = this.add
+      .text(VIEWPORT_WIDTH / 2, HUD_BAR_Y + 18, "", {
+        fontSize: "10px",
+        color: "#9f7d57",
+        fontStyle: "bold",
+      })
+      .setOrigin(0.5, 0)
       .setDepth(textDepth)
       .setScrollFactor(0);
   }
@@ -1395,18 +1422,64 @@ class MainScene extends Phaser.Scene {
       false,
     );
 
-    // 타이머
-    if (timeRemainingMs === null) {
-      this.hudTimerText.setText("∞").setColor("#f9e4c8");
-    } else {
-      const secs = Math.ceil(timeRemainingMs / 1000);
-      const m = Math.floor(secs / 60);
-      const s = secs % 60;
-      const label = m > 0 ? `${m}:${String(s).padStart(2, "0")}` : `${s}`;
-      this.hudTimerText
-        .setText(label)
-        .setColor(secs <= 10 ? "#ef4444" : "#f9e4c8");
+    this.updateHudTimer(timeRemainingMs);
+  }
+
+  private updateHudTimer(timeRemainingMs: number | null) {
+    const panelX = VIEWPORT_WIDTH / 2 - HUD_TIMER_PANEL_W / 2;
+    const panelY = HUD_BAR_Y + 16;
+    const isFreePlay =
+      timeRemainingMs === null || timeRemainingMs >= HUD_TIMER_FREE_PLAY_THRESHOLD_MS;
+
+    this.hudCenterGraphics.clear();
+    this.hudCenterGraphics.fillStyle(0x20150f, 0.96);
+    this.hudCenterGraphics.fillRoundedRect(
+      panelX,
+      panelY,
+      HUD_TIMER_PANEL_W,
+      HUD_TIMER_PANEL_H,
+      10,
+    );
+    this.hudCenterGraphics.fillStyle(0x3d2610, 0.45);
+    this.hudCenterGraphics.fillRoundedRect(
+      panelX + 6,
+      panelY + 6,
+      HUD_TIMER_PANEL_W - 12,
+      10,
+      5,
+    );
+    this.hudCenterGraphics.lineStyle(1.5, 0x6b4427, 0.95);
+    this.hudCenterGraphics.strokeRoundedRect(
+      panelX,
+      panelY,
+      HUD_TIMER_PANEL_W,
+      HUD_TIMER_PANEL_H,
+      10,
+    );
+
+    if (isFreePlay) {
+      this.hudTimerSubText.setText("OPEN WORLD").setColor("#9f7d57");
+      this.hudTimerText.setText("FREE PLAY").setColor("#f8ead4").setFontSize("20px");
+      return;
     }
+
+    const secs = Math.max(0, Math.ceil(timeRemainingMs / 1000));
+    const hours = Math.floor(secs / 3600);
+    const minutes = Math.floor((secs % 3600) / 60);
+    const seconds = secs % 60;
+    const label =
+      hours > 0
+        ? `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
+        : `${minutes}:${String(seconds).padStart(2, "0")}`;
+    const danger = secs <= 10;
+
+    this.hudTimerSubText
+      .setText(hours > 0 ? "MATCH TIMER" : "TIME LEFT")
+      .setColor(danger ? "#fda4af" : "#9f7d57");
+    this.hudTimerText
+      .setText(label)
+      .setColor(danger ? "#ef4444" : "#f8ead4")
+      .setFontSize(hours > 0 ? "21px" : "26px");
   }
 
   private drawPlayerCard(
@@ -1422,7 +1495,9 @@ class MainScene extends Phaser.Scene {
 
     if (!player) {
       // 빈 카드 — 점선 테두리만
-      g.lineStyle(1, 0x3d2610, 0.35);
+      g.fillStyle(0x120c09, 0.48);
+      g.fillRoundedRect(cardX, cardY, HUD_CARD_W, HUD_CARD_H, 8);
+      g.lineStyle(1, 0x5c3d1e, 0.28);
       g.strokeRoundedRect(cardX, cardY, HUD_CARD_W, HUD_CARD_H, 6);
       nameText.setText("").setVisible(false);
       statText.setText("").setVisible(false);
@@ -1433,10 +1508,14 @@ class MainScene extends Phaser.Scene {
     statText.setVisible(true);
 
     // ── 카드 배경 ──
-    g.fillStyle(0x1c1410, 0.9);
-    g.fillRoundedRect(cardX, cardY, HUD_CARD_W, HUD_CARD_H, 6);
-    g.lineStyle(1.5, 0x5c3d1e, 1);
-    g.strokeRoundedRect(cardX, cardY, HUD_CARD_W, HUD_CARD_H, 6);
+    g.fillStyle(0x1a120e, 0.96);
+    g.fillRoundedRect(cardX, cardY, HUD_CARD_W, HUD_CARD_H, 8);
+    g.fillStyle(isLocal ? 0x8c5a30 : 0x56463c, 0.9);
+    g.fillRoundedRect(cardX + 1, cardY + 1, 6, HUD_CARD_H - 2, 6);
+    g.fillStyle(0x2a1c14, 0.75);
+    g.fillRoundedRect(cardX + 10, cardY + 8, HUD_CARD_W - 20, 20, 6);
+    g.lineStyle(1.5, 0x6b4427, 1);
+    g.strokeRoundedRect(cardX, cardY, HUD_CARD_W, HUD_CARD_H, 8);
 
     // ── HP 바 (수직) ──
     const hpBarX = cardX + HUD_HP_BAR_OFFSET_X;
@@ -1458,11 +1537,11 @@ class MainScene extends Phaser.Scene {
       g.fillRoundedRect(hpBarX, filledY, HUD_HP_BAR_W, filledH, 3);
     }
 
-    // 4구간 세그먼트 사선 컷
-    g.lineStyle(1.5, 0x0f0a06, 0.9);
+    // 4구간 세그먼트 직선 컷
+    g.lineStyle(1, 0x0f0a06, 0.95);
     for (let i = 1; i <= 3; i++) {
       const segY = hpBarY + (hpBarH * i) / 4;
-      g.lineBetween(hpBarX - 1, segY + 1.5, hpBarX + HUD_HP_BAR_W + 1, segY - 1.5);
+      g.lineBetween(hpBarX, segY, hpBarX + HUD_HP_BAR_W, segY);
     }
 
     // HP 바 테두리
@@ -1546,8 +1625,11 @@ class MainScene extends Phaser.Scene {
 
     // ── 텍스트 업데이트 ──
     const nickX = cardX + HUD_TEXT_OFFSET_X + 6;
-    const nickY = cardY + 8;
-    nameText.setPosition(nickX, nickY).setText(player.name);
+    const nickY = cardY + 11;
+    nameText
+      .setPosition(nickX, nickY)
+      .setText(`${isLocal ? "YOU" : "TOP"}  ${player.name}`)
+      .setColor(isLocal ? "#fde7c7" : "#e8d4bd");
 
     const weaponName =
       weaponDefinitionById[player.equippedWeaponId]?.name ??
@@ -1559,9 +1641,13 @@ class MainScene extends Phaser.Scene {
         : "∞";
     const livesExtra = player.lives > maxSeedDisplay ? `+${player.lives - maxSeedDisplay}` : "";
     const killsExtra = player.kills > maxSkullDisplay ? `+${player.kills - maxSkullDisplay}` : "";
-    statText.setPosition(nickX, nickY + 18).setText(
-      `${weaponName} [${ammo}]  ${killsExtra}  ${livesExtra}`.trim(),
-    );
+    const statParts = [`${weaponName} [${ammo}]`];
+    if (killsExtra) statParts.push(`kills ${killsExtra}`);
+    if (livesExtra) statParts.push(`lives ${livesExtra}`);
+    statText
+      .setPosition(nickX, nickY + 20)
+      .setColor("#cdb498")
+      .setText(statParts.join("  "));
   }
 
   private updateMatchOverlay(
