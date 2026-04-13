@@ -3104,6 +3104,29 @@ class MainScene extends Phaser.Scene {
       return;
     }
 
+    if (fireStyle === "sniper_flash") {
+      // 길고 얇은 흰색 트레이서
+      this.attackFlash.lineStyle(2, 0xffffff, 0.88);
+      this.attackFlash.lineBetween(
+        muzzleX,
+        muzzleY,
+        muzzleX + aimX * 500,
+        muzzleY + aimY * 500,
+      );
+      // 밝은 muzzle 섬광
+      this.attackFlash.fillStyle(0xe8f4ff, 0.95);
+      this.attackFlash.fillCircle(muzzleX, muzzleY, 5);
+      // 스코프 글린트 (총신 뒤쪽 위에 작은 시안 점)
+      this.attackFlash.fillStyle(0x7dd3fc, 0.7);
+      this.attackFlash.fillCircle(
+        muzzleX - aimX * 16,
+        muzzleY - aimY * 16 - 6,
+        3,
+      );
+      this.attackFlashUntil = this.time.now + 80;
+      return;
+    }
+
     this.attackFlash.lineStyle(3, 0xfef08a, 0.95);
     this.attackFlash.lineBetween(
       muzzleX,

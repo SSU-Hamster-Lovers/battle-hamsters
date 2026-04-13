@@ -423,6 +423,7 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
         let walnut_cannon_raw = include_str!("../../packages/shared/weapons/walnut-cannon.json");
         let ember_sprinkler_raw =
             include_str!("../../packages/shared/weapons/ember-sprinkler.json");
+        let pine_sniper_raw = include_str!("../../packages/shared/weapons/pine-sniper.json");
 
         let paws: RuntimeWeaponDefinition =
             serde_json::from_str(paws_raw).expect("paws JSON should deserialize");
@@ -434,6 +435,8 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
             serde_json::from_str(walnut_cannon_raw).expect("walnut cannon JSON should deserialize");
         let ember_sprinkler: RuntimeWeaponDefinition = serde_json::from_str(ember_sprinkler_raw)
             .expect("ember sprinkler JSON should deserialize");
+        let pine_sniper: RuntimeWeaponDefinition =
+            serde_json::from_str(pine_sniper_raw).expect("pine sniper JSON should deserialize");
 
         HashMap::from([
             (paws.id.clone(), paws),
@@ -441,6 +444,7 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
             (seed_shotgun.id.clone(), seed_shotgun),
             (walnut_cannon.id.clone(), walnut_cannon),
             (ember_sprinkler.id.clone(), ember_sprinkler),
+            (pine_sniper.id.clone(), pine_sniper),
         ])
     })
 }
