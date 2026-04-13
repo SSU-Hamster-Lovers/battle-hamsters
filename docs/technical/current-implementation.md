@@ -4,7 +4,7 @@
 
 ## 최신 기준
 
-- 기준 브랜치: `feat/pickup-despawn-vfx-v1` (픽업 소멸 VFX 반영)
+- 기준 브랜치: `develop` (flamethrower-v1 + doc-cleanup-apr13 포함)
 - 마지막 동기화 기준: 2026-04-13
 
 ## 현재 구현된 것
@@ -195,6 +195,8 @@
 
 ### 배포
 
+- 저장소에는 `main` 대상 PR source branch 를 검사하는 GitHub Actions workflow (`.github/workflows/main-pr-source-guard.yml`) 를 둔다.
+- 의도된 운영 규칙은 `main` branch protection 이 `main-pr-source` 체크를 required status check 로 요구하는 것이다.
 - 현재 워크플로 기준 production 자동 배포 트리거는 `main` push 이다.
 - `develop` 은 통합 브랜치이며 자동 배포는 없다.
 - `workflow_dispatch` 로 수동 배포는 가능하다.
@@ -289,21 +291,22 @@
 - 사망 연출 + 디버그 토글 미니 스펙: `docs/archive/mini-specs/mini-spec-death-feedback-debug-toggle-v1.md`
 - 로컬 개발 환경 정리 미니 스펙: `docs/archive/mini-specs/mini-spec-local-dev-env-runner-v1.md`
 - 원웨이 플랫폼 하강 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-one-way-drop-through-v1.md`
-- 서버 aim clamp 미니 스펙: `docs/technical/mini-spec-server-aim-clamp-v1.md`
-- 점프 아이템 세부 규칙 후속은 `docs/technical/mini-spec-jump-item-integration-v1.md` 참조
-- 전투 표현 polish 후속은 `docs/technical/mini-spec-combat-presentation-polish-v0.md` 참조
+- 서버 aim clamp 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-server-aim-clamp-v1.md`
+- 점프 아이템 세부 규칙 후속: `docs/archive/mini-specs/mini-spec-jump-item-integration-v1.md`
+- 전투 표현 polish 후속: `docs/technical/mini-spec-combat-presentation-polish-v0.md`
 - HUD compact 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-hud-compact-combat-bar-v2.md`
 - HUD polish 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-hud-polish-v1.md`
 - 알림 로그/pickup 점멸 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-hud-notification-pickup-polish-v1.md`
 - 피격 피드백 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-impact-feedback-v1.md`
 - 무기 각도/Dead zone 초안 (아카이브): `docs/archive/mini-specs/mini-spec-weapon-angle-deadzone-v0.md`
 - 무기 에임 각도 1차 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-weapon-aim-angle-v1.md`
+- 무기 표현 v1 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-weapon-presentation-v1.md`
 - Paws 근접 전투 + HUD 1차 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-paws-combat-hud-v1.md`
-- 무기 확장 v2 완료 미니 스펙: `docs/technical/mini-spec-weapon-expansion-v2.md`
-- 상태이상 1차 (Burn DoT) 완료 미니 스펙: `docs/technical/mini-spec-status-effects-trim-v1.md`
-- 투사체 중력 / 포물선 1차 미니 스펙: `docs/technical/mini-spec-projectile-gravity-v1.md`
-- 투사체 무기 1차 미니 스펙: `docs/technical/mini-spec-projectile-weapons-v1.md`
-- 투사체 충돌 정책 v2 미니 스펙: `docs/technical/mini-spec-projectile-collision-policy-v2.md`
+- 무기 확장 v2 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-weapon-expansion-v2.md`
+- 상태이상 1차 (Burn DoT) 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-status-effects-trim-v1.md`
+- 투사체 중력 / 포물선 1차 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-projectile-gravity-v1.md`
+- 투사체 무기 1차 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-projectile-weapons-v1.md`
+- 투사체 충돌 정책 v2 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-projectile-collision-policy-v2.md`
 - Fire & Forget 수정 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-fire-and-forget-v1.md`
 - 픽업 소멸 VFX 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-pickup-despawn-vfx-v1.md`
-- 불씨 뿌리개(flamethrower) 완료 미니 스펙: `docs/technical/mini-spec-flamethrower-v1.md`
+- 불씨 뿌리개(flamethrower) 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-flamethrower-v1.md`
