@@ -383,23 +383,28 @@ function fallbackImpactDirection(
 function resolveProjectilePresentation(weaponId: string): {
   color: number;
   radius: number;
+  /** 타원 세로 반지름. 없으면 radius와 동일. */
+  radiusY?: number;
   trailLength: number;
   trailThickness: number;
 } {
   switch (weaponId) {
     case "seed_shotgun":
+      // 씨앗: 작고 녹색/갈색
       return {
-        color: 0x55ee66,
+        color: 0x88cc44,
         radius: 3,
-        trailLength: 4,
+        trailLength: 3,
         trailThickness: 2,
       };
-    case "hand_cannon":
+    case "walnut_cannon":
+      // 호두: 넓적하고 갈색, 포물선으로 회전하며 날아감
       return {
-        color: 0xff8800,
-        radius: 5,
-        trailLength: 8,
-        trailThickness: 3,
+        color: 0xc8a05a,
+        radius: 6,
+        radiusY: 4,
+        trailLength: 10,
+        trailThickness: 4,
       };
     default:
       return {
@@ -2206,6 +2211,16 @@ class MainScene extends Phaser.Scene {
       return;
     }
 
+    if (impactStyle === "seed_burst") {
+      this.spawnSeedImpactBurst(impactPoint, direction, isExact);
+      return;
+    }
+
+    if (impactStyle === "cannon_impact") {
+      this.spawnCannonImpactBurst(impactPoint, direction, isExact);
+      return;
+    }
+
     this.spawnSparkImpactBurst(impactPoint, direction, damage, isExact, impactStyle);
   }
 
@@ -2255,6 +2270,89 @@ class MainScene extends Phaser.Scene {
         fadeAt: this.time.now + (isExact ? 160 : 120),
         destroyAt: this.time.now + (isExact ? 430 : 320),
         baseAlpha: 0.92,
+      });
+    }
+  }
+
+  private spawnSeedImpactBurst(
+    impactPoint: Vector2,
+    direction: Vector2,
+    isExact: boolean,
+  ) {
+    // 씨앗 파편 — 녹색/갈색 작은 타원 4~6개
+    const colors = [0x88cc44, 0x55cc44, 0xb8844e, 0x6da836];
+    const count = isExact ? 6 : 4;
+    for (let i = 0; i < count; i++) {
+      const speed = Phaser.Math.FloatBetween(1.2, 2.4);
+      const spreadX = Phaser.Math.FloatBetween(-0.4, 0.4);
+      const spreadY = Phaser.Math.FloatBetween(-0.3, 0.2);
+      const node = this.add
+        .ellipse(
+          impactPoint.x + Phaser.Math.FloatBetween(-2, 2),
+          impactPoint.y + Phaser.Math.FloatBetween(-2, 2),
+          Phaser.Math.Between(2, 4),
+          Phaser.Math.Between(3, 5),
+          Phaser.Utils.Array.GetRandom(colors) as number,
+          0.88,
+        )
+        .setDepth(8);
+      this.hitParticles.push({
+        node,
+        velocityX: (direction.x + spreadX) * speed,
+        velocityY: (direction.y + spreadY) * speed - 0.3,
+        angularVelocity: Phaser.Math.FloatBetween(-0.1, 0.1),
+        gravity: 0.18,
+        drag: 0.97,
+        scaleXVelocity: 0,
+        scaleYVelocity: 0,
+        fadeAt: this.time.now + (isExact ? 150 : 100),
+        destroyAt: this.time.now + (isExact ? 380 : 280),
+        baseAlpha: 0.88,
+      });
+    }
+  }
+
+  private spawnCannonImpactBurst(
+    impactPoint: Vector2,
+    direction: Vector2,
+    isExact: boolean,
+  ) {
+    // 호두 대포 충격 — 갈색/베이지 큰 파편 + 먼지 구름
+    const debrisColors = [0xd4b896, 0xf8c06a, 0xe2c88a, 0xc8a05a];
+    const dustColors = [0xd1d5db, 0xe5e7eb, 0xc8a05a];
+    const count = isExact ? 10 : 7;
+    for (let i = 0; i < count; i++) {
+      const isDust = i >= count - 3;
+      const speed = isDust
+        ? Phaser.Math.FloatBetween(0.6, 1.4)
+        : Phaser.Math.FloatBetween(1.8, 3.6);
+      const spreadX = Phaser.Math.FloatBetween(-0.5, 0.5);
+      const spreadY = Phaser.Math.FloatBetween(-0.4, 0.2);
+      const colors = isDust ? dustColors : debrisColors;
+      const size = isDust ? Phaser.Math.Between(5, 9) : Phaser.Math.Between(4, 7);
+      const node = this.add
+        .rectangle(
+          impactPoint.x + Phaser.Math.FloatBetween(-3, 3),
+          impactPoint.y + Phaser.Math.FloatBetween(-3, 3),
+          size,
+          isDust ? size : Phaser.Math.Between(3, 5),
+          Phaser.Utils.Array.GetRandom(colors) as number,
+          isDust ? 0.55 : 0.9,
+        )
+        .setDepth(8);
+      node.setAngle(Phaser.Math.FloatBetween(-45, 45));
+      this.hitParticles.push({
+        node,
+        velocityX: (direction.x + spreadX) * speed,
+        velocityY: (direction.y + spreadY) * speed - (isDust ? 0.2 : 0.5),
+        angularVelocity: Phaser.Math.FloatBetween(-0.06, 0.06),
+        gravity: isDust ? 0.04 : 0.2,
+        drag: isDust ? 0.94 : 0.95,
+        scaleXVelocity: 0,
+        scaleYVelocity: 0,
+        fadeAt: this.time.now + (isExact ? 200 : 140),
+        destroyAt: this.time.now + (isExact ? 520 : 380),
+        baseAlpha: isDust ? 0.55 : 0.9,
       });
     }
   }
@@ -2479,11 +2577,12 @@ class MainScene extends Phaser.Scene {
           presentation.color,
           0.32,
         );
+        const ry = presentation.radiusY ?? presentation.radius;
         const body = this.add.ellipse(
           0,
           0,
           presentation.radius * 2,
-          presentation.radius * 2,
+          ry * 2,
           presentation.color,
           0.96,
         );
@@ -2507,7 +2606,10 @@ class MainScene extends Phaser.Scene {
         this.renderedProjectiles.set(projectile.id, rendered);
       }
 
-      rendered.body.setSize(presentation.radius * 2, presentation.radius * 2);
+      rendered.body.setSize(
+        presentation.radius * 2,
+        (presentation.radiusY ?? presentation.radius) * 2,
+      );
       rendered.body.setFillStyle(presentation.color, 0.96);
       rendered.trail.setSize(presentation.trailLength, presentation.trailThickness);
       rendered.trail.setFillStyle(presentation.color, 0.32);
@@ -2860,6 +2962,46 @@ class MainScene extends Phaser.Scene {
 
     if (fireStyle === "flame_stream") {
       // 화염 파티클은 sendLatestInput에서 attackHeld 동안 매 틱 생성됨
+      return;
+    }
+
+    if (fireStyle === "shotgun_spread") {
+      // 5줄기 부채꼴 tracer
+      const spreadAngles = [-0.38, -0.19, 0, 0.19, 0.38];
+      this.attackFlash.lineStyle(1.5, 0xd4e47c, 0.82);
+      for (const angle of spreadAngles) {
+        const cosA = Math.cos(angle);
+        const sinA = Math.sin(angle);
+        const sx = aimX * cosA - aimY * sinA;
+        const sy = aimX * sinA + aimY * cosA;
+        this.attackFlash.lineBetween(
+          muzzleX,
+          muzzleY,
+          muzzleX + sx * 28,
+          muzzleY + sy * 28,
+        );
+      }
+      this.attackFlash.fillStyle(0xfef9c3, 0.92);
+      this.attackFlash.fillCircle(muzzleX, muzzleY, 5);
+      this.attackFlashUntil = this.time.now + 80;
+      return;
+    }
+
+    if (fireStyle === "cannon_blast") {
+      // 크고 둥근 총구 화염 + 연기 링
+      const cx = muzzleX + aimX * 10;
+      const cy = muzzleY + aimY * 10;
+      // 연기 링 2개
+      this.attackFlash.lineStyle(5, 0x9ca3af, 0.45);
+      this.attackFlash.strokeCircle(muzzleX + aimX * 20, muzzleY + aimY * 20, 11);
+      this.attackFlash.lineStyle(3, 0xd1d5db, 0.3);
+      this.attackFlash.strokeCircle(muzzleX + aimX * 30, muzzleY + aimY * 30, 15);
+      // 화염 코어
+      this.attackFlash.fillStyle(0xfef08a, 0.95);
+      this.attackFlash.fillCircle(cx, cy, 13);
+      this.attackFlash.fillStyle(0xfef9c3, 1);
+      this.attackFlash.fillCircle(muzzleX + aimX * 5, muzzleY + aimY * 5, 8);
+      this.attackFlashUntil = this.time.now + 110;
       return;
     }
 
