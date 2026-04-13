@@ -4,7 +4,7 @@
 
 ## 최신 기준
 
-- 기준 브랜치: `develop` (feat/weapon-aim-angle-v1 병합 후 기준)
+- 기준 브랜치: `develop` (feat/status-effects-burn-v1 병합 기준)
 - 마지막 동기화 기준: 2026-04-13
 
 ## 현재 구현된 것
@@ -17,6 +17,7 @@
 - `boundaryPolicy`, `cameraPolicy`, `visualBounds`, `gameplayBounds`, `deathBounds`를 포함한 `MapDefinition` 타입이 정리되었다.
 - `packages/shared/maps/training-arena.json` 공통 테스트 맵 파일과 `trainingArenaMap` export가 있다.
 - `PlayerSnapshot`에는 `kills`, `deaths`, `lastDeathCause`가 포함되어 매치 점수와 최근 사망 원인을 함께 전달한다.
+- `PlayerSnapshot.effects: StatusEffectInstance[]`로 현재 활성 상태이상을 클라이언트에 전달한다. 현재 `kind: "burn"` 1종만 구현.
 
 ### Server
 
@@ -64,6 +65,18 @@
   - 탄 소모
   - 빈 무기 폐기
   - 킬 귀속 1차(`last_hit_by` TTL 5초)
+- 상태이상 1차 — Burn DoT:
+  - 적중 시 `active_burn` 설정 (refresh 기반 — 중첩 없이 duration 초기화)
+  - 매 틱 `tick_interval_ms`(500ms) 간격으로 `tick_damage`(2) 적용
+  - `duration_ms`(2200ms) 경과 시 자동 소멸
+  - Burn 사망은 기존 `DeathCause::Weapon { killer_id, weapon_id }` 재사용
+  - `PlayerSnapshot.effects`로 클라이언트에 전달; Burn 중 플레이어 위에 주황 glow 표시
+  - 현재 `Paws`에 임시 연결 (실험용); 리스폰/리셋 시 즉시 해제
+- 무기 확장 2차:
+  - `Seed Shotgun`: pelletCount=5, spreadDeg=22, damage=7/pellet, rarity=uncommon, maxResource=4, discardOnEmpty=true
+  - `Hand Cannon`: pelletCount=1, damage=28, selfRecoilForce=3.5, rarity=rare, maxResource=4, discardOnEmpty=true
+  - `pelletCount > 1` 시 균등 각도 분산으로 복수 레이 판정(서버 결정적)
+  - 훈련 맵 `weapon_group`에 Seed Shotgun 2개 candidate 추가, Hand Cannon 1개 fixed 추가
 - 사망/리스폰 처리:
   - `PlayerSnapshot.lastDeathCause` 에 최근 사망 원인을 싣는다.
   - `room_snapshot` / `world_snapshot` 은 짧은 TTL의 `damageEvents` 배열을 함께 싣는다.
@@ -104,7 +117,8 @@
   - 카드형보다 얇은 `얼굴 + 가로 HP 바 + 생명 pip + 작은 무기/킬 정보` 중심 구조로 정리했다.
   - Free Play에서는 우측 카드가 `최근 공격한 대상 -> 킬 최다 상대` 우선순위로 표시된다.
 - 좌상단에는 큰 제목/room/server tick 대신 작은 `WS/ping` 상태만 표시한다.
-- 무기 아이콘 레지스트리: `getWeaponHudTextureKey(weaponId)` → `RenderTexture` 코드 생성 아이콘 (`paws`, `acorn_blaster`, fallback)
+- 무기 아이콘 레지스트리: `getWeaponHudTextureKey(weaponId)` → `RenderTexture` 코드 생성 아이콘 (`paws`, `acorn_blaster`, fallback; `seed_shotgun`, `hand_cannon`은 자동 fallback)
+- `aimProfile`이 있는 무기에 대해 클라이언트 오버레이 회전 각도를 `[minAimDeg, maxAimDeg]`로 클램프한다 (표시 전용, 서버 판정 클램프 제외).
 - 발사 시 로컬 보조용 무기별 연출을 적용한다.
   - `Acorn Blaster`: 총구 화염 + 짧은 tracer
   - `Paws`: 에임 방향으로 내지르는 사다리꼴 원뿔(truncated cone) flash
@@ -188,9 +202,12 @@
 
 ### 전투
 
-- `Acorn Blaster`, `Paws` 두 무기에 대해 서버 판정을 구현한다.
+- `Acorn Blaster`, `Paws`, `Seed Shotgun`, `Hand Cannon` 네 무기에 대해 서버 판정을 구현한다.
 - `Paws` 근접 판정: 에임 방향 원뿔(hit_start=14px, hit_end=56px, near_half_w=7px, far_half_w=21px), 가장 가까운 단일 타겟, damage=8, knockback=3, cooldown=350ms.
-- `Acorn Blaster` 히트스캔 발사
+  - **Burn DoT 임시 연결**: Paws 명중 시 2200ms duration, 500ms tick, 2 damage/tick burn 적용.
+- `Acorn Blaster` 히트스캔 단발 발사.
+- `Seed Shotgun` 히트스캔 5-pellet 산탄, `Hand Cannon` 히트스캔 단발 고화력.
+- `pelletCount > 1` 무기는 서버에서 `spreadDeg` 범위 내 균등 각도 분산으로 각 pellet 독립 판정.
 - 월드 무기는 `E`로 명시적으로 획득하고 `Q`로 드롭한다.
 - 월드 아이템은 닿으면 자동으로 획득한다.
 - `jump_boost_small`은 `maxJumpCount`를 `1..3` 범위에서 증가시키고, `health_pack_small`은 HP를 최대치까지 회복한다.
@@ -198,10 +215,10 @@
 
 ## 다음 구현 우선순위
 
-1. 무기 visual clamp + Dead zone 2차 (`mini-spec-weapon-angle-deadzone-v0.md` §5 Step 2-3 참조)
-2. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체
-3. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
-4. `develop` preview / staging 배포 전략 분리
+1. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체
+2. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
+3. `develop` preview / staging 배포 전략 분리
+4. Burn DoT를 Paws에서 전용 무기로 이전 (Paws의 임시 연결 해제)
 
 ## 참고
 

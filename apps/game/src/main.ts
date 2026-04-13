@@ -196,6 +196,7 @@ type RenderedPlayer = {
   sprite: Phaser.GameObjects.Image;
   weaponOverlay: Phaser.GameObjects.Image;
   collider: Phaser.GameObjects.Rectangle;
+  burnGlow: Phaser.GameObjects.Rectangle;
   label: Phaser.GameObjects.Text;
   targetX: number;
   targetY: number;
@@ -1874,13 +1875,17 @@ class MainScene extends Phaser.Scene {
         );
         collider.setVisible(this.debugEnabled);
         collider.setStrokeStyle(2, 0xffedd5, 0.95);
-        root.add([shadow, sprite, weaponOverlay, collider]);
+        const burnGlow = this.add
+          .rectangle(0, 0, PLAYER_SIZE + 6, PLAYER_SIZE + 6, 0xff6600, 0)
+          .setVisible(false);
+        root.add([shadow, burnGlow, sprite, weaponOverlay, collider]);
         rendered = {
           root,
           shadow,
           sprite,
           weaponOverlay,
           collider,
+          burnGlow,
           label: this.add.text(player.position.x, player.position.y - 28, player.name, {
             fontSize: "12px",
             color: "#f9fafb",
@@ -1930,6 +1935,13 @@ class MainScene extends Phaser.Scene {
       rendered.root.setVisible(!isRespawning);
       rendered.label.setVisible(!isRespawning);
       rendered.collider.setVisible(this.debugEnabled && !isRespawning);
+      const isBurning =
+        !isRespawning && player.effects.some((e) => e.kind === "burn");
+      rendered.burnGlow.setVisible(isBurning);
+      if (isBurning) {
+        const pulse = 0.2 + 0.15 * Math.sin(this.time.now / 80);
+        rendered.burnGlow.setAlpha(pulse);
+      }
       if (
         previousSnapshot.state === "respawning" ||
         shouldSnapToTarget(

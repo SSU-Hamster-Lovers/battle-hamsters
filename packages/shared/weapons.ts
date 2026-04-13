@@ -15,7 +15,8 @@ export type WeaponSpecialEffect =
   | { kind: "none" }
   | { kind: "explode"; fuseMs?: number; radius?: number }
   | { kind: "grab"; grabDurationMs: number }
-  | { kind: "heal_block"; durationMs: number };
+  | { kind: "heal_block"; durationMs: number }
+  | { kind: "burn"; durationMs: number; tickDamage: number; tickIntervalMs: number };
 
 export interface WeaponDefinition {
   version: number;

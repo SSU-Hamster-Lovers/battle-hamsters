@@ -1,9 +1,11 @@
 use std::collections::HashSet;
 
 use crate::{
-    room_config::RoomGameplayConfig, weapon_definition, DeathCause, Direction, FireMode, HitType,
-    LastHitInfo, PlayerRuntime, PlayerState, RoomState, Vector2, PLAYER_HALF_SIZE,
-    RESPAWN_DELAY_MS,
+    game_data::RuntimeWeaponSpecialEffect,
+    room_config::RoomGameplayConfig,
+    weapon_definition,
+    BurnEffect, DeathCause, Direction, FireMode, HitType, LastHitInfo, PlayerRuntime, PlayerState,
+    RoomState, StatusEffectSnapshot, Vector2, PLAYER_HALF_SIZE, RESPAWN_DELAY_MS,
 };
 
 impl RoomState {
@@ -95,6 +97,23 @@ impl RoomState {
                             weapon_id: weapon_id.clone(),
                         },
                     ));
+                } else if let RuntimeWeaponSpecialEffect::Burn {
+                    duration_ms,
+                    tick_damage,
+                    tick_interval_ms,
+                } = weapon.special_effect
+                {
+                    if let Some(target) = self.players.get_mut(&target_id) {
+                        apply_or_refresh_burn(
+                            target,
+                            weapon_id.clone(),
+                            Some(player_id.to_string()),
+                            now_ms,
+                            duration_ms,
+                            tick_damage,
+                            tick_interval_ms,
+                        );
+                    }
                 }
             }
             return;
@@ -222,6 +241,23 @@ impl RoomState {
                         weapon_id: weapon_id.clone(),
                     },
                 ));
+            } else if let RuntimeWeaponSpecialEffect::Burn {
+                duration_ms,
+                tick_damage,
+                tick_interval_ms,
+            } = weapon.special_effect
+            {
+                if let Some(target) = self.players.get_mut(&target_id) {
+                    apply_or_refresh_burn(
+                        target,
+                        weapon_id.clone(),
+                        Some(player_id.to_string()),
+                        now_ms,
+                        duration_ms,
+                        tick_damage,
+                        tick_interval_ms,
+                    );
+                }
             }
         }
     }
@@ -310,6 +346,98 @@ impl RoomState {
             .min_by(|a, b| a.1.total_cmp(&b.1))
             .map(|(target_id, _)| target_id)
     }
+
+    pub(crate) fn tick_burn_effects(
+        &mut self,
+        now_ms: u64,
+        deaths: &mut Vec<(String, DeathCause)>,
+        dying_this_tick: &mut HashSet<String>,
+    ) {
+        // 번 상태 처리에 필요한 정보를 먼저 수집 (borrow 충돌 방지)
+        struct BurnTick {
+            player_id: String,
+            expired: bool,
+            should_tick: bool,
+            damage: u16,
+            next_tick_at: u64,
+            attacker_id: String,
+            weapon_id: String,
+            impact_point: Vector2,
+        }
+
+        let ticks: Vec<BurnTick> = self
+            .players
+            .iter()
+            .filter_map(|(player_id, player)| {
+                if player.snapshot.state != PlayerState::Alive {
+                    return None;
+                }
+                let burn = player.active_burn.as_ref()?;
+                let expired = now_ms >= burn.expires_at;
+                let should_tick = !expired && now_ms >= burn.next_tick_at;
+                Some(BurnTick {
+                    player_id: player_id.clone(),
+                    expired,
+                    should_tick,
+                    damage: burn.tick_damage,
+                    next_tick_at: burn.next_tick_at + burn.tick_interval_ms,
+                    attacker_id: burn
+                        .killer_id
+                        .clone()
+                        .unwrap_or_else(|| player_id.clone()),
+                    weapon_id: burn.weapon_id.clone(),
+                    impact_point: player.snapshot.position.clone(),
+                })
+            })
+            .collect();
+
+        for tick in ticks {
+            if tick.expired {
+                if let Some(player) = self.players.get_mut(&tick.player_id) {
+                    player.active_burn = None;
+                    player.snapshot.effects.clear();
+                }
+                continue;
+            }
+
+            if !tick.should_tick {
+                continue;
+            }
+
+            // 데미지 적용 + 다음 틱 갱신
+            let hp_after = {
+                let player = self
+                    .players
+                    .get_mut(&tick.player_id)
+                    .expect("player should exist");
+                player.snapshot.hp = player.snapshot.hp.saturating_sub(tick.damage);
+                if let Some(b) = player.active_burn.as_mut() {
+                    b.next_tick_at = tick.next_tick_at;
+                }
+                player.snapshot.hp
+            };
+
+            self.push_damage_event(
+                tick.player_id.clone(),
+                tick.attacker_id.clone(),
+                tick.weapon_id.clone(),
+                tick.damage,
+                Vector2 { x: 0.0, y: -1.0 },
+                tick.impact_point,
+                now_ms,
+            );
+
+            if hp_after == 0 && dying_this_tick.insert(tick.player_id.clone()) {
+                deaths.push((
+                    tick.player_id,
+                    DeathCause::Weapon {
+                        killer_id: tick.attacker_id,
+                        weapon_id: tick.weapon_id,
+                    },
+                ));
+            }
+        }
+    }
 }
 
 pub(crate) fn reset_general_combat_state(
@@ -329,6 +457,38 @@ pub(crate) fn reset_general_combat_state(
     player.attack_was_down = false;
     player.next_attack_at = 0;
     player.last_hit_by = None;
+    player.active_burn = None;
+    player.snapshot.effects.clear();
+}
+
+pub(crate) fn apply_or_refresh_burn(
+    player: &mut PlayerRuntime,
+    weapon_id: String,
+    killer_id: Option<String>,
+    now_ms: u64,
+    duration_ms: u64,
+    tick_damage: u16,
+    tick_interval_ms: u64,
+) {
+    let expires_at = now_ms + duration_ms;
+    let next_tick_at = now_ms + tick_interval_ms;
+
+    player.active_burn = Some(BurnEffect {
+        killer_id: killer_id.clone(),
+        weapon_id: weapon_id.clone(),
+        expires_at,
+        next_tick_at,
+        tick_damage,
+        tick_interval_ms,
+    });
+
+    player.snapshot.effects.clear();
+    player.snapshot.effects.push(StatusEffectSnapshot {
+        kind: "burn",
+        killer_id,
+        weapon_id,
+        expires_at,
+    });
 }
 
 pub(crate) fn trigger_respawn(

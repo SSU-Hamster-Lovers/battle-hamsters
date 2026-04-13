@@ -155,6 +155,17 @@ struct LastHitInfo {
     hit_at_ms: u64,
 }
 
+/// 서버 내부 번 상태 — 직렬화하지 않음.
+#[derive(Clone)]
+struct BurnEffect {
+    killer_id: Option<String>,
+    weapon_id: String,
+    expires_at: u64,
+    next_tick_at: u64,
+    tick_damage: u16,
+    tick_interval_ms: u64,
+}
+
 #[derive(Clone)]
 struct PlayerRuntime {
     snapshot: PlayerSnapshot,
@@ -165,6 +176,7 @@ struct PlayerRuntime {
     attack_queued: bool,
     attack_was_down: bool,
     last_hit_by: Option<LastHitInfo>,
+    active_burn: Option<BurnEffect>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -385,6 +397,7 @@ impl RoomState {
             state: PlayerState::Alive,
             kills: 0,
             deaths: 0,
+            effects: vec![],
         }
     }
 
@@ -409,6 +422,7 @@ impl RoomState {
                 attack_queued: false,
                 attack_was_down: false,
                 last_hit_by: None,
+                active_burn: None,
             },
         );
 
@@ -638,6 +652,15 @@ struct WorldItemPickup {
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
+struct StatusEffectSnapshot {
+    kind: &'static str,
+    killer_id: Option<String>,
+    weapon_id: String,
+    expires_at: u64,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 struct PlayerSnapshot {
     id: String,
     name: String,
@@ -659,6 +682,7 @@ struct PlayerSnapshot {
     state: PlayerState,
     kills: u32,
     deaths: u32,
+    effects: Vec<StatusEffectSnapshot>,
 }
 
 #[derive(Serialize, Clone)]
@@ -857,6 +881,7 @@ mod tests {
                 state: PlayerState::Alive,
                 kills: 0,
                 deaths: 0,
+                effects: vec![],
             },
             latest_input: PlayerInputPayload::default(),
             spawn_index: 0,
@@ -865,6 +890,7 @@ mod tests {
             attack_queued: false,
             attack_was_down: false,
             last_hit_by: None,
+            active_burn: None,
         }
     }
 
@@ -1158,6 +1184,7 @@ mod tests {
                 state: PlayerState::Alive,
                 kills: 0,
                 deaths: 0,
+                effects: vec![],
             },
             latest_input: PlayerInputPayload {
                 sequence: 1,
@@ -1176,6 +1203,7 @@ mod tests {
             attack_queued: true,
             attack_was_down: true,
             last_hit_by: None,
+            active_burn: None,
         };
 
         let target = PlayerRuntime {
@@ -1200,6 +1228,7 @@ mod tests {
                 state: PlayerState::Alive,
                 kills: 0,
                 deaths: 0,
+                effects: vec![],
             },
             latest_input: PlayerInputPayload::default(),
             spawn_index: 1,
@@ -1208,6 +1237,7 @@ mod tests {
             attack_queued: false,
             attack_was_down: false,
             last_hit_by: None,
+            active_burn: None,
         };
 
         room.players.insert("shooter".to_string(), shooter);
