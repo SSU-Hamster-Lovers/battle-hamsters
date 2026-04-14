@@ -13,9 +13,9 @@
   "selfRecoilGroundMultiplier": 0.7,
   "selfRecoilAirMultiplier": 1.4,
   "attackIntervalMs": 1200,
-  "range": 900,
-  "projectileSpeed": 420,
-  "projectileGravityPerSec2": 1800,
+  "range": 1600,
+  "projectileSpeed": 600,
+  "projectileGravityPerSec2": 900,
   "spreadDeg": 0,
   "pelletCount": 1,
   "maxResource": 5,
@@ -26,5 +26,5 @@
   "rarity": "uncommon",
   "worldDespawnMs": 10000,
   "specialEffect": { "kind": "explode", "radius": 80, "splashDamage": 15 },
-  "aimProfile": { "minAimDeg": -80, "maxAimDeg": -10 }
+  "aimProfile": { "minAimDeg": -85, "maxAimDeg": 5 }
 }

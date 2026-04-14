@@ -2761,4 +2761,39 @@ mod tests {
             "grab_spear 적중 시 대상에게 grab 상태가 적용되어야 함"
         );
     }
+
+    // laser_cutter: 빔이 적중 시 Burn DoT가 적용되어야 한다.
+    #[test]
+    fn laser_cutter_applies_burn_on_hit() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "laser_cutter".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(600);
+        shooter.latest_input.sequence = 1;
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        let mut target = test_player(300.0, 300.0);
+        target.snapshot.id = "target".to_string();
+        target.snapshot.name = "target".to_string();
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let target_after = room.players.get("target").unwrap();
+        assert!(
+            target_after.active_burn.is_some(),
+            "laser_cutter 명중 시 Burn DoT가 적용되어야 함"
+        );
+    }
 }

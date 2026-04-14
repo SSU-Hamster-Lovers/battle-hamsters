@@ -548,6 +548,7 @@ class MainScene extends Phaser.Scene {
   private networkStatusText!: Phaser.GameObjects.Text;
   private attackFlash!: Phaser.GameObjects.Graphics;
   private attackFlashUntil = 0;
+  private mortarArc!: Phaser.GameObjects.Graphics;
   private matchOverlayBg!: Phaser.GameObjects.Rectangle;
   private matchOverlayText!: Phaser.GameObjects.Text;
   private cameraConfigured = false;
@@ -777,6 +778,86 @@ class MainScene extends Phaser.Scene {
     }
   }
 
+  // ── Mortar arc preview ───────────────────────────────────────────────────
+
+  private updateMortarArc() {
+    this.mortarArc.clear();
+
+    const localPlayer = this.localPlayerId
+      ? this.renderedPlayers.get(this.localPlayerId)
+      : null;
+    if (!localPlayer || localPlayer.snapshot.equippedWeaponId !== "blueberry_mortar") {
+      return;
+    }
+
+    const mortarDef = weaponDefinitionById["blueberry_mortar"];
+    if (!mortarDef) return;
+
+    const pointer = this.input.activePointer;
+    const originX = localPlayer.root.x;
+    const originY = localPlayer.root.y;
+    const rawAimX = pointer.worldX - originX;
+    const rawAimY = pointer.worldY - originY;
+    const aimLength = Math.hypot(rawAimX, rawAimY) || 1;
+    const rawAim = { x: rawAimX / aimLength, y: rawAimY / aimLength };
+
+    const clampedAim = resolveClampedAimForWeapon(
+      "blueberry_mortar",
+      rawAim,
+      localPlayer.snapshot.direction,
+    );
+
+    const pres = resolveWeaponEquipPresentation("blueberry_mortar");
+    const dir = localPlayer.snapshot.direction;
+    const xSign = dir === "left" ? -1 : 1;
+    const xPull = Math.abs(clampedAim.y) * 3;
+    const anchorYOffset = clampedAim.y * 8;
+    const weaponCenterX = xSign * Math.max(0, pres.offsetX - xPull);
+    const weaponCenterY = pres.offsetY + anchorYOffset;
+    let px = originX + weaponCenterX + pres.muzzleFromCenter * clampedAim.x;
+    let py = originY + weaponCenterY + pres.muzzleFromCenter * clampedAim.y;
+
+    const speed = mortarDef.projectileSpeed;
+    const gravity = (mortarDef.projectileGravityPerSec2 ?? 0) as number;
+    let vx = clampedAim.x * speed;
+    let vy = clampedAim.y * speed;
+
+    const dt = 0.05; // 50ms steps
+    const maxSteps = 80;
+    const mapW = GAME_WIDTH;
+    const mapH = GAME_HEIGHT + 200;
+
+    for (let i = 0; i < maxSteps; i++) {
+      const nx = px + vx * dt;
+      const ny = py + vy * dt;
+      vy += gravity * dt;
+
+      // 맵 경계 밖 → 중단
+      if (nx < 0 || nx > mapW || ny > mapH) break;
+
+      // 짝수 스텝만 점으로 그림 (점선 효과)
+      if (i % 2 === 0) {
+        // 착지 지점에 가까울수록 더 밝게
+        const alpha = 0.25 + (i / maxSteps) * 0.4;
+        const radius = i < maxSteps * 0.8 ? 2.5 : 4;
+        this.mortarArc.fillStyle(0xc4b5fd, alpha);
+        this.mortarArc.fillCircle(nx, ny, radius);
+      }
+
+      px = nx;
+      py = ny;
+
+      // 마지막 도달 지점: 착지 예상 원 표시
+      if (i === maxSteps - 1 || ny > mapH - 200) {
+        this.mortarArc.lineStyle(2, 0xa78bfa, 0.7);
+        this.mortarArc.strokeCircle(nx, ny, 12);
+        this.mortarArc.lineStyle(1, 0xffffff, 0.4);
+        this.mortarArc.strokeCircle(nx, ny, 6);
+        break;
+      }
+    }
+  }
+
   // ── Burn flame ────────────────────────────────────────────────────────────
 
   private updateBurnFlames(now: number) {
@@ -901,6 +982,7 @@ class MainScene extends Phaser.Scene {
     this.refreshNetworkStatusText();
 
     this.attackFlash = this.add.graphics().setDepth(9);
+    this.mortarArc = this.add.graphics().setDepth(8);
 
     this.matchOverlayBg = this.add
       .rectangle(VIEWPORT_WIDTH / 2, VIEWPORT_HEIGHT / 2, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, 0x000000, 0.6)
@@ -3005,8 +3087,12 @@ class MainScene extends Phaser.Scene {
       const beamPres = resolveWeaponEquipPresentation("laser_cutter");
       const dir = localPlayer.snapshot.direction;
       const xSign = dir === "left" ? -1 : 1;
-      const bMuzzleX = originX + xSign * beamPres.offsetX + beamPres.muzzleFromCenter * beamAim.x;
-      const bMuzzleY = originY + beamPres.offsetY + beamPres.muzzleFromCenter * beamAim.y;
+      const xPull = Math.abs(beamAim.y) * 3;
+      const anchorYOffset = beamAim.y * 8;
+      const weaponCenterX = xSign * Math.max(0, beamPres.offsetX - xPull);
+      const weaponCenterY = beamPres.offsetY + anchorYOffset;
+      const bMuzzleX = originX + weaponCenterX + beamPres.muzzleFromCenter * beamAim.x;
+      const bMuzzleY = originY + weaponCenterY + beamPres.muzzleFromCenter * beamAim.y;
       this.attackFlash.clear();
       // 외부 글로우 (넓고 반투명 시안)
       this.attackFlash.lineStyle(4, 0x22d3ee, 0.3);
@@ -3047,6 +3133,45 @@ class MainScene extends Phaser.Scene {
         flamMuzzleY = originY + flamAim.y * 14;
       }
       this.spawnFlameParticles(flamMuzzleX, flamMuzzleY, flamAim.x, flamAim.y);
+    }
+
+    // 다람쥐 기관총 연속 총구 섬광 — attackHeld 동안 매 50ms 틱마다 렌더
+    if (attackHeld && localPlayer?.snapshot.equippedWeaponId === "squirrel_gatling") {
+      const gatAim = resolveClampedAimForWeapon(
+        "squirrel_gatling",
+        aim,
+        localPlayer.snapshot.direction,
+      );
+      const gatPres = resolveWeaponEquipPresentation("squirrel_gatling");
+      const dir = localPlayer.snapshot.direction;
+      const xSign = dir === "left" ? -1 : 1;
+      const xPull = Math.abs(gatAim.y) * 3;
+      const anchorYOffset = gatAim.y * 8;
+      const weaponCenterX = xSign * Math.max(0, gatPres.offsetX - xPull);
+      const weaponCenterY = gatPres.offsetY + anchorYOffset;
+      const gatMuzzleX = originX + weaponCenterX + gatPres.muzzleFromCenter * gatAim.x;
+      const gatMuzzleY = originY + weaponCenterY + gatPres.muzzleFromCenter * gatAim.y;
+      // 매 틱 랜덤 크기로 기관총 특유의 깜박이는 총구 섬광 표현
+      const flashR = 4 + Math.random() * 3;
+      this.attackFlash.clear();
+      // 외부 글로우 (넓고 반투명 황금색)
+      this.attackFlash.fillStyle(0xfbbf24, 0.28);
+      this.attackFlash.fillCircle(gatMuzzleX, gatMuzzleY, flashR * 2.5);
+      // 중간 글로우
+      this.attackFlash.fillStyle(0xfef3c7, 0.65);
+      this.attackFlash.fillCircle(gatMuzzleX, gatMuzzleY, flashR * 1.4);
+      // 코어 섬광 (밝은 흰색)
+      this.attackFlash.fillStyle(0xffffff, 0.95);
+      this.attackFlash.fillCircle(gatMuzzleX, gatMuzzleY, flashR * 0.65);
+      // tracer 라인 (빠른 총알 궤적)
+      this.attackFlash.lineStyle(1.5, 0xfde68a, 0.55);
+      this.attackFlash.lineBetween(
+        gatMuzzleX,
+        gatMuzzleY,
+        gatMuzzleX + gatAim.x * 50,
+        gatMuzzleY + gatAim.y * 50,
+      );
+      this.attackFlashUntil = this.time.now + 60;
     }
 
     this.attackWasDown = attackHeld;
@@ -3229,18 +3354,8 @@ class MainScene extends Phaser.Scene {
     }
 
     if (fireStyle === "auto_flash") {
-      // 짧고 빠른 총구 섬광 — 기관총 느낌
-      this.attackFlash.fillStyle(0xfef3c7, 0.9);
-      this.attackFlash.fillCircle(muzzleX, muzzleY, 4);
-      // 짧은 tracer
-      this.attackFlash.lineStyle(1, 0xfde68a, 0.7);
-      this.attackFlash.lineBetween(
-        muzzleX,
-        muzzleY,
-        muzzleX + aimX * 30,
-        muzzleY + aimY * 30,
-      );
-      this.attackFlashUntil = this.time.now + 50;
+      // sendLatestInput 의 연속 섬광 블록이 이미 처리하므로 여기서는 스킵
+      // (첫 클릭 시 sendLatestInput 에서도 동시에 그리기 때문에 중복 방지)
       return;
     }
 
@@ -3284,6 +3399,8 @@ class MainScene extends Phaser.Scene {
       this.attackFlash.clear();
       this.attackFlashUntil = 0;
     }
+
+    this.updateMortarArc();
 
     for (const [, rendered] of this.renderedPlayers) {
       const lerpFactor = rendered.isLocal ? LOCAL_PLAYER_LERP : REMOTE_PLAYER_LERP;
