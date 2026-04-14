@@ -1117,8 +1117,8 @@ mod tests {
     #[test]
     fn room_starts_with_spawned_weapon_pickup() {
         let room = RoomState::new();
-        // 좌/우 random 후보 각 1개 + 고정 9개(acorn/walnut/ember/seed/pine_sniper/squirrel_gatling/blueberry_mortar/laser_cutter/grab_spear) = 11개
-        assert_eq!(room.weapon_pickups.len(), 11);
+        // 좌/우 random 후보 각 1개 + 고정 11개(acorn/walnut/ember/seed/pine_sniper/squirrel_gatling/blueberry_mortar/laser_cutter/grab_spear/acorn_sword/hedgehog_spray) = 13개
+        assert_eq!(room.weapon_pickups.len(), 13);
 
         let pickups: Vec<_> = room.weapon_pickups.values().collect();
 
@@ -2926,6 +2926,62 @@ mod tests {
             shooter_after.snapshot.equipped_weapon_resource,
             Some(7),
             "acorn_sword 1회 공격 후 resource 8 → 7이어야 함"
+        );
+    }
+
+    // hedgehog_spray: pelletCount=3이므로 단일 발사로 최소 1명에게 피해를 줘야 한다.
+    #[test]
+    fn hedgehog_spray_hits_target_in_range() {
+        let mut room = RoomState::new();
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.equipped_weapon_id = "hedgehog_spray".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(16);
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+        // target at (360, 300) — 260px, range 500px 이내, 속도 680px/s → ~380ms
+        let mut target = test_player(360.0, 300.0);
+        target.snapshot.hp = 100;
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+        // 투사체를 여러 틱 전진시켜 target에 도달
+        for i in 1..=10u64 {
+            room.step_projectiles(1000 + i * 50, &mut deaths, &mut dying);
+        }
+
+        let target_after = room.players.get("target").unwrap();
+        assert!(
+            target_after.snapshot.hp < 100,
+            "hedgehog_spray 발사 후 target이 피해를 입어야 함 (hp={}/100)",
+            target_after.snapshot.hp
+        );
+    }
+
+    // hedgehog_spray: 발사 시 resource가 1 소비되어야 한다.
+    #[test]
+    fn hedgehog_spray_consumes_resource_per_shot() {
+        let mut room = RoomState::new();
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.equipped_weapon_id = "hedgehog_spray".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(16);
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+        room.players.insert("shooter".to_string(), shooter);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let shooter_after = room.players.get("shooter").unwrap();
+        assert_eq!(
+            shooter_after.snapshot.equipped_weapon_resource,
+            Some(15),
+            "hedgehog_spray 1회 발사 후 resource 16 → 15이어야 함"
         );
     }
 }

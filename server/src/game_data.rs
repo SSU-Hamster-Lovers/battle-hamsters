@@ -448,6 +448,8 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
             include_str!("../../packages/shared/weapons/laser-cutter.json");
         let grab_spear_raw = include_str!("../../packages/shared/weapons/grab-spear.json");
         let acorn_sword_raw = include_str!("../../packages/shared/weapons/acorn-sword.json");
+        let hedgehog_spray_raw =
+            include_str!("../../packages/shared/weapons/hedgehog-spray.json");
 
         let paws: RuntimeWeaponDefinition =
             serde_json::from_str(paws_raw).expect("paws JSON should deserialize");
@@ -473,6 +475,8 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
             serde_json::from_str(grab_spear_raw).expect("grab spear JSON should deserialize");
         let acorn_sword: RuntimeWeaponDefinition =
             serde_json::from_str(acorn_sword_raw).expect("acorn sword JSON should deserialize");
+        let hedgehog_spray: RuntimeWeaponDefinition = serde_json::from_str(hedgehog_spray_raw)
+            .expect("hedgehog spray JSON should deserialize");
 
         HashMap::from([
             (paws.id.clone(), paws),
@@ -486,6 +490,7 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
             (laser_cutter.id.clone(), laser_cutter),
             (grab_spear.id.clone(), grab_spear),
             (acorn_sword.id.clone(), acorn_sword),
+            (hedgehog_spray.id.clone(), hedgehog_spray),
         ])
     })
 }

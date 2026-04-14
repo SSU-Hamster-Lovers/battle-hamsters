@@ -26,6 +26,8 @@ const GRAB_SPEAR_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-grab-spea
 const GRAB_SPEAR_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-grab-spear`;
 const ACORN_SWORD_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-acorn-sword`;
 const ACORN_SWORD_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-acorn-sword`;
+const HEDGEHOG_SPRAY_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-hedgehog-spray`;
+const HEDGEHOG_SPRAY_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-hedgehog-spray`;
 
 type WeaponPickupSource = "spawn" | "dropped" | "reward";
 
@@ -205,6 +207,20 @@ export function ensureWeaponPickupTextures(scene: Phaser.Scene) {
     graphics.generateTexture(ACORN_SWORD_EQUIP_TEXTURE_KEY, 24, 8);
     graphics.destroy();
   }
+
+  if (!scene.textures.exists(HEDGEHOG_SPRAY_PICKUP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawHedgehogSprayPickupTexture(graphics);
+    graphics.generateTexture(HEDGEHOG_SPRAY_PICKUP_TEXTURE_KEY, 64, 32);
+    graphics.destroy();
+  }
+
+  if (!scene.textures.exists(HEDGEHOG_SPRAY_EQUIP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawHedgehogSprayEquipTexture(graphics);
+    graphics.generateTexture(HEDGEHOG_SPRAY_EQUIP_TEXTURE_KEY, 32, 14);
+    graphics.destroy();
+  }
 }
 
 export function resolveWeaponPickupPresentation(
@@ -286,6 +302,14 @@ export function resolveWeaponPickupPresentation(
     return {
       textureKey: ACORN_SWORD_PICKUP_TEXTURE_KEY,
       code: "AS",
+      showNameLabel: false,
+    };
+  }
+
+  if (weaponId === "hedgehog_spray") {
+    return {
+      textureKey: HEDGEHOG_SPRAY_PICKUP_TEXTURE_KEY,
+      code: "HS",
       showNameLabel: false,
     };
   }
@@ -421,6 +445,17 @@ export function resolveWeaponEquipPresentation(
     };
   }
 
+  if (weaponId === "hedgehog_spray") {
+    return {
+      textureKey: HEDGEHOG_SPRAY_EQUIP_TEXTURE_KEY,
+      offsetX: 8,
+      offsetY: 0,
+      flipWithDirection: true,
+      // 캔버스 32px, 센터 x=16, 총구 x=30 → 14px
+      muzzleFromCenter: 14,
+    };
+  }
+
   return {
     textureKey: null,
     offsetX: 0,
@@ -471,6 +506,10 @@ export function resolveWeaponFireStyle(weaponId: string): WeaponFireStyle {
     return "slash_arc";
   }
 
+  if (weaponId === "hedgehog_spray") {
+    return "auto_flash";
+  }
+
   return "generic_line";
 }
 
@@ -517,6 +556,7 @@ export function ensureWeaponHudTextures(scene: Phaser.Scene) {
     else if (weaponId === "laser_cutter") drawLaserCutterHudIcon(g);
     else if (weaponId === "grab_spear") drawGrabSpearHudIcon(g);
     else if (weaponId === "acorn_sword") drawAcornSwordHudIcon(g);
+    else if (weaponId === "hedgehog_spray") drawHedgehogSprayHudIcon(g);
     else drawFallbackHudIcon(g);
     g.generateTexture(key, HUD_ICON_SIZE, HUD_ICON_SIZE);
     g.destroy();
@@ -1680,4 +1720,98 @@ function drawAcornSwordEquipTexture(graphics: Phaser.GameObjects.Graphics) {
   // 칼날 아웃라인
   graphics.lineStyle(1, 0x909090, 1);
   graphics.strokeRoundedRect(7, 2, 15, 4, 1);
+}
+
+// ── 고슴도치 스프레이 (hedgehog_spray) ───────────────────────────────────────
+
+function drawHedgehogSprayHudIcon(g: Phaser.GameObjects.Graphics) {
+  g.clear();
+  // 몸체 (통통한 통형 발사기)
+  g.fillStyle(0x92400e, 1);
+  g.fillRoundedRect(2, 7, 16, 10, 3);
+  // 몸체 하이라이트
+  g.fillStyle(0xb45309, 0.6);
+  g.fillRoundedRect(2, 7, 16, 3, 2);
+  // 가시 돌기 3개 (상단)
+  g.fillStyle(0xd97706, 1);
+  g.fillTriangle(5, 7, 7, 7, 6, 4);
+  g.fillTriangle(9, 7, 11, 7, 10, 3);
+  g.fillTriangle(13, 7, 15, 7, 14, 5);
+  // 총구 구멍 (우측)
+  g.fillStyle(0x451a03, 1);
+  g.fillRoundedRect(17, 9, 5, 6, 1);
+  // 총구 하이라이트
+  g.fillStyle(0x78350f, 1);
+  g.fillRoundedRect(18, 10, 3, 2, 0);
+  // 흰/갈색 무늬
+  g.fillStyle(0xfef3c7, 0.6);
+  g.fillRoundedRect(3, 13, 10, 2, 1);
+  // 아웃라인
+  g.lineStyle(1, 0x3b1f0a, 1);
+  g.strokeRoundedRect(2, 7, 16, 10, 3);
+}
+
+function drawHedgehogSprayPickupTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+  // 메인 몸체 (통통한 고슴도치 모양 발사기)
+  graphics.fillStyle(0x92400e, 1);
+  graphics.fillRoundedRect(4, 9, 48, 16, 5);
+  // 몸체 하이라이트
+  graphics.fillStyle(0xb45309, 0.6);
+  graphics.fillRoundedRect(4, 9, 48, 5, 4);
+  // 총구 (우측)
+  graphics.fillStyle(0x5c2d0e, 1);
+  graphics.fillRoundedRect(48, 13, 12, 8, 2);
+  // 총구 내부
+  graphics.fillStyle(0x2d1508, 1);
+  graphics.fillRoundedRect(50, 15, 8, 4, 1);
+  // 가시 돌기 5개 (상단)
+  graphics.fillStyle(0xd97706, 1);
+  graphics.fillTriangle(8, 9, 12, 9, 10, 3);
+  graphics.fillTriangle(14, 9, 18, 9, 16, 2);
+  graphics.fillTriangle(21, 9, 25, 9, 23, 1);
+  graphics.fillTriangle(28, 9, 32, 9, 30, 3);
+  graphics.fillTriangle(35, 9, 39, 9, 37, 4);
+  // 가시 음영
+  graphics.fillStyle(0xb45309, 0.5);
+  graphics.fillTriangle(8, 9, 11, 9, 10, 5);
+  graphics.fillTriangle(14, 9, 17, 9, 16, 5);
+  // 흰/베이지 배 무늬
+  graphics.fillStyle(0xfef3c7, 0.5);
+  graphics.fillRoundedRect(6, 19, 36, 4, 2);
+  // 눈 (작은 검은 원)
+  graphics.fillStyle(0x1c0a00, 1);
+  graphics.fillCircle(10, 17, 2);
+  graphics.fillStyle(0xffffff, 0.8);
+  graphics.fillCircle(11, 16, 0.8);
+  // 몸체 아웃라인
+  graphics.lineStyle(2, 0x3b1f0a, 1);
+  graphics.strokeRoundedRect(4, 9, 48, 16, 5);
+  // 총구 아웃라인
+  graphics.lineStyle(1.5, 0x1c0a00, 1);
+  graphics.strokeRoundedRect(48, 13, 12, 8, 2);
+}
+
+function drawHedgehogSprayEquipTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+  // 몸체
+  graphics.fillStyle(0x92400e, 1);
+  graphics.fillRoundedRect(1, 3, 24, 9, 3);
+  // 몸체 하이라이트
+  graphics.fillStyle(0xb45309, 0.5);
+  graphics.fillRoundedRect(1, 3, 24, 3, 2);
+  // 가시 돌기 3개
+  graphics.fillStyle(0xd97706, 1);
+  graphics.fillTriangle(3, 3, 6, 3, 4, 0);
+  graphics.fillTriangle(8, 3, 11, 3, 9, 0);
+  graphics.fillTriangle(14, 3, 17, 3, 15, 1);
+  // 총구
+  graphics.fillStyle(0x5c2d0e, 1);
+  graphics.fillRoundedRect(24, 5, 7, 5, 1);
+  // 총구 내부
+  graphics.fillStyle(0x2d1508, 1);
+  graphics.fillRoundedRect(25, 6, 5, 3, 0);
+  // 아웃라인
+  graphics.lineStyle(1, 0x3b1f0a, 1);
+  graphics.strokeRoundedRect(1, 3, 24, 9, 3);
 }
