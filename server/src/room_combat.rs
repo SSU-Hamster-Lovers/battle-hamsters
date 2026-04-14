@@ -251,6 +251,7 @@ impl RoomState {
                 &shooter_position,
                 pellet_aim,
                 weapon.range,
+                weapon.pierces_one_way_platforms,
                 dying_this_tick,
             );
 
@@ -376,6 +377,7 @@ impl RoomState {
         shooter_position: &Vector2,
         aim_direction: &Vector2,
         range: f64,
+        pierces_one_way_platforms: bool,
         dying_this_tick: &HashSet<String>,
     ) -> Option<String> {
         self.players
@@ -402,8 +404,27 @@ impl RoomState {
                 let dx = target.snapshot.position.x - closest_point.x;
                 let dy = target.snapshot.position.y - closest_point.y;
                 let distance_sq = dx * dx + dy * dy;
-                (distance_sq <= (PLAYER_HALF_SIZE * PLAYER_HALF_SIZE * 1.5))
-                    .then_some((target_id.clone(), projected))
+                if distance_sq > PLAYER_HALF_SIZE * PLAYER_HALF_SIZE * 1.5 {
+                    return None;
+                }
+
+                // 원웨이 플랫폼 차단 검사 (피어싱 불가 빔만)
+                if !pierces_one_way_platforms && aim_direction.y.abs() > 1e-6 {
+                    let platforms = &crate::game_data::runtime_map_data().one_way_platforms;
+                    for platform in platforms {
+                        let t = (platform.top_y - shooter_position.y) / aim_direction.y;
+                        if t <= 0.0 || t >= projected {
+                            continue;
+                        }
+                        let ix = shooter_position.x + aim_direction.x * t;
+                        if ix >= platform.left_x && ix <= platform.right_x {
+                            // 플랫폼이 슈터와 대상 사이를 가로막음
+                            return None;
+                        }
+                    }
+                }
+
+                Some((target_id.clone(), projected))
             })
             .min_by(|a, b| a.1.total_cmp(&b.1))
             .map(|(target_id, _)| target_id)

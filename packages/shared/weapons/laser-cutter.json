@@ -13,7 +13,7 @@
   "selfRecoilGroundMultiplier": 1,
   "selfRecoilAirMultiplier": 1,
   "attackIntervalMs": 50,
-  "range": 500,
+  "range": 800,
   "projectileSpeed": 0,
   "projectileGravityPerSec2": 0,
   "spreadDeg": 0,
@@ -25,6 +25,7 @@
   "pickupWeight": 5,
   "rarity": "rare",
   "worldDespawnMs": 10000,
-  "specialEffect": { "kind": "none" },
-  "aimProfile": { "minAimDeg": -55, "maxAimDeg": 40 }
+  "specialEffect": { "kind": "burn", "durationMs": 1000, "tickDamage": 2, "tickIntervalMs": 500 },
+  "aimProfile": { "minAimDeg": -55, "maxAimDeg": 40 },
+  "piercesOneWayPlatforms": false
 }

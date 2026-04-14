@@ -2761,4 +2761,105 @@ mod tests {
             "grab_spear 적중 시 대상에게 grab 상태가 적용되어야 함"
         );
     }
+
+    // laser_cutter: 빔이 적중 시 Burn DoT가 적용되어야 한다.
+    #[test]
+    fn laser_cutter_applies_burn_on_hit() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "laser_cutter".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(600);
+        shooter.latest_input.sequence = 1;
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        let mut target = test_player(300.0, 300.0);
+        target.snapshot.id = "target".to_string();
+        target.snapshot.name = "target".to_string();
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let target_after = room.players.get("target").unwrap();
+        assert!(
+            target_after.active_burn.is_some(),
+            "laser_cutter 명중 시 Burn DoT가 적용되어야 함"
+        );
+    }
+
+    // laser_cutter: 원웨이 플랫폼이 빔 경로를 차단할 때 대상에게 피해를 주지 않아야 한다.
+    // left_bunker_upper: topY=480, leftX=160, rightX=380
+    // shooter(160, 450) → 40° 아래 방향(0.766, 0.643) → target(351.5, 610.7)
+    // t_platform≈47, t_target≈250: 플랫폼이 중간에 위치
+    #[test]
+    fn laser_cutter_blocked_by_one_way_platform() {
+        let mut room = RoomState::new();
+
+        // aim 40° below horizontal (aimProfile.maxAimDeg=40 경계)
+        let aim_x = 40f64.to_radians().cos(); // ≈ 0.766
+        let aim_y = 40f64.to_radians().sin(); // ≈ 0.643
+
+        let mut shooter = test_player(160.0, 450.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "laser_cutter".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(600);
+        shooter.latest_input.sequence = 1;
+        shooter.latest_input.aim = Vector2 { x: aim_x, y: aim_y };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        // 빔 축 위에 위치 (t=250), 플랫폼(t≈47) 너머에 있음
+        let target = test_player(160.0 + aim_x * 250.0, 450.0 + aim_y * 250.0);
+        let mut target = target;
+        target.snapshot.id = "target".to_string();
+        target.snapshot.name = "target".to_string();
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let target_after = room.players.get("target").unwrap();
+        assert_eq!(
+            target_after.snapshot.hp, 100,
+            "원웨이 플랫폼 뒤의 대상에게는 피해를 주지 않아야 함"
+        );
+    }
+
+    // grab_effect: 그랩 상태인 플레이어는 수평 이동이 불가해야 한다.
+    #[test]
+    fn grab_effect_freezes_player_movement() {
+        let mut player = test_player(400.0, 300.0);
+        player.snapshot.grounded = true;
+        // 그랩 효과 직접 부여 (1초 지속)
+        player.active_grab = Some(GrabEffect {
+            weapon_id: "grab_spear".to_string(),
+            expires_at: 99999,
+        });
+        // 오른쪽으로 이동 시도
+        player.latest_input.movement = Vector2 { x: 1.0, y: 0.0 };
+
+        let x_before = player.snapshot.position.x;
+        step_player(&mut player, 0);
+
+        assert_eq!(
+            player.snapshot.position.x, x_before,
+            "그랩 상태에서는 수평 이동이 불가해야 함"
+        );
+    }
 }

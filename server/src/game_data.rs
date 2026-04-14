@@ -261,6 +261,9 @@ pub(crate) struct RuntimeWeaponDefinition {
     pub(crate) melee_cone_near_half_width: Option<f64>,
     #[serde(rename = "meleeConeFarHalfWidth")]
     pub(crate) melee_cone_far_half_width: Option<f64>,
+    /// true이면 빔이 원웨이 플랫폼을 통과한다. 기본값 false → 플랫폼에 막힘.
+    #[serde(default)]
+    pub(crate) pierces_one_way_platforms: bool,
 }
 
 #[allow(dead_code)]
