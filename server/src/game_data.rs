@@ -447,6 +447,7 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
         let laser_cutter_raw =
             include_str!("../../packages/shared/weapons/laser-cutter.json");
         let grab_spear_raw = include_str!("../../packages/shared/weapons/grab-spear.json");
+        let acorn_sword_raw = include_str!("../../packages/shared/weapons/acorn-sword.json");
 
         let paws: RuntimeWeaponDefinition =
             serde_json::from_str(paws_raw).expect("paws JSON should deserialize");
@@ -470,6 +471,8 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
             serde_json::from_str(laser_cutter_raw).expect("laser cutter JSON should deserialize");
         let grab_spear: RuntimeWeaponDefinition =
             serde_json::from_str(grab_spear_raw).expect("grab spear JSON should deserialize");
+        let acorn_sword: RuntimeWeaponDefinition =
+            serde_json::from_str(acorn_sword_raw).expect("acorn sword JSON should deserialize");
 
         HashMap::from([
             (paws.id.clone(), paws),
@@ -482,6 +485,7 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
             (blueberry_mortar.id.clone(), blueberry_mortar),
             (laser_cutter.id.clone(), laser_cutter),
             (grab_spear.id.clone(), grab_spear),
+            (acorn_sword.id.clone(), acorn_sword),
         ])
     })
 }

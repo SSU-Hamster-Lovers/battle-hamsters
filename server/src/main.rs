@@ -2862,4 +2862,70 @@ mod tests {
             "그랩 상태에서는 수평 이동이 불가해야 함"
         );
     }
+
+    // acorn_sword: 사거리 내 대상에게 근접 피해를 줘야 한다.
+    #[test]
+    fn acorn_sword_hits_target_in_range() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(200.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "acorn_sword".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(8);
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        // 40px 거리 — 사거리(50px) 이내
+        let mut target = test_player(240.0, 300.0);
+        target.snapshot.id = "target".to_string();
+        target.snapshot.name = "target".to_string();
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let target_after = room.players.get("target").unwrap();
+        assert!(
+            target_after.snapshot.hp < 100,
+            "acorn_sword 사거리 내 대상에게 피해를 줘야 함 (hp={}/100)",
+            target_after.snapshot.hp
+        );
+    }
+
+    // acorn_sword: 공격 시 resource가 1 소비되어야 한다.
+    #[test]
+    fn acorn_sword_consumes_resource_per_swing() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(200.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "acorn_sword".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(8);
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        room.players.insert("shooter".to_string(), shooter);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let shooter_after = room.players.get("shooter").unwrap();
+        assert_eq!(
+            shooter_after.snapshot.equipped_weapon_resource,
+            Some(7),
+            "acorn_sword 1회 공격 후 resource 8 → 7이어야 함"
+        );
+    }
 }

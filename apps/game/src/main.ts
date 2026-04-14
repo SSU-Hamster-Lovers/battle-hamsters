@@ -3389,6 +3389,41 @@ class MainScene extends Phaser.Scene {
       return;
     }
 
+    if (fireStyle === "slash_arc") {
+      // 도토리 대검 — 넓은 부채꼴 호 섬광
+      const perpX = -aimY;
+      const perpY = aimX;
+      const slashDist = 50;
+      // 좌우로 퍼지는 세 줄기 섬광
+      for (let i = -1; i <= 1; i++) {
+        const spread = i * 0.38;
+        const ex = muzzleX + (aimX * Math.cos(spread) - aimY * Math.sin(spread)) * slashDist;
+        const ey = muzzleY + (aimX * Math.sin(spread) + aimY * Math.cos(spread)) * slashDist;
+        const alpha = i === 0 ? 0.85 : 0.5;
+        this.attackFlash.lineStyle(i === 0 ? 3 : 1.5, 0xe2e8f0, alpha);
+        this.attackFlash.lineBetween(muzzleX, muzzleY, ex, ey);
+      }
+      // 임팩트 원점 섬광 (갈색/황금)
+      this.attackFlash.fillStyle(0xd97706, 0.75);
+      this.attackFlash.fillCircle(muzzleX, muzzleY, 6);
+      this.attackFlash.fillStyle(0xfef3c7, 0.9);
+      this.attackFlash.fillCircle(muzzleX, muzzleY, 3);
+      // 파편 선 4개 (방사형)
+      this.attackFlash.lineStyle(1.5, 0xd97706, 0.6);
+      for (let i = 0; i < 4; i++) {
+        const angle = (i / 4) * Math.PI * 2 + Math.atan2(aimY, aimX);
+        const sx = Math.cos(angle);
+        const sy = Math.sin(angle);
+        this.attackFlash.lineBetween(
+          muzzleX + sx * 4, muzzleY + sy * 4,
+          muzzleX + sx * 12 + perpX * (i % 2 === 0 ? 4 : -4),
+          muzzleY + sy * 12 + perpY * (i % 2 === 0 ? 4 : -4),
+        );
+      }
+      this.attackFlashUntil = this.time.now + 90;
+      return;
+    }
+
     this.attackFlash.lineStyle(3, 0xfef08a, 0.95);
     this.attackFlash.lineBetween(
       muzzleX,
