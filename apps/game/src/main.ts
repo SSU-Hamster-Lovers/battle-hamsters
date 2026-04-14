@@ -19,6 +19,11 @@ import {
   weaponPickupAccentColor,
 } from "./weapon-presentation";
 import { resolvePickupCollapseTransform } from "./pickup-vfx";
+import {
+  initVFXBundleSystem,
+  tryBundleFireVFX,
+  tryBundleHitVFX,
+} from "./vfx-bundle-integration";
 import type {
   CollisionPrimitive,
   DamageAppliedEvent,
@@ -987,6 +992,8 @@ class MainScene extends Phaser.Scene {
     ensureHamsterPlaceholderTextures(this);
     ensureWeaponPickupTextures(this);
     ensureWeaponHudTextures(this);
+    // VFX Bundle 시스템 초기화 (fire-and-forget: 번들 로드 전까지 절차적 fallback 동작)
+    void initVFXBundleSystem(this);
     this.drawStage();
     this.setDebugVisible(this.debugEnabled);
 
@@ -2337,6 +2344,9 @@ class MainScene extends Phaser.Scene {
     damage: number,
     isExact: boolean,
   ) {
+    // 번들 기반 hit VFX 우선 시도. 성공하면 절차적 렌더링 스킵.
+    if (weaponId && tryBundleHitVFX(weaponId, impactPoint.x, impactPoint.y)) return;
+
     const impactStyle = weaponId
       ? resolveWeaponImpactStyle(weaponId)
       : "generic_spark";
@@ -3308,6 +3318,8 @@ class MainScene extends Phaser.Scene {
     aimY: number,
   ) {
     this.attackFlash.clear();
+    // 번들 기반 fire VFX 우선 시도. 성공하면 절차적 렌더링 스킵.
+    if (tryBundleFireVFX(weaponId, muzzleX, muzzleY)) return;
     const fireStyle = resolveWeaponFireStyle(weaponId);
 
     if (fireStyle === "flame_stream") {

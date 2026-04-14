@@ -13,6 +13,9 @@ importers:
       '@battle-hamsters/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@battle-hamsters/vfx-runtime':
+        specifier: workspace:*
+        version: link:../../packages/vfx-runtime
       phaser:
         specifier: ^3.80.0
         version: 3.90.0

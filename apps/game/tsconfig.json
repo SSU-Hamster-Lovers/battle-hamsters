@@ -8,7 +8,8 @@
     "moduleResolution": "bundler",
     "baseUrl": ".",
     "paths": {
-      "@battle-hamsters/shared": ["../../packages/shared/index.ts"]
+      "@battle-hamsters/shared": ["../../packages/shared/index.ts"],
+      "@battle-hamsters/vfx-runtime": ["../../packages/vfx-runtime/index.ts"]
     },
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
