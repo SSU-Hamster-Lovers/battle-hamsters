@@ -3052,4 +3052,92 @@ mod tests {
             "pinecone_grenade 1회 발사 후 resource 2 → 1이어야 함"
         );
     }
+
+    // 수류탄: 지형 충돌 시 즉시 폭발하여 범위 내 target에게 피해를 줘야 한다.
+    #[test]
+    fn pinecone_grenade_explodes_on_terrain_hit() {
+        let mut room = RoomState::new();
+        // target: 바닥(y=680) 위 20px, 수류탄 x와 동일
+        let mut target = test_player(800.0, 660.0);
+        target.snapshot.hp = 100;
+        room.players.insert("target".to_string(), target);
+
+        // 수류탄 투사체: y=640에서 아래로 빠르게 낙하 → 1틱 내 바닥(680) 충돌
+        // explode_at 미래로 설정해 타이머는 발동 안 됨 (지형 충돌이 먼저)
+        room.projectiles.insert(
+            "grenade".to_string(),
+            ProjectileRuntime {
+                id: "grenade".to_string(),
+                owner_id: "shooter".to_string(),
+                weapon_id: "pinecone_grenade".to_string(),
+                position: Vector2 { x: 800.0, y: 640.0 },
+                velocity: Vector2 { x: 0.0, y: 1000.0 },
+                gravity_per_sec2: 0.0,
+                damage: 0,
+                knockback: 0.0,
+                range_remaining: 500.0,
+                special_effect: RuntimeWeaponSpecialEffect::TimedExplode {
+                    delay_ms: 99999,
+                    radius: 120.0,
+                    splash_damage: 55,
+                },
+                spawned_at: 0,
+                explode_at: Some(99999999),
+            },
+        );
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.step_projectiles(1000, &mut deaths, &mut dying);
+
+        let target_after = room.players.get("target").unwrap();
+        assert!(
+            target_after.snapshot.hp < 100,
+            "지형 충돌 시 즉시 폭발해 target이 피해를 받아야 함 (hp={}/100)",
+            target_after.snapshot.hp
+        );
+    }
+
+    // 폭발: shooter가 폭발 반경 내에 있으면 자폭 데미지를 받아야 한다.
+    #[test]
+    fn explosion_damages_shooter_self_damage() {
+        let mut room = RoomState::new();
+        let mut shooter = test_player(500.0, 300.0);
+        shooter.snapshot.hp = 100;
+        room.players.insert("shooter".to_string(), shooter);
+
+        // 폭발 중심 = shooter 위치, 반경 120 → shooter가 맞아야 함
+        room.projectiles.insert(
+            "grenade".to_string(),
+            ProjectileRuntime {
+                id: "grenade".to_string(),
+                owner_id: "shooter".to_string(),
+                weapon_id: "pinecone_grenade".to_string(),
+                position: Vector2 { x: 500.0, y: 300.0 },
+                velocity: Vector2 { x: 0.0, y: 0.0 },
+                gravity_per_sec2: 0.0,
+                damage: 0,
+                knockback: 0.0,
+                range_remaining: 100.0,
+                special_effect: RuntimeWeaponSpecialEffect::TimedExplode {
+                    delay_ms: 0,
+                    radius: 120.0,
+                    splash_damage: 55,
+                },
+                spawned_at: 0,
+                explode_at: Some(1000), // now_ms=1000에서 폭발
+            },
+        );
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.step_projectiles(1000, &mut deaths, &mut dying);
+
+        let shooter_after = room.players.get("shooter").unwrap();
+        assert!(
+            shooter_after.snapshot.hp < 100,
+            "폭발 반경 내 shooter가 자폭 데미지를 받아야 함 (hp={}/100)",
+            shooter_after.snapshot.hp
+        );
+    }
 }

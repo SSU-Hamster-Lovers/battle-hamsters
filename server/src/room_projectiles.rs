@@ -251,9 +251,35 @@ impl RoomState {
                         );
                     }
 
+                    // timed_explode: 직격 시에도 즉시 폭발
+                    if let RuntimeWeaponSpecialEffect::TimedExplode {
+                        radius,
+                        splash_damage,
+                        ..
+                    } = projectile.special_effect.clone()
+                    {
+                        self.apply_explosion(
+                            &projectile.owner_id,
+                            &projectile.weapon_id,
+                            &impact_point,
+                            radius,
+                            splash_damage,
+                            projectile.knockback,
+                            now_ms,
+                            deaths,
+                            dying_this_tick,
+                        );
+                    }
+
                     consumed_projectiles.push(projectile_id);
                 }
                 Some(ProjectileCollision::Terrain { hit_fraction }) => {
+                    let terrain_impact = Vector2 {
+                        x: projectile.position.x
+                            + (next_position.x - projectile.position.x) * hit_fraction,
+                        y: projectile.position.y
+                            + (next_position.y - projectile.position.y) * hit_fraction,
+                    };
                     // 지형 충돌 시 폭발 특수효과
                     if let RuntimeWeaponSpecialEffect::Explode {
                         radius: Some(radius),
@@ -261,12 +287,25 @@ impl RoomState {
                         ..
                     } = projectile.special_effect.clone()
                     {
-                        let terrain_impact = Vector2 {
-                            x: projectile.position.x
-                                + (next_position.x - projectile.position.x) * hit_fraction,
-                            y: projectile.position.y
-                                + (next_position.y - projectile.position.y) * hit_fraction,
-                        };
+                        self.apply_explosion(
+                            &projectile.owner_id,
+                            &projectile.weapon_id,
+                            &terrain_impact,
+                            radius,
+                            splash_damage,
+                            projectile.knockback,
+                            now_ms,
+                            deaths,
+                            dying_this_tick,
+                        );
+                    }
+                    // timed_explode: 지형 충돌 시에도 즉시 폭발
+                    if let RuntimeWeaponSpecialEffect::TimedExplode {
+                        radius,
+                        splash_damage,
+                        ..
+                    } = projectile.special_effect.clone()
+                    {
                         self.apply_explosion(
                             &projectile.owner_id,
                             &projectile.weapon_id,
@@ -319,8 +358,7 @@ impl RoomState {
             .players
             .iter()
             .filter(|(id, target)| {
-                id.as_str() != owner_id
-                    && target.snapshot.state == PlayerState::Alive
+                target.snapshot.state == PlayerState::Alive
                     && !dying_this_tick.contains(id.as_str())
             })
             .filter_map(|(id, target)| {
