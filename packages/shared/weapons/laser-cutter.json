@@ -26,5 +26,6 @@
   "rarity": "rare",
   "worldDespawnMs": 10000,
   "specialEffect": { "kind": "burn", "durationMs": 1000, "tickDamage": 2, "tickIntervalMs": 500 },
-  "aimProfile": { "minAimDeg": -55, "maxAimDeg": 40 }
+  "aimProfile": { "minAimDeg": -55, "maxAimDeg": 40 },
+  "piercesOneWayPlatforms": false
 }

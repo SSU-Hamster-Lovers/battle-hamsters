@@ -59,6 +59,8 @@ export interface WeaponDefinition {
   aimProfile?: WeaponAimProfile;
   meleeConeNearHalfWidth?: number;
   meleeConeFarHalfWidth?: number;
+  /** true이면 빔이 원웨이 플랫폼을 통과한다. 생략 또는 false → 플랫폼에 막힘. */
+  piercesOneWayPlatforms?: boolean;
 }
 
 export interface WeaponSpawnPoint {
