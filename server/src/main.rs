@@ -1183,8 +1183,8 @@ mod tests {
     #[test]
     fn room_starts_with_spawned_weapon_pickup() {
         let room = RoomState::new();
-        // 좌/우 random 후보 각 1개 + 고정 12개(acorn/walnut/ember/seed/pine_sniper/squirrel_gatling/blueberry_mortar/laser_cutter/grab_spear/acorn_sword/hedgehog_spray/pinecone_grenade) = 14개
-        assert_eq!(room.weapon_pickups.len(), 14);
+        // 좌/우 random 후보 각 1개 + 고정 14개(acorn/walnut/ember/seed/pine_sniper/squirrel_gatling/blueberry_mortar/laser_cutter/grab_spear/acorn_sword/hedgehog_spray/pinecone_grenade/stun_acorn/airstrike_remote) = 16개
+        assert_eq!(room.weapon_pickups.len(), 16);
 
         let pickups: Vec<_> = room.weapon_pickups.values().collect();
 

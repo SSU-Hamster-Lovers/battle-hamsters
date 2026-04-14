@@ -365,6 +365,28 @@
       "spawnStyle": "airdrop",
       "despawnStyle": "shrink_pop",
       "mode": "fixed"
+    },
+    {
+      "id": "weapon_bunker_upper_left_stun",
+      "weaponId": "stun_acorn",
+      "x": 270,
+      "y": 473,
+      "respawnMs": 7000,
+      "despawnAfterMs": 8000,
+      "spawnStyle": "fade_in",
+      "despawnStyle": "shrink_pop",
+      "mode": "fixed"
+    },
+    {
+      "id": "weapon_ground_right_airstrike",
+      "weaponId": "airstrike_remote",
+      "x": 1020,
+      "y": 673,
+      "respawnMs": 15000,
+      "despawnAfterMs": 10000,
+      "spawnStyle": "airdrop",
+      "despawnStyle": "shrink_pop",
+      "mode": "fixed"
     }
   ],
   "itemSpawns": [
