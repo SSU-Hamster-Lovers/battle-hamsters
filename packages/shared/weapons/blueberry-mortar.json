@@ -5,7 +5,7 @@
   "hitType": "projectile",
   "fireMode": "single",
   "resourceModel": "magazine",
-  "damage": 30,
+  "damage": 90,
   "knockback": 18,
   "selfRecoilForce": 2.0,
   "selfRecoilAngleDeg": 0,
@@ -13,7 +13,7 @@
   "selfRecoilGroundMultiplier": 0.7,
   "selfRecoilAirMultiplier": 1.4,
   "attackIntervalMs": 1200,
-  "range": 1600,
+  "range": 2200,
   "projectileSpeed": 600,
   "projectileGravityPerSec2": 900,
   "spreadDeg": 0,
@@ -25,6 +25,6 @@
   "pickupWeight": 5,
   "rarity": "uncommon",
   "worldDespawnMs": 10000,
-  "specialEffect": { "kind": "explode", "radius": 80, "splashDamage": 15 },
+  "specialEffect": { "kind": "explode", "radius": 140, "splashDamage": 45 },
   "aimProfile": { "minAimDeg": -85, "maxAimDeg": 5 }
 }

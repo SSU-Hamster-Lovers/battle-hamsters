@@ -821,23 +821,40 @@ class MainScene extends Phaser.Scene {
     const gravity = (mortarDef.projectileGravityPerSec2 ?? 0) as number;
     let vx = clampedAim.x * speed;
     let vy = clampedAim.y * speed;
+    let rangeRemaining = mortarDef.range;
 
-    const dt = 0.05; // 50ms steps
-    const maxSteps = 80;
+    const dt = 0.05; // 50ms steps (서버 TICK_INTERVAL_MS와 동일)
+    const maxSteps = 120;
     const mapW = GAME_WIDTH;
     const mapH = GAME_HEIGHT + 200;
 
     for (let i = 0; i < maxSteps; i++) {
+      // 서버와 동일한 사다리꼴 적분 (trapezoidal): avg_vel * dt
+      const nvy = vy + gravity * dt;
+      const avgvy = (vy + nvy) * 0.5;
       const nx = px + vx * dt;
-      const ny = py + vy * dt;
-      vy += gravity * dt;
+      const ny = py + avgvy * dt;
+      const stepLen = Math.hypot(vx * dt, avgvy * dt);
+      vy = nvy;
+
+      // 사거리 소진 → 현재 스텝의 비율만큼만 이동
+      if (stepLen > 0 && stepLen >= rangeRemaining) {
+        const scale = rangeRemaining / stepLen;
+        const ex = px + vx * dt * scale;
+        const ey = py + avgvy * dt * scale;
+        this.mortarArc.lineStyle(2, 0xa78bfa, 0.7);
+        this.mortarArc.strokeCircle(ex, ey, 12);
+        this.mortarArc.lineStyle(1, 0xffffff, 0.4);
+        this.mortarArc.strokeCircle(ex, ey, 6);
+        break;
+      }
+      rangeRemaining -= stepLen;
 
       // 맵 경계 밖 → 중단
       if (nx < 0 || nx > mapW || ny > mapH) break;
 
       // 짝수 스텝만 점으로 그림 (점선 효과)
       if (i % 2 === 0) {
-        // 착지 지점에 가까울수록 더 밝게
         const alpha = 0.25 + (i / maxSteps) * 0.4;
         const radius = i < maxSteps * 0.8 ? 2.5 : 4;
         this.mortarArc.fillStyle(0xc4b5fd, alpha);
@@ -847,7 +864,7 @@ class MainScene extends Phaser.Scene {
       px = nx;
       py = ny;
 
-      // 마지막 도달 지점: 착지 예상 원 표시
+      // 맵 바닥(또는 마지막 스텝): 착지 예상 원 표시
       if (i === maxSteps - 1 || ny > mapH - 200) {
         this.mortarArc.lineStyle(2, 0xa78bfa, 0.7);
         this.mortarArc.strokeCircle(nx, ny, 12);

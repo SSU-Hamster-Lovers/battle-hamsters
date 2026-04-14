@@ -2796,4 +2796,26 @@ mod tests {
             "laser_cutter 명중 시 Burn DoT가 적용되어야 함"
         );
     }
+
+    // grab_effect: 그랩 상태인 플레이어는 수평 이동이 불가해야 한다.
+    #[test]
+    fn grab_effect_freezes_player_movement() {
+        let mut player = test_player(400.0, 300.0);
+        player.snapshot.grounded = true;
+        // 그랩 효과 직접 부여 (1초 지속)
+        player.active_grab = Some(GrabEffect {
+            weapon_id: "grab_spear".to_string(),
+            expires_at: 99999,
+        });
+        // 오른쪽으로 이동 시도
+        player.latest_input.movement = Vector2 { x: 1.0, y: 0.0 };
+
+        let x_before = player.snapshot.position.x;
+        step_player(&mut player, 0);
+
+        assert_eq!(
+            player.snapshot.position.x, x_before,
+            "그랩 상태에서는 수평 이동이 불가해야 함"
+        );
+    }
 }
