@@ -332,6 +332,39 @@
       "spawnStyle": "fade_in",
       "despawnStyle": "shrink_pop",
       "mode": "fixed"
+    },
+    {
+      "id": "weapon_left_platform_acorn_sword",
+      "weaponId": "acorn_sword",
+      "x": 480,
+      "y": 473,
+      "respawnMs": 8000,
+      "despawnAfterMs": 8000,
+      "spawnStyle": "fade_in",
+      "despawnStyle": "shrink_pop",
+      "mode": "fixed"
+    },
+    {
+      "id": "weapon_right_platform_hedgehog_spray",
+      "weaponId": "hedgehog_spray",
+      "x": 920,
+      "y": 473,
+      "respawnMs": 8000,
+      "despawnAfterMs": 8000,
+      "spawnStyle": "fade_in",
+      "despawnStyle": "shrink_pop",
+      "mode": "fixed"
+    },
+    {
+      "id": "weapon_center_platform_pinecone_grenade",
+      "weaponId": "pinecone_grenade",
+      "x": 700,
+      "y": 340,
+      "respawnMs": 12000,
+      "despawnAfterMs": 12000,
+      "spawnStyle": "airdrop",
+      "despawnStyle": "shrink_pop",
+      "mode": "fixed"
     }
   ],
   "itemSpawns": [

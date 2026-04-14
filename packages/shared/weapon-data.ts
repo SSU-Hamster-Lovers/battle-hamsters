@@ -1,4 +1,7 @@
 import acornBlasterJson from "./weapons/acorn-blaster.json";
+import acornSwordJson from "./weapons/acorn-sword.json";
+import hedgehogSprayJson from "./weapons/hedgehog-spray.json";
+import pineconeGrenadeJson from "./weapons/pinecone-grenade.json";
 import blueberryMortarJson from "./weapons/blueberry-mortar.json";
 import emberSprinklerJson from "./weapons/ember-sprinkler.json";
 import grabSpearJson from "./weapons/grab-spear.json";
@@ -20,6 +23,9 @@ export const squirrelGatlingWeapon = squirrelGatlingJson as WeaponDefinition;
 export const blueberryMortarWeapon = blueberryMortarJson as WeaponDefinition;
 export const laserCutterWeapon = laserCutterJson as WeaponDefinition;
 export const grabSpearWeapon = grabSpearJson as WeaponDefinition;
+export const acornSwordWeapon = acornSwordJson as WeaponDefinition;
+export const hedgehogSprayWeapon = hedgehogSprayJson as WeaponDefinition;
+export const pineconeGrenadeWeapon = pineconeGrenadeJson as WeaponDefinition;
 
 export const weaponDefinitions = [
   pawsWeapon,
@@ -32,6 +38,9 @@ export const weaponDefinitions = [
   blueberryMortarWeapon,
   laserCutterWeapon,
   grabSpearWeapon,
+  acornSwordWeapon,
+  hedgehogSprayWeapon,
+  pineconeGrenadeWeapon,
 ] as const;
 
 export const weaponDefinitionById = Object.fromEntries(

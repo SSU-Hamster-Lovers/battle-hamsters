@@ -292,6 +292,13 @@ pub(crate) enum RuntimeWeaponSpecialEffect {
         #[serde(rename = "tickIntervalMs")]
         tick_interval_ms: u64,
     },
+    TimedExplode {
+        #[serde(rename = "delayMs")]
+        delay_ms: u64,
+        radius: f64,
+        #[serde(rename = "splashDamage")]
+        splash_damage: u16,
+    },
 }
 
 impl RuntimeWeaponSpecialEffect {
@@ -447,6 +454,9 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
         let laser_cutter_raw =
             include_str!("../../packages/shared/weapons/laser-cutter.json");
         let grab_spear_raw = include_str!("../../packages/shared/weapons/grab-spear.json");
+        let acorn_sword_raw = include_str!("../../packages/shared/weapons/acorn-sword.json");
+        let hedgehog_spray_raw =
+            include_str!("../../packages/shared/weapons/hedgehog-spray.json");
 
         let paws: RuntimeWeaponDefinition =
             serde_json::from_str(paws_raw).expect("paws JSON should deserialize");
@@ -470,6 +480,15 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
             serde_json::from_str(laser_cutter_raw).expect("laser cutter JSON should deserialize");
         let grab_spear: RuntimeWeaponDefinition =
             serde_json::from_str(grab_spear_raw).expect("grab spear JSON should deserialize");
+        let acorn_sword: RuntimeWeaponDefinition =
+            serde_json::from_str(acorn_sword_raw).expect("acorn sword JSON should deserialize");
+        let hedgehog_spray: RuntimeWeaponDefinition = serde_json::from_str(hedgehog_spray_raw)
+            .expect("hedgehog spray JSON should deserialize");
+        let pinecone_grenade_raw =
+            include_str!("../../packages/shared/weapons/pinecone-grenade.json");
+        let pinecone_grenade: RuntimeWeaponDefinition =
+            serde_json::from_str(pinecone_grenade_raw)
+                .expect("pinecone grenade JSON should deserialize");
 
         HashMap::from([
             (paws.id.clone(), paws),
@@ -482,6 +501,9 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
             (blueberry_mortar.id.clone(), blueberry_mortar),
             (laser_cutter.id.clone(), laser_cutter),
             (grab_spear.id.clone(), grab_spear),
+            (acorn_sword.id.clone(), acorn_sword),
+            (hedgehog_spray.id.clone(), hedgehog_spray),
+            (pinecone_grenade.id.clone(), pinecone_grenade),
         ])
     })
 }

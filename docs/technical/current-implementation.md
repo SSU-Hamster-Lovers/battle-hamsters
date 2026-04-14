@@ -4,7 +4,7 @@
 
 ## 최신 기준
 
-- 기준 브랜치: `feat/weapon-polish-v1` (feat/beam-grab-v1 위)
+- 기준 브랜치: `feat/weapon-expansion-v3` (develop 위)
 - 마지막 동기화 기준: 2026-04-14
 
 ## 현재 구현된 것
@@ -20,6 +20,7 @@
 - `PlayerSnapshot.effects: StatusEffectInstance[]`로 현재 활성 상태이상을 클라이언트에 전달한다. 현재 `kind: "burn"`, `kind: "grabbed"` 2종 구현.
 - `WeaponDefinition`에 `piercesOneWayPlatforms?: boolean` 선택 필드 추가. 기본 생략(= false)이면 beam 히트스캔이 원웨이 플랫폼에 차단된다.
 - `ProjectileSnapshot` 타입과 `MatchSnapshot.projectiles: ProjectileSnapshot[]` 계약이 추가되었다.
+- `WeaponSpecialEffect`에 `timed_explode` variant 추가: `{ kind: "timed_explode"; delayMs: number; radius: number; splashDamage: number }`.
 
 ### Server
 
@@ -147,7 +148,7 @@
   - 카드형보다 얇은 `얼굴 + 가로 HP 바 + 생명 pip + 작은 무기/킬 정보` 중심 구조로 정리했다.
   - Free Play에서는 우측 카드가 `최근 공격한 대상 -> 킬 최다 상대` 우선순위로 표시된다.
 - 좌상단에는 큰 제목/room/server tick 대신 작은 `WS/ping` 상태만 표시한다.
-- 무기 아이콘 레지스트리: `getWeaponHudTextureKey(weaponId)` → `RenderTexture` 코드 생성 아이콘 (`paws`, `acorn_blaster`, `ember_sprinkler`, `seed_shotgun`, `walnut_cannon`, `pine_sniper`, `squirrel_gatling`, `blueberry_mortar`, `laser_cutter`, `grab_spear` 전용 HUD 아이콘; 그 외 자동 fallback)
+- 무기 아이콘 레지스트리: `getWeaponHudTextureKey(weaponId)` → `RenderTexture` 코드 생성 아이콘 (`paws`, `acorn_blaster`, `ember_sprinkler`, `seed_shotgun`, `walnut_cannon`, `pine_sniper`, `squirrel_gatling`, `blueberry_mortar`, `laser_cutter`, `grab_spear`, `acorn_sword`, `hedgehog_spray`, `pinecone_grenade` 전용 HUD 아이콘; 그 외 자동 fallback)
 - `aimProfile`이 있는 무기에 대해 클라이언트 오버레이 회전 각도를 `[minAimDeg, maxAimDeg]`로 클램프하고, 서버 공격 판정도 같은 범위를 사용한다.
 - 발사 시 로컬 보조용 무기별 연출을 적용한다.
   - `Acorn Blaster`: 총구 화염 + 짧은 tracer
@@ -160,6 +161,9 @@
   - `Blueberry Mortar`: 크고 둥근 총구 폭발(보라/흰, 반지름 11) + 연기 링, 100ms 지속 (`mortar_arc`). 장착 중 에임 방향으로 포물선 점선 조준선(보라 점) + 착탄 예상 원 오버레이 표시. 서버와 동일한 사다리꼴 적분으로 시뮬레이션.
   - `Laser Cutter`: attack 버튼 유지 중 매 50ms 틱 3중 레이어 시안 빔(800px) 지속 렌더링 (`beam_pulse`, `sendLatestInput` 틱 기반)
   - `Grab Spear`: 기존 선형 flash (`generic_line`)
+  - `Acorn Sword`: 넓은 부채꼴 호 섬광 — 3줄기 부채꼴(±22°) + 황금 원점 + 4방향 파편 (`slash_arc`, 90ms 지속)
+  - `Hedgehog Spray`: Squirrel Gatling 동일 연속 섬광 재사용 (`auto_flash`)
+  - `Pinecone Grenade`: Blueberry Mortar 총구 폭발 + 포물선 조준선 재사용 (`mortar_arc`)
   - 그 외: 기존 선형 fallback
 - 피격 연출 1차/2차를 적용한다.
   - `damageEvents` 가 있으면 정확한 `impactPoint` / `impactDirection` 기준으로 작은 파편 파티클을 생성한다.
@@ -365,9 +369,44 @@
 - **단위 테스트**: `grab_effect_freezes_player_movement`, `laser_cutter_applies_burn_on_hit`, `laser_cutter_blocked_by_one_way_platform` 추가. 누적 63개.
 - **알려진 한계**: 레이저 커터 빔 VFX가 원웨이 플랫폼을 시각적으로 통과함 (서버 판정은 차단됨). 후속 VFX 개선 시 처리 예정.
 
+### 무기 확장 v3 — feat/weapon-expansion-v3 완료
+
+#### 도토리 대검 (acorn_sword)
+
+- **서버**: `packages/shared/weapons/acorn-sword.json`. `hitType: "melee"`, `fireMode: "single"`, damage 22, knockback 14, selfRecoilForce 6 (전방 돌진), attackIntervalMs 400, range 50px, meleeConeNearHalfWidth 8, meleeConeFarHalfWidth 22, maxResource 8, rarity uncommon.
+- **서버**: 기존 `find_melee_target` 인프라 100% 재사용.
+- **맵**: `training-arena.json` 좌측 플랫폼(x=480, y=473) 고정 스폰.
+- **공유 타입**: `packages/shared/weapon-data.ts`에 `acorn_sword` 등록.
+- **클라이언트**: pickup(64×28, 도토리 손잡이 + 칼날) + equip(24×8) + HUD 아이콘.
+- **클라이언트**: `WeaponFireStyle: "slash_arc"`. 3줄기 부채꼴 섬광(±22°, 50px) + 황금 원점 섬광 + 4방향 파편 선, 90ms 지속.
+- **단위 테스트**: `acorn_sword_hits_target_in_range`, `acorn_sword_consumes_resource_per_swing`.
+
+#### 고슴도치 스프레이 (hedgehog_spray)
+
+- **서버**: `packages/shared/weapons/hedgehog-spray.json`. `hitType: "projectile"`, `fireMode: "auto"`, pelletCount 3, spreadDeg 12, damage 7, knockback 3, attackIntervalMs 200, projectileSpeed 680, gravity 180, range 500px, maxResource 16, rarity uncommon.
+- **서버**: 기존 `pelletCount > 1` + `auto fireMode` 인프라 100% 재사용.
+- **맵**: `training-arena.json` 우측 플랫폼(x=920, y=473) 고정 스폰.
+- **공유 타입**: `packages/shared/weapon-data.ts`에 `hedgehog_spray` 등록.
+- **클라이언트**: pickup(64×32, 통통한 고슴도치 발사기) + equip(32×14) + HUD 아이콘. `auto_flash` 재사용.
+- **단위 테스트**: `hedgehog_spray_hits_target_in_range`, `hedgehog_spray_consumes_resource_per_shot`.
+
+#### 솔방울 수류탄 (pinecone_grenade)
+
+- **서버**: `packages/shared/weapons/pinecone-grenade.json`. `hitType: "projectile"`, `fireMode: "single"`, damage 0, projectileSpeed 500, gravity 600, maxResource 2, rarity rare. `specialEffect: { kind: "timed_explode", delayMs: 1500, radius: 120, splashDamage: 55 }`.
+- **서버 신규**: `RuntimeWeaponSpecialEffect::TimedExplode { delay_ms, radius, splash_damage }` variant 추가 (`game_data.rs`).
+- **서버 신규**: `ProjectileRuntime.explode_at: Option<u64>` 필드 추가. 스폰 시 `now_ms + delay_ms`로 설정.
+- **서버 신규**: `step_projectiles`에서 `now_ms >= explode_at` 시 현재 위치에서 `apply_explosion` 호출 후 소멸. 지형/플레이어 직격 시에도 즉시 `TimedExplode` 폭발 처리.
+- **서버 버그 수정**: `apply_explosion`에서 owner 제외 필터 제거 → `walnut_cannon`, `blueberry_mortar`, `pinecone_grenade` 전부 자폭 데미지 적용.
+- **맵**: `training-arena.json` center_platform(x=700, y=340) airdrop 스폰, respawnMs 12000.
+- **공유 타입**: `packages/shared/weapons.ts`에 `timed_explode` variant 추가. `weapon-data.ts`에 `pinecone_grenade` 등록.
+- **클라이언트**: pickup(48×36, 솔방울 + 안전핀 + 퓨즈 스파크) + equip(22×14) + HUD 아이콘. `mortar_arc` 재사용.
+- **클라이언트 VFX**: `resolveWeaponImpactStyle("pinecone_grenade")` → `"explosion_burst"`. `renderProjectiles`에서 `timed_explode` 발사체가 스냅샷에서 사라질 때 마지막 렌더 위치에서 `spawnExplosionBurst` 호출 — 범위 내 아무도 없어도 항상 폭발 VFX 재생.
+- **단위 테스트**: `pinecone_grenade_explodes_after_delay_and_damages_target`, `pinecone_grenade_consumes_resource_per_shot`, `pinecone_grenade_explodes_on_terrain_hit`, `explosion_damages_shooter_self_damage`. 누적 71개.
+- **알려진 한계**: 폭발 VFX 크기/파티클 수가 blueberry_mortar와 동일함. 무기 VFX 일괄 개선 시 차별화 예정.
+
 ## 다음 구현 우선순위
 
-1. 무기 추가 계속 (목표 16~20종) — 현재 10종
+1. 무기 추가 계속 (목표 16~20종) — 현재 13종
 2. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체 (투사체 texture hookup 포함)
 3. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
 4. `develop` preview / staging 배포 전략 분리

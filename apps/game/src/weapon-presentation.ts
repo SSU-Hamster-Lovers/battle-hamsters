@@ -24,6 +24,12 @@ const LASER_CUTTER_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-laser-c
 const LASER_CUTTER_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-laser-cutter`;
 const GRAB_SPEAR_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-grab-spear`;
 const GRAB_SPEAR_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-grab-spear`;
+const ACORN_SWORD_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-acorn-sword`;
+const ACORN_SWORD_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-acorn-sword`;
+const HEDGEHOG_SPRAY_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-hedgehog-spray`;
+const HEDGEHOG_SPRAY_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-hedgehog-spray`;
+const PINECONE_GRENADE_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-pinecone-grenade`;
+const PINECONE_GRENADE_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-pinecone-grenade`;
 
 type WeaponPickupSource = "spawn" | "dropped" | "reward";
 
@@ -52,7 +58,8 @@ export type WeaponFireStyle =
   | "sniper_flash"
   | "auto_flash"
   | "mortar_arc"
-  | "beam_pulse";
+  | "beam_pulse"
+  | "slash_arc";
 
 export type WeaponImpactStyle =
   | "generic_spark"
@@ -188,6 +195,48 @@ export function ensureWeaponPickupTextures(scene: Phaser.Scene) {
     graphics.generateTexture(GRAB_SPEAR_EQUIP_TEXTURE_KEY, 52, 10);
     graphics.destroy();
   }
+
+  if (!scene.textures.exists(ACORN_SWORD_PICKUP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawAcornSwordPickupTexture(graphics);
+    graphics.generateTexture(ACORN_SWORD_PICKUP_TEXTURE_KEY, 64, 28);
+    graphics.destroy();
+  }
+
+  if (!scene.textures.exists(ACORN_SWORD_EQUIP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawAcornSwordEquipTexture(graphics);
+    graphics.generateTexture(ACORN_SWORD_EQUIP_TEXTURE_KEY, 24, 8);
+    graphics.destroy();
+  }
+
+  if (!scene.textures.exists(HEDGEHOG_SPRAY_PICKUP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawHedgehogSprayPickupTexture(graphics);
+    graphics.generateTexture(HEDGEHOG_SPRAY_PICKUP_TEXTURE_KEY, 64, 32);
+    graphics.destroy();
+  }
+
+  if (!scene.textures.exists(HEDGEHOG_SPRAY_EQUIP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawHedgehogSprayEquipTexture(graphics);
+    graphics.generateTexture(HEDGEHOG_SPRAY_EQUIP_TEXTURE_KEY, 32, 14);
+    graphics.destroy();
+  }
+
+  if (!scene.textures.exists(PINECONE_GRENADE_PICKUP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawPineconeGrenadePickupTexture(graphics);
+    graphics.generateTexture(PINECONE_GRENADE_PICKUP_TEXTURE_KEY, 48, 36);
+    graphics.destroy();
+  }
+
+  if (!scene.textures.exists(PINECONE_GRENADE_EQUIP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawPineconeGrenadeEquipTexture(graphics);
+    graphics.generateTexture(PINECONE_GRENADE_EQUIP_TEXTURE_KEY, 22, 14);
+    graphics.destroy();
+  }
 }
 
 export function resolveWeaponPickupPresentation(
@@ -261,6 +310,30 @@ export function resolveWeaponPickupPresentation(
     return {
       textureKey: GRAB_SPEAR_PICKUP_TEXTURE_KEY,
       code: "GS",
+      showNameLabel: false,
+    };
+  }
+
+  if (weaponId === "acorn_sword") {
+    return {
+      textureKey: ACORN_SWORD_PICKUP_TEXTURE_KEY,
+      code: "AS",
+      showNameLabel: false,
+    };
+  }
+
+  if (weaponId === "hedgehog_spray") {
+    return {
+      textureKey: HEDGEHOG_SPRAY_PICKUP_TEXTURE_KEY,
+      code: "HS",
+      showNameLabel: false,
+    };
+  }
+
+  if (weaponId === "pinecone_grenade") {
+    return {
+      textureKey: PINECONE_GRENADE_PICKUP_TEXTURE_KEY,
+      code: "PG",
       showNameLabel: false,
     };
   }
@@ -385,6 +458,39 @@ export function resolveWeaponEquipPresentation(
     };
   }
 
+  if (weaponId === "acorn_sword") {
+    return {
+      textureKey: ACORN_SWORD_EQUIP_TEXTURE_KEY,
+      offsetX: 4,
+      offsetY: 1,
+      flipWithDirection: true,
+      // 캔버스 24px, 센터 x=12, 검끝 x=23 → 11px
+      muzzleFromCenter: 11,
+    };
+  }
+
+  if (weaponId === "hedgehog_spray") {
+    return {
+      textureKey: HEDGEHOG_SPRAY_EQUIP_TEXTURE_KEY,
+      offsetX: 8,
+      offsetY: 0,
+      flipWithDirection: true,
+      // 캔버스 32px, 센터 x=16, 총구 x=30 → 14px
+      muzzleFromCenter: 14,
+    };
+  }
+
+  if (weaponId === "pinecone_grenade") {
+    return {
+      textureKey: PINECONE_GRENADE_EQUIP_TEXTURE_KEY,
+      offsetX: 4,
+      offsetY: 0,
+      flipWithDirection: true,
+      // 캔버스 22px, 센터 x=11, 던지는 끝 x=20 → 9px
+      muzzleFromCenter: 9,
+    };
+  }
+
   return {
     textureKey: null,
     offsetX: 0,
@@ -431,6 +537,18 @@ export function resolveWeaponFireStyle(weaponId: string): WeaponFireStyle {
     return "beam_pulse";
   }
 
+  if (weaponId === "acorn_sword") {
+    return "slash_arc";
+  }
+
+  if (weaponId === "hedgehog_spray") {
+    return "auto_flash";
+  }
+
+  if (weaponId === "pinecone_grenade") {
+    return "mortar_arc";
+  }
+
   return "generic_line";
 }
 
@@ -456,6 +574,10 @@ export function resolveWeaponImpactStyle(weaponId: string): WeaponImpactStyle {
     return "explosion_burst";
   }
 
+  if (weaponId === "pinecone_grenade") {
+    return "explosion_burst";
+  }
+
   return "generic_spark";
 }
 
@@ -476,6 +598,9 @@ export function ensureWeaponHudTextures(scene: Phaser.Scene) {
     else if (weaponId === "blueberry_mortar") drawBlueberryMortarHudIcon(g);
     else if (weaponId === "laser_cutter") drawLaserCutterHudIcon(g);
     else if (weaponId === "grab_spear") drawGrabSpearHudIcon(g);
+    else if (weaponId === "acorn_sword") drawAcornSwordHudIcon(g);
+    else if (weaponId === "hedgehog_spray") drawHedgehogSprayHudIcon(g);
+    else if (weaponId === "pinecone_grenade") drawPineconeGrenadeHudIcon(g);
     else drawFallbackHudIcon(g);
     g.generateTexture(key, HUD_ICON_SIZE, HUD_ICON_SIZE);
     g.destroy();
@@ -1553,4 +1678,271 @@ function drawGrabSpearEquipTexture(graphics: Phaser.GameObjects.Graphics) {
   // 창날 아웃라인
   graphics.lineStyle(1.5, 0x1e293b, 1);
   graphics.strokeRoundedRect(39, 1, 9, 9, 1);
+}
+
+// ── 도토리 대검 (acorn_sword) ─────────────────────────────────────────────────
+
+function drawAcornSwordHudIcon(g: Phaser.GameObjects.Graphics) {
+  g.clear();
+  // 칼날 (얇고 길게, 왼쪽으로 기울어진)
+  g.fillStyle(0xc0c0c0, 1);
+  g.fillRoundedRect(3, 8, 16, 4, 1);
+  // 칼날 하이라이트
+  g.fillStyle(0xe8e8e8, 0.8);
+  g.fillRoundedRect(3, 8, 16, 1, 0);
+  // 칼날 끝 (뾰족한 팁)
+  g.fillStyle(0xb0b0b0, 1);
+  g.fillTriangle(19, 8, 19, 12, 23, 10);
+  // 도토리 손잡이 (갈색 타원형)
+  g.fillStyle(0x8b5e3c, 1);
+  g.fillEllipse(4, 14, 8, 10);
+  // 손잡이 음영
+  g.fillStyle(0x6b4a2e, 0.6);
+  g.fillEllipse(4, 16, 8, 5);
+  // 손잡이 비늘 무늬
+  g.fillStyle(0xa0724a, 0.5);
+  g.fillRoundedRect(1, 12, 4, 2, 1);
+  g.fillRoundedRect(4, 15, 4, 2, 1);
+  // 가드 (칼날+손잡이 사이)
+  g.fillStyle(0x5a3820, 1);
+  g.fillRoundedRect(1, 10, 4, 10, 1);
+  // 칼날 아웃라인
+  g.lineStyle(1, 0x808080, 1);
+  g.strokeRoundedRect(3, 8, 16, 4, 1);
+}
+
+function drawAcornSwordPickupTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+  // 칼날 몸체
+  graphics.fillStyle(0xc8c8c8, 1);
+  graphics.fillRoundedRect(14, 9, 44, 8, 2);
+  // 칼날 하이라이트
+  graphics.fillStyle(0xebebeb, 0.8);
+  graphics.fillRoundedRect(14, 9, 44, 2, 1);
+  // 칼날 끝 (삼각 팁)
+  graphics.fillStyle(0xb0b0b0, 1);
+  graphics.fillTriangle(58, 9, 58, 17, 64, 13);
+  // 가드
+  graphics.fillStyle(0x5a3820, 1);
+  graphics.fillRoundedRect(8, 6, 8, 16, 2);
+  // 도토리 손잡이 바디
+  graphics.fillStyle(0x8b5e3c, 1);
+  graphics.fillEllipse(4, 14, 14, 20);
+  // 손잡이 음영
+  graphics.fillStyle(0x6b4a2e, 0.7);
+  graphics.fillEllipse(4, 18, 14, 10);
+  // 비늘 무늬 3개
+  graphics.fillStyle(0xa0724a, 0.5);
+  graphics.fillRoundedRect(0, 8, 7, 3, 1);
+  graphics.fillRoundedRect(2, 13, 7, 3, 1);
+  graphics.fillRoundedRect(0, 18, 7, 3, 1);
+  // 칼날 아웃라인
+  graphics.lineStyle(2, 0x808080, 1);
+  graphics.strokeRoundedRect(14, 9, 44, 8, 2);
+  // 가드 아웃라인
+  graphics.lineStyle(1.5, 0x3b2510, 1);
+  graphics.strokeRoundedRect(8, 6, 8, 16, 2);
+}
+
+function drawAcornSwordEquipTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+  // 도토리 손잡이 (작은 타원)
+  graphics.fillStyle(0x8b5e3c, 1);
+  graphics.fillEllipse(2, 4, 6, 8);
+  // 가드
+  graphics.fillStyle(0x5a3820, 1);
+  graphics.fillRoundedRect(4, 1, 3, 7, 1);
+  // 칼날
+  graphics.fillStyle(0xc8c8c8, 1);
+  graphics.fillRoundedRect(7, 2, 15, 4, 1);
+  // 칼날 팁
+  graphics.fillStyle(0xb0b0b0, 1);
+  graphics.fillTriangle(22, 2, 22, 6, 24, 4);
+  // 칼날 하이라이트
+  graphics.fillStyle(0xebebeb, 0.7);
+  graphics.fillRoundedRect(7, 2, 15, 1, 0);
+  // 칼날 아웃라인
+  graphics.lineStyle(1, 0x909090, 1);
+  graphics.strokeRoundedRect(7, 2, 15, 4, 1);
+}
+
+// ── 고슴도치 스프레이 (hedgehog_spray) ───────────────────────────────────────
+
+function drawHedgehogSprayHudIcon(g: Phaser.GameObjects.Graphics) {
+  g.clear();
+  // 몸체 (통통한 통형 발사기)
+  g.fillStyle(0x92400e, 1);
+  g.fillRoundedRect(2, 7, 16, 10, 3);
+  // 몸체 하이라이트
+  g.fillStyle(0xb45309, 0.6);
+  g.fillRoundedRect(2, 7, 16, 3, 2);
+  // 가시 돌기 3개 (상단)
+  g.fillStyle(0xd97706, 1);
+  g.fillTriangle(5, 7, 7, 7, 6, 4);
+  g.fillTriangle(9, 7, 11, 7, 10, 3);
+  g.fillTriangle(13, 7, 15, 7, 14, 5);
+  // 총구 구멍 (우측)
+  g.fillStyle(0x451a03, 1);
+  g.fillRoundedRect(17, 9, 5, 6, 1);
+  // 총구 하이라이트
+  g.fillStyle(0x78350f, 1);
+  g.fillRoundedRect(18, 10, 3, 2, 0);
+  // 흰/갈색 무늬
+  g.fillStyle(0xfef3c7, 0.6);
+  g.fillRoundedRect(3, 13, 10, 2, 1);
+  // 아웃라인
+  g.lineStyle(1, 0x3b1f0a, 1);
+  g.strokeRoundedRect(2, 7, 16, 10, 3);
+}
+
+function drawHedgehogSprayPickupTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+  // 메인 몸체 (통통한 고슴도치 모양 발사기)
+  graphics.fillStyle(0x92400e, 1);
+  graphics.fillRoundedRect(4, 9, 48, 16, 5);
+  // 몸체 하이라이트
+  graphics.fillStyle(0xb45309, 0.6);
+  graphics.fillRoundedRect(4, 9, 48, 5, 4);
+  // 총구 (우측)
+  graphics.fillStyle(0x5c2d0e, 1);
+  graphics.fillRoundedRect(48, 13, 12, 8, 2);
+  // 총구 내부
+  graphics.fillStyle(0x2d1508, 1);
+  graphics.fillRoundedRect(50, 15, 8, 4, 1);
+  // 가시 돌기 5개 (상단)
+  graphics.fillStyle(0xd97706, 1);
+  graphics.fillTriangle(8, 9, 12, 9, 10, 3);
+  graphics.fillTriangle(14, 9, 18, 9, 16, 2);
+  graphics.fillTriangle(21, 9, 25, 9, 23, 1);
+  graphics.fillTriangle(28, 9, 32, 9, 30, 3);
+  graphics.fillTriangle(35, 9, 39, 9, 37, 4);
+  // 가시 음영
+  graphics.fillStyle(0xb45309, 0.5);
+  graphics.fillTriangle(8, 9, 11, 9, 10, 5);
+  graphics.fillTriangle(14, 9, 17, 9, 16, 5);
+  // 흰/베이지 배 무늬
+  graphics.fillStyle(0xfef3c7, 0.5);
+  graphics.fillRoundedRect(6, 19, 36, 4, 2);
+  // 눈 (작은 검은 원)
+  graphics.fillStyle(0x1c0a00, 1);
+  graphics.fillCircle(10, 17, 2);
+  graphics.fillStyle(0xffffff, 0.8);
+  graphics.fillCircle(11, 16, 0.8);
+  // 몸체 아웃라인
+  graphics.lineStyle(2, 0x3b1f0a, 1);
+  graphics.strokeRoundedRect(4, 9, 48, 16, 5);
+  // 총구 아웃라인
+  graphics.lineStyle(1.5, 0x1c0a00, 1);
+  graphics.strokeRoundedRect(48, 13, 12, 8, 2);
+}
+
+function drawHedgehogSprayEquipTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+  // 몸체
+  graphics.fillStyle(0x92400e, 1);
+  graphics.fillRoundedRect(1, 3, 24, 9, 3);
+  // 몸체 하이라이트
+  graphics.fillStyle(0xb45309, 0.5);
+  graphics.fillRoundedRect(1, 3, 24, 3, 2);
+  // 가시 돌기 3개
+  graphics.fillStyle(0xd97706, 1);
+  graphics.fillTriangle(3, 3, 6, 3, 4, 0);
+  graphics.fillTriangle(8, 3, 11, 3, 9, 0);
+  graphics.fillTriangle(14, 3, 17, 3, 15, 1);
+  // 총구
+  graphics.fillStyle(0x5c2d0e, 1);
+  graphics.fillRoundedRect(24, 5, 7, 5, 1);
+  // 총구 내부
+  graphics.fillStyle(0x2d1508, 1);
+  graphics.fillRoundedRect(25, 6, 5, 3, 0);
+  // 아웃라인
+  graphics.lineStyle(1, 0x3b1f0a, 1);
+  graphics.strokeRoundedRect(1, 3, 24, 9, 3);
+}
+
+// ── 솔방울 수류탄 (pinecone_grenade) ─────────────────────────────────────────
+
+function drawPineconeGrenadeHudIcon(g: Phaser.GameObjects.Graphics) {
+  g.clear();
+  // 솔방울 몸체 (타원)
+  g.fillStyle(0x7c4a1e, 1);
+  g.fillEllipse(10, 13, 14, 18);
+  // 솔방울 음영
+  g.fillStyle(0x5a3310, 0.7);
+  g.fillEllipse(10, 16, 14, 10);
+  // 비늘 무늬 (3개 짧은 가로선)
+  g.fillStyle(0xd97706, 0.6);
+  g.fillRoundedRect(5, 8, 10, 2, 1);
+  g.fillRoundedRect(4, 12, 12, 2, 1);
+  g.fillRoundedRect(5, 16, 10, 2, 1);
+  // 안전핀 (작은 금속 링)
+  g.lineStyle(2, 0xe2e8f0, 1);
+  g.strokeCircle(10, 5, 3);
+  g.fillStyle(0x94a3b8, 1);
+  g.fillCircle(10, 5, 1.5);
+  // 퓨즈 선
+  g.lineStyle(1.5, 0xfef08a, 0.9);
+  g.lineBetween(10, 2, 14, 0);
+  // 아웃라인
+  g.lineStyle(1, 0x2d1508, 1);
+  g.strokeEllipse(10, 13, 14, 18);
+}
+
+function drawPineconeGrenadePickupTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+  // 솔방울 몸체
+  graphics.fillStyle(0x7c4a1e, 1);
+  graphics.fillEllipse(22, 22, 28, 34);
+  // 솔방울 음영 (하단)
+  graphics.fillStyle(0x5a3310, 0.6);
+  graphics.fillEllipse(22, 28, 28, 18);
+  // 비늘 4개 가로 줄무늬
+  graphics.fillStyle(0xd97706, 0.5);
+  graphics.fillRoundedRect(10, 9, 24, 3, 1);
+  graphics.fillRoundedRect(9, 15, 26, 3, 1);
+  graphics.fillRoundedRect(9, 21, 26, 3, 1);
+  graphics.fillRoundedRect(10, 27, 24, 3, 1);
+  // 꼭지 (맨 위 작은 줄기)
+  graphics.fillStyle(0x5a3310, 1);
+  graphics.fillEllipse(22, 5, 8, 8);
+  // 안전핀 (금속 링)
+  graphics.lineStyle(2.5, 0xd1d5db, 1);
+  graphics.strokeCircle(22, 4, 5);
+  graphics.fillStyle(0x9ca3af, 1);
+  graphics.fillCircle(22, 4, 2.5);
+  // 퓨즈 (연기 선)
+  graphics.lineStyle(2, 0xfef08a, 0.9);
+  graphics.lineBetween(22, -1, 30, -5);
+  graphics.fillStyle(0xfde68a, 0.7);
+  graphics.fillCircle(31, -5, 3);
+  // 보라/갈색 줄무늬 (수류탄 표시)
+  graphics.lineStyle(1.5, 0x8b5cf6, 0.4);
+  graphics.strokeEllipse(22, 22, 20, 28);
+  // 아웃라인
+  graphics.lineStyle(2, 0x2d1508, 1);
+  graphics.strokeEllipse(22, 22, 28, 34);
+}
+
+function drawPineconeGrenadeEquipTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+  // 솔방울 몸체
+  graphics.fillStyle(0x7c4a1e, 1);
+  graphics.fillEllipse(9, 8, 16, 20);
+  // 솔방울 음영
+  graphics.fillStyle(0x5a3310, 0.6);
+  graphics.fillEllipse(9, 12, 16, 10);
+  // 비늘 3개
+  graphics.fillStyle(0xd97706, 0.55);
+  graphics.fillRoundedRect(3, 4, 12, 2, 0);
+  graphics.fillRoundedRect(2, 8, 14, 2, 0);
+  graphics.fillRoundedRect(3, 12, 12, 2, 0);
+  // 안전핀 링
+  graphics.lineStyle(1.5, 0xd1d5db, 1);
+  graphics.strokeCircle(9, 1, 3);
+  // 퓨즈
+  graphics.lineStyle(1.5, 0xfef08a, 0.9);
+  graphics.lineBetween(9, -2, 14, -4);
+  // 아웃라인
+  graphics.lineStyle(1, 0x2d1508, 1);
+  graphics.strokeEllipse(9, 8, 16, 20);
 }
