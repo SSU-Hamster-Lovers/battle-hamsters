@@ -270,6 +270,25 @@ impl RoomState {
                             dying_this_tick,
                         );
                     }
+                    // airstrike: 플레이어 직격 시에도 WorldEvent 생성 (직접 피해 없음)
+                    if let RuntimeWeaponSpecialEffect::Airstrike {
+                        delay_ms,
+                        column_half_width,
+                        splash_damage,
+                        knockback,
+                    } = projectile.special_effect.clone()
+                    {
+                        self.spawn_airstrike_event(
+                            impact_point.x,
+                            delay_ms,
+                            column_half_width,
+                            splash_damage,
+                            knockback,
+                            projectile.owner_id.clone(),
+                            projectile.weapon_id.clone(),
+                            now_ms,
+                        );
+                    }
 
                     consumed_projectiles.push(projectile_id);
                 }
@@ -316,6 +335,25 @@ impl RoomState {
                             now_ms,
                             deaths,
                             dying_this_tick,
+                        );
+                    }
+                    // airstrike: 지형/플레이어 충돌 시 WorldEvent 생성 (직접 피해 없음)
+                    if let RuntimeWeaponSpecialEffect::Airstrike {
+                        delay_ms,
+                        column_half_width,
+                        splash_damage,
+                        knockback,
+                    } = projectile.special_effect.clone()
+                    {
+                        self.spawn_airstrike_event(
+                            terrain_impact.x,
+                            delay_ms,
+                            column_half_width,
+                            splash_damage,
+                            knockback,
+                            projectile.owner_id.clone(),
+                            projectile.weapon_id.clone(),
+                            now_ms,
                         );
                     }
                     consumed_projectiles.push(projectile_id);

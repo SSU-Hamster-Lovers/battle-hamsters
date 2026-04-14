@@ -32,6 +32,7 @@ import type {
   SpawnPoint,
   RoomSnapshotMessage,
   ServerToClientMessage,
+  WorldEventSnapshot,
   WorldItemPickup,
   WorldWeaponPickup,
   WorldSnapshotMessage,
@@ -549,6 +550,8 @@ class MainScene extends Phaser.Scene {
   private attackFlash!: Phaser.GameObjects.Graphics;
   private attackFlashUntil = 0;
   private mortarArc!: Phaser.GameObjects.Graphics;
+  private worldEventOverlay!: Phaser.GameObjects.Graphics;
+  private airstrikeWarningTexts: Map<number, Phaser.GameObjects.Text> = new Map();
   private matchOverlayBg!: Phaser.GameObjects.Rectangle;
   private matchOverlayText!: Phaser.GameObjects.Text;
   private cameraConfigured = false;
@@ -1000,6 +1003,7 @@ class MainScene extends Phaser.Scene {
 
     this.attackFlash = this.add.graphics().setDepth(9);
     this.mortarArc = this.add.graphics().setDepth(8);
+    this.worldEventOverlay = this.add.graphics().setDepth(7);
 
     this.matchOverlayBg = this.add
       .rectangle(VIEWPORT_WIDTH / 2, VIEWPORT_HEIGHT / 2, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, 0x000000, 0.6)
@@ -1400,6 +1404,7 @@ class MainScene extends Phaser.Scene {
     const damageEventMap = this.buildDamageEventMap(message.payload.damageEvents);
     this.renderPlayers(message.payload.players, damageEventMap);
     this.renderProjectiles(message.payload.projectiles);
+    this.renderWorldEvents(message.payload.worldEvents ?? []);
     this.renderWeaponPickups(message.payload.weaponPickups);
     this.renderItemPickups(message.payload.itemPickups);
     this.captureLocalPlayer(message.payload.players);
@@ -2852,6 +2857,74 @@ class MainScene extends Phaser.Scene {
     }
   }
 
+  private renderWorldEvents(worldEvents: WorldEventSnapshot[]) {
+    if (!this.worldEventOverlay) return;
+    this.worldEventOverlay.clear();
+
+    const now = Date.now(); // 서버와 같은 Unix ms 기준
+    for (const event of worldEvents) {
+      if (event.kind !== "airstrike") continue;
+
+      const timeLeft = Math.max(0, event.triggerAtMs - now);
+      const blinking = timeLeft < 500;
+      const alpha = blinking ? 0.25 + 0.25 * Math.sin(Date.now() / 80) : 0.18;
+
+      // 위험 열 (수직 직사각형)
+      const colX = event.x - event.columnHalfWidth;
+      const colW = event.columnHalfWidth * 2;
+      this.worldEventOverlay.fillStyle(0xef4444, alpha);
+      this.worldEventOverlay.fillRect(colX, 0, colW, GAME_HEIGHT);
+
+      // 바닥 마커 (더 진하게)
+      this.worldEventOverlay.fillStyle(0xef4444, alpha + 0.15);
+      this.worldEventOverlay.fillRect(colX, GAME_HEIGHT - 20, colW, 20);
+
+      // 경계선
+      this.worldEventOverlay.lineStyle(2, 0xef4444, 0.6);
+      this.worldEventOverlay.strokeRect(colX, 0, colW, GAME_HEIGHT);
+
+      // 카운트다운 텍스트
+      let text = this.airstrikeWarningTexts.get(event.id);
+      if (!text) {
+        text = this.add
+          .text(event.x, GAME_HEIGHT - 40, "", {
+            fontSize: "14px",
+            color: "#ef4444",
+            fontFamily: "monospace",
+            stroke: "#000",
+            strokeThickness: 3,
+          })
+          .setDepth(200)
+          .setOrigin(0.5, 1);
+        this.airstrikeWarningTexts.set(event.id, text);
+      }
+      const seconds = (timeLeft / 1000).toFixed(1);
+      text.setText(`⚠ ${seconds}s`);
+      text.setVisible(true);
+    }
+
+    // 사라진 이벤트 정리 + 공습 VFX 발동
+    const activeIds = new Set(worldEvents.map((e) => e.id));
+    for (const [id, text] of this.airstrikeWarningTexts) {
+      if (!activeIds.has(id)) {
+        const lastX = text.x;
+        text.destroy();
+        this.airstrikeWarningTexts.delete(id);
+        this.spawnAirstrikeVfx(lastX);
+      }
+    }
+  }
+
+  private spawnAirstrikeVfx(x: number) {
+    if (!this.worldEventOverlay) return;
+    // 밝은 수직 섬광
+    this.worldEventOverlay.fillStyle(0xffffff, 0.8);
+    this.worldEventOverlay.fillRect(x - 30, 0, 60, GAME_HEIGHT);
+    // 하단 폭발 burst
+    this.spawnExplosionBurst({ x, y: GAME_HEIGHT - 30 });
+    this.time.delayedCall(80, () => this.worldEventOverlay?.clear());
+  }
+
   private renderWeaponPickups(weaponPickups: WorldWeaponPickup[]) {
     const nextIds = new Set(weaponPickups.map((pickup) => pickup.id));
 
@@ -3427,6 +3500,40 @@ class MainScene extends Phaser.Scene {
           muzzleY + sy * 12 + perpY * (i % 2 === 0 ? 4 : -4),
         );
       }
+      this.attackFlashUntil = this.time.now + 90;
+      return;
+    }
+
+    if (fireStyle === "stun_flash") {
+      // 스턴 도토리 — 짧고 굵은 노란 tracer + 전기 파편
+      this.attackFlash.lineStyle(3, 0xfde047, 0.9);
+      this.attackFlash.lineBetween(muzzleX, muzzleY, muzzleX + aimX * 60, muzzleY + aimY * 60);
+      // 총구 섬광 (노란/흰색)
+      this.attackFlash.fillStyle(0xfef08a, 0.95);
+      this.attackFlash.fillCircle(muzzleX, muzzleY, 5);
+      // 전기 파편 3개
+      this.attackFlash.lineStyle(1.5, 0xfde047, 0.7);
+      for (let i = 0; i < 3; i++) {
+        const angle = (i / 3) * Math.PI * 2 + Math.atan2(aimY, aimX);
+        this.attackFlash.lineBetween(
+          muzzleX + aimX * 40, muzzleY + aimY * 40,
+          muzzleX + aimX * 40 + Math.cos(angle) * 8,
+          muzzleY + aimY * 40 + Math.sin(angle) * 8,
+        );
+      }
+      this.attackFlashUntil = this.time.now + 70;
+      return;
+    }
+
+    if (fireStyle === "beacon_toss") {
+      // 공습 리모컨 — 포물선 총구 섬광 (mortar_arc 재사용 + 빨간 색상)
+      this.attackFlash.fillStyle(0xfca5a5, 0.85);
+      this.attackFlash.fillCircle(muzzleX, muzzleY, 8);
+      this.attackFlash.fillStyle(0xef4444, 0.7);
+      this.attackFlash.fillCircle(muzzleX, muzzleY, 4);
+      // 비콘 발사 방향 섬광선
+      this.attackFlash.lineStyle(2, 0xef4444, 0.5);
+      this.attackFlash.lineBetween(muzzleX, muzzleY, muzzleX + aimX * 16, muzzleY + aimY * 16);
       this.attackFlashUntil = this.time.now + 90;
       return;
     }

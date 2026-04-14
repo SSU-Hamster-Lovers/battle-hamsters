@@ -7,6 +7,7 @@ mod room_config;
 mod room_pickups;
 mod room_projectiles;
 mod room_runtime;
+mod room_world_events;
 mod ws_runtime;
 use game_data::{
     ground_top_y, pit_left_x, pit_right_x, primary_fall_zone, primary_instant_kill_hazard, room_id,
@@ -174,6 +175,32 @@ struct GrabEffect {
     expires_at: u64,
 }
 
+/// 서버 내부 스턴 상태 — 직렬화하지 않음.
+#[derive(Clone)]
+struct StunEffect {
+    expires_at: u64,
+}
+
+/// 서버 월드 이벤트 (공습 등 지연 발동형 맵 이벤트).
+#[derive(Clone)]
+struct WorldEventRuntime {
+    id: u64,
+    kind: WorldEventKind,
+    trigger_at_ms: u64,
+}
+
+#[derive(Clone)]
+enum WorldEventKind {
+    Airstrike {
+        x: f64,
+        column_half_width: f64,
+        splash_damage: u16,
+        knockback: f64,
+        attacker_id: String,
+        weapon_id: String,
+    },
+}
+
 #[derive(Clone)]
 struct ProjectileRuntime {
     id: String,
@@ -204,6 +231,7 @@ struct PlayerRuntime {
     last_hit_by: Option<LastHitInfo>,
     active_burn: Option<BurnEffect>,
     active_grab: Option<GrabEffect>,
+    active_stun: Option<StunEffect>,
     /// 현재 drop-through 중인 source 플랫폼 ID. 이 ID의 플랫폼만 착지 판정에서 제외한다.
     /// 서버 런타임 전용 — 스냅샷에 포함하지 않는다.
     drop_through_platform_id: Option<String>,
@@ -233,6 +261,8 @@ struct RoomState {
     next_projectile_id: u64,
     next_weapon_pickup_id: u64,
     next_item_pickup_id: u64,
+    world_events: Vec<WorldEventRuntime>,
+    next_world_event_id: u64,
     next_spawn_respawn_at: HashMap<String, u64>,
     next_item_spawn_respawn_at: HashMap<String, u64>,
     sessions: HashMap<String, Recipient<WsText>>,
@@ -314,6 +344,8 @@ impl RoomState {
             next_projectile_id: 1,
             next_weapon_pickup_id: 1,
             next_item_pickup_id: 1,
+            world_events: Vec::new(),
+            next_world_event_id: 1,
             next_spawn_respawn_at: HashMap::new(),
             next_item_spawn_respawn_at: HashMap::new(),
             sessions: HashMap::new(),
@@ -343,6 +375,25 @@ impl RoomState {
                 weapon_id: projectile.weapon_id.clone(),
                 position: projectile.position.clone(),
                 velocity: projectile.velocity.clone(),
+            })
+            .collect()
+    }
+
+    fn world_event_snapshots(&self) -> Vec<WorldEventSnapshot> {
+        self.world_events
+            .iter()
+            .filter_map(|e| match &e.kind {
+                WorldEventKind::Airstrike {
+                    x,
+                    column_half_width,
+                    ..
+                } => Some(WorldEventSnapshot {
+                    id: e.id,
+                    kind: "airstrike",
+                    x: *x,
+                    column_half_width: *column_half_width,
+                    trigger_at_ms: e.trigger_at_ms,
+                }),
             })
             .collect()
     }
@@ -472,6 +523,7 @@ impl RoomState {
                 last_hit_by: None,
                 active_burn: None,
                 active_grab: None,
+                active_stun: None,
                 drop_through_platform_id: None,
             },
         );
@@ -590,11 +642,22 @@ struct WorldSnapshotPayload {
     server_tick: u64,
     players: Vec<PlayerSnapshot>,
     projectiles: Vec<ProjectileSnapshot>,
+    world_events: Vec<WorldEventSnapshot>,
     weapon_pickups: Vec<WorldWeaponPickup>,
     item_pickups: Vec<WorldItemPickup>,
     time_remaining_ms: u64,
     kill_feed: Vec<KillFeedEntry>,
     damage_events: Vec<DamageAppliedEvent>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct WorldEventSnapshot {
+    id: u64,
+    kind: &'static str,
+    x: f64,
+    column_half_width: f64,
+    trigger_at_ms: u64,
 }
 
 #[derive(Serialize, Clone)]
@@ -955,6 +1018,7 @@ mod tests {
             last_hit_by: None,
             active_burn: None,
             active_grab: None,
+            active_stun: None,
             drop_through_platform_id: None,
         }
     }
@@ -1370,6 +1434,7 @@ mod tests {
             last_hit_by: None,
             active_burn: None,
             active_grab: None,
+            active_stun: None,
             drop_through_platform_id: None,
         };
 
@@ -1407,6 +1472,7 @@ mod tests {
             last_hit_by: None,
             active_burn: None,
             active_grab: None,
+            active_stun: None,
             drop_through_platform_id: None,
         };
 
@@ -3095,6 +3161,274 @@ mod tests {
             target_after.snapshot.hp < 100,
             "지형 충돌 시 즉시 폭발해 target이 피해를 받아야 함 (hp={}/100)",
             target_after.snapshot.hp
+        );
+    }
+
+    // airstrike_remote: 비콘 투사체가 지형에 충돌하면 WorldEvent가 생성되어야 한다.
+    #[test]
+    fn airstrike_remote_creates_world_event_on_terrain_hit() {
+        let mut room = RoomState::new();
+
+        // 비콘 투사체: x=500, y=640에서 아래로 빠르게 낙하 → 1틱 내 바닥(680) 충돌
+        room.projectiles.insert(
+            "beacon".to_string(),
+            ProjectileRuntime {
+                id: "beacon".to_string(),
+                owner_id: "shooter".to_string(),
+                weapon_id: "airstrike_remote".to_string(),
+                position: Vector2 { x: 500.0, y: 640.0 },
+                velocity: Vector2 { x: 0.0, y: 1000.0 },
+                gravity_per_sec2: 0.0,
+                damage: 0,
+                knockback: 0.0,
+                range_remaining: 500.0,
+                special_effect: RuntimeWeaponSpecialEffect::Airstrike {
+                    delay_ms: 2500,
+                    column_half_width: 60.0,
+                    splash_damage: 70,
+                    knockback: 25.0,
+                },
+                spawned_at: 0,
+                explode_at: None,
+            },
+        );
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.step_projectiles(1000, &mut deaths, &mut dying);
+
+        assert_eq!(
+            room.world_events.len(),
+            1,
+            "비콘 지형 충돌 시 WorldEvent가 1개 생성되어야 함"
+        );
+    }
+
+    // airstrike_remote: WorldEvent가 delayMs 이후 열 내 플레이어에게 피해를 줘야 한다.
+    #[test]
+    fn airstrike_remote_world_event_damages_player_in_column() {
+        let mut room = RoomState::new();
+        let def = weapon_definition("airstrike_remote");
+        let (delay_ms, column_half_width, splash_damage) =
+            if let RuntimeWeaponSpecialEffect::Airstrike {
+                delay_ms,
+                column_half_width,
+                splash_damage,
+                ..
+            } = def.special_effect
+            {
+                (delay_ms, column_half_width, splash_damage)
+            } else {
+                panic!("airstrike_remote은 Airstrike specialEffect를 가져야 함")
+            };
+
+        // target: 공습 중심(x=500)에서 30px 거리 — columnHalfWidth(60) 안쪽
+        let mut target = test_player(530.0, 300.0);
+        target.snapshot.id = "target".to_string();
+        target.snapshot.name = "target".to_string();
+        target.snapshot.hp = 100;
+        room.players.insert("target".to_string(), target);
+
+        // WorldEvent 직접 삽입: now_ms=0, triggerAt=delay_ms
+        room.world_events.push(WorldEventRuntime {
+            id: 1,
+            kind: WorldEventKind::Airstrike {
+                x: 500.0,
+                column_half_width,
+                splash_damage,
+                knockback: 25.0,
+                attacker_id: "shooter".to_string(),
+                weapon_id: "airstrike_remote".to_string(),
+            },
+            trigger_at_ms: delay_ms,
+        });
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.step_world_events(delay_ms, &mut deaths, &mut dying);
+
+        let target_after = room.players.get("target").unwrap();
+        assert!(
+            target_after.snapshot.hp < 100,
+            "공습 열 내 target이 피해를 받아야 함 (hp={}/100)",
+            target_after.snapshot.hp
+        );
+    }
+
+    // airstrike_remote: WorldEvent 열 밖의 플레이어는 피해를 받지 않아야 한다.
+    #[test]
+    fn airstrike_remote_world_event_skips_player_outside_column() {
+        let mut room = RoomState::new();
+        let def = weapon_definition("airstrike_remote");
+        let (delay_ms, column_half_width, splash_damage) =
+            if let RuntimeWeaponSpecialEffect::Airstrike {
+                delay_ms,
+                column_half_width,
+                splash_damage,
+                ..
+            } = def.special_effect
+            {
+                (delay_ms, column_half_width, splash_damage)
+            } else {
+                panic!("airstrike_remote은 Airstrike specialEffect를 가져야 함")
+            };
+
+        // target: 공습 중심(x=500)에서 200px 거리 — columnHalfWidth(60) 바깥
+        let mut target = test_player(700.0, 300.0);
+        target.snapshot.id = "target".to_string();
+        target.snapshot.name = "target".to_string();
+        target.snapshot.hp = 100;
+        room.players.insert("target".to_string(), target);
+
+        room.world_events.push(WorldEventRuntime {
+            id: 1,
+            kind: WorldEventKind::Airstrike {
+                x: 500.0,
+                column_half_width,
+                splash_damage,
+                knockback: 25.0,
+                attacker_id: "shooter".to_string(),
+                weapon_id: "airstrike_remote".to_string(),
+            },
+            trigger_at_ms: delay_ms,
+        });
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.step_world_events(delay_ms, &mut deaths, &mut dying);
+
+        let target_after = room.players.get("target").unwrap();
+        assert_eq!(
+            target_after.snapshot.hp,
+            100,
+            "공습 열 밖 target은 피해를 받지 않아야 함 (hp={}/100)",
+            target_after.snapshot.hp
+        );
+    }
+
+    // stun_acorn: hitscan으로 사거리 안에 있는 대상에게 피해를 줘야 한다.
+    #[test]
+    fn stun_acorn_hits_target_in_range() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "stun_acorn".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(6);
+        shooter.latest_input.sequence = 1;
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        let mut target = test_player(400.0, 300.0);
+        target.snapshot.id = "target".to_string();
+        target.snapshot.name = "target".to_string();
+        target.snapshot.hp = 100;
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let target_after = room.players.get("target").unwrap();
+        assert!(
+            target_after.snapshot.hp < 100,
+            "stun_acorn이 사거리 안의 대상에게 피해를 줘야 함 (hp={}/100)",
+            target_after.snapshot.hp
+        );
+    }
+
+    // stun_acorn: 명중 시 대상에게 stun(이동 불가)을 적용해야 한다.
+    #[test]
+    fn stun_acorn_applies_stun_on_hit() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "stun_acorn".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(6);
+        shooter.latest_input.sequence = 1;
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        let mut target = test_player(400.0, 300.0);
+        target.snapshot.id = "target".to_string();
+        target.snapshot.name = "target".to_string();
+        target.snapshot.hp = 100;
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let target_after = room.players.get("target").unwrap();
+        assert!(
+            target_after.active_stun.is_some(),
+            "stun_acorn 명중 시 대상에게 active_stun이 적용되어야 함"
+        );
+    }
+
+    // stun_acorn: stun이 만료되면 active_stun이 해제되어야 한다.
+    #[test]
+    fn stun_acorn_stun_expires_after_duration() {
+        let mut room = RoomState::new();
+        let stun_duration_ms = weapon_definition("stun_acorn")
+            .special_effect
+            .stun_duration_ms()
+            .expect("stun_acorn은 stun specialEffect를 가져야 함");
+
+        let mut target = test_player(400.0, 300.0);
+        target.snapshot.id = "target".to_string();
+        target.snapshot.name = "target".to_string();
+        target.active_stun = Some(StunEffect { expires_at: 1000 + stun_duration_ms });
+        room.players.insert("target".to_string(), target);
+
+        // 만료 전 → stun 유지
+        room.tick_stun_effects(1000 + stun_duration_ms - 1);
+        assert!(
+            room.players.get("target").unwrap().active_stun.is_some(),
+            "만료 전에는 stun이 유지되어야 함"
+        );
+
+        // 만료 시각 도달 → stun 해제
+        room.tick_stun_effects(1000 + stun_duration_ms);
+        assert!(
+            room.players.get("target").unwrap().active_stun.is_none(),
+            "만료 시각 도달 시 stun이 해제되어야 함"
+        );
+    }
+
+    // stun_acorn: stun 상태인 플레이어는 수평 이동 입력이 무시되어야 한다.
+    #[test]
+    fn stun_acorn_stunned_player_cannot_move_horizontally() {
+        let mut player = test_player(500.0, 680.0 - PLAYER_HALF_SIZE);
+        player.snapshot.grounded = true;
+        player.snapshot.id = "target".to_string();
+        // stun 적용: 10초 후 만료
+        player.active_stun = Some(StunEffect { expires_at: 10000 });
+        // 오른쪽 이동 입력
+        player.latest_input.movement = Vector2 { x: 1.0, y: 0.0 };
+        player.latest_input.jump = false;
+
+        let x_before = player.snapshot.position.x;
+        step_player(&mut player, 1000); // stun 만료 전(1000 < 10000)
+
+        assert_eq!(
+            player.snapshot.position.x,
+            x_before,
+            "stun 상태에서 수평 이동 입력이 무시되어야 함 (x={:.1})",
+            player.snapshot.position.x
         );
     }
 
