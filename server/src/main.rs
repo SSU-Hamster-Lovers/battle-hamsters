@@ -187,6 +187,8 @@ struct ProjectileRuntime {
     range_remaining: f64,
     special_effect: game_data::RuntimeWeaponSpecialEffect,
     spawned_at: u64,
+    /// timed_explode 폭발 예약 시각 (ms). None이면 지연 폭발 없음.
+    explode_at: Option<u64>,
 }
 
 #[derive(Clone)]
@@ -1117,8 +1119,8 @@ mod tests {
     #[test]
     fn room_starts_with_spawned_weapon_pickup() {
         let room = RoomState::new();
-        // 좌/우 random 후보 각 1개 + 고정 11개(acorn/walnut/ember/seed/pine_sniper/squirrel_gatling/blueberry_mortar/laser_cutter/grab_spear/acorn_sword/hedgehog_spray) = 13개
-        assert_eq!(room.weapon_pickups.len(), 13);
+        // 좌/우 random 후보 각 1개 + 고정 12개(acorn/walnut/ember/seed/pine_sniper/squirrel_gatling/blueberry_mortar/laser_cutter/grab_spear/acorn_sword/hedgehog_spray/pinecone_grenade) = 14개
+        assert_eq!(room.weapon_pickups.len(), 14);
 
         let pickups: Vec<_> = room.weapon_pickups.values().collect();
 
@@ -1526,6 +1528,7 @@ mod tests {
                 range_remaining: 200.0,
                 special_effect: RuntimeWeaponSpecialEffect::None,
                 spawned_at: 0,
+                explode_at: None,
             },
         );
 
@@ -1558,6 +1561,7 @@ mod tests {
                 range_remaining: 200.0,
                 special_effect: RuntimeWeaponSpecialEffect::None,
                 spawned_at: 0,
+                explode_at: None,
             },
         );
 
@@ -1586,6 +1590,7 @@ mod tests {
                 range_remaining: 400.0,
                 special_effect: RuntimeWeaponSpecialEffect::None,
                 spawned_at: 0,
+                explode_at: None,
             },
         );
 
@@ -2982,6 +2987,69 @@ mod tests {
             shooter_after.snapshot.equipped_weapon_resource,
             Some(15),
             "hedgehog_spray 1회 발사 후 resource 16 → 15이어야 함"
+        );
+    }
+
+    // pinecone_grenade: 1500ms 지연 후 폭발하여 범위 내 target에게 피해를 줘야 한다.
+    #[test]
+    fn pinecone_grenade_explodes_after_delay_and_damages_target() {
+        let mut room = RoomState::new();
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.equipped_weapon_id = "pinecone_grenade".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(2);
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+        // target은 2틱 후 수류탄 위치(x≈170) 기준 폭발 반경(120px) 이내
+        // 수류탄: x=100+20(spawn_offset)+25*2(2틱)=170, 타겟 x=200 → 거리≈30px < 120px
+        let mut target = test_player(200.0, 300.0);
+        target.snapshot.hp = 100;
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        // 1499ms — 아직 폭발 전: target 피해 없음 (1틱만 이동, 직격 범위 밖)
+        room.step_projectiles(2499, &mut deaths, &mut dying);
+        assert_eq!(
+            room.players.get("target").unwrap().snapshot.hp,
+            100,
+            "1499ms에 target은 아직 피해를 받지 않아야 함"
+        );
+
+        // 1500ms 경과 → 폭발 트리거 (2틱 이동 후 위치 기준 광역 피해)
+        room.step_projectiles(2500, &mut deaths, &mut dying);
+        let target_after = room.players.get("target").unwrap();
+        assert!(
+            target_after.snapshot.hp < 100,
+            "1500ms 후 폭발로 target이 피해를 입어야 함 (hp={}/100)",
+            target_after.snapshot.hp
+        );
+    }
+
+    // pinecone_grenade: 발사 시 resource가 1 소비되어야 한다.
+    #[test]
+    fn pinecone_grenade_consumes_resource_per_shot() {
+        let mut room = RoomState::new();
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.equipped_weapon_id = "pinecone_grenade".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(2);
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+        room.players.insert("shooter".to_string(), shooter);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let shooter_after = room.players.get("shooter").unwrap();
+        assert_eq!(
+            shooter_after.snapshot.equipped_weapon_resource,
+            Some(1),
+            "pinecone_grenade 1회 발사 후 resource 2 → 1이어야 함"
         );
     }
 }

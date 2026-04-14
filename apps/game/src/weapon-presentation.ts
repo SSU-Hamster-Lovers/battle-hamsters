@@ -28,6 +28,8 @@ const ACORN_SWORD_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-acorn-sw
 const ACORN_SWORD_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-acorn-sword`;
 const HEDGEHOG_SPRAY_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-hedgehog-spray`;
 const HEDGEHOG_SPRAY_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-hedgehog-spray`;
+const PINECONE_GRENADE_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-pinecone-grenade`;
+const PINECONE_GRENADE_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-pinecone-grenade`;
 
 type WeaponPickupSource = "spawn" | "dropped" | "reward";
 
@@ -221,6 +223,20 @@ export function ensureWeaponPickupTextures(scene: Phaser.Scene) {
     graphics.generateTexture(HEDGEHOG_SPRAY_EQUIP_TEXTURE_KEY, 32, 14);
     graphics.destroy();
   }
+
+  if (!scene.textures.exists(PINECONE_GRENADE_PICKUP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawPineconeGrenadePickupTexture(graphics);
+    graphics.generateTexture(PINECONE_GRENADE_PICKUP_TEXTURE_KEY, 48, 36);
+    graphics.destroy();
+  }
+
+  if (!scene.textures.exists(PINECONE_GRENADE_EQUIP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawPineconeGrenadeEquipTexture(graphics);
+    graphics.generateTexture(PINECONE_GRENADE_EQUIP_TEXTURE_KEY, 22, 14);
+    graphics.destroy();
+  }
 }
 
 export function resolveWeaponPickupPresentation(
@@ -310,6 +326,14 @@ export function resolveWeaponPickupPresentation(
     return {
       textureKey: HEDGEHOG_SPRAY_PICKUP_TEXTURE_KEY,
       code: "HS",
+      showNameLabel: false,
+    };
+  }
+
+  if (weaponId === "pinecone_grenade") {
+    return {
+      textureKey: PINECONE_GRENADE_PICKUP_TEXTURE_KEY,
+      code: "PG",
       showNameLabel: false,
     };
   }
@@ -456,6 +480,17 @@ export function resolveWeaponEquipPresentation(
     };
   }
 
+  if (weaponId === "pinecone_grenade") {
+    return {
+      textureKey: PINECONE_GRENADE_EQUIP_TEXTURE_KEY,
+      offsetX: 4,
+      offsetY: 0,
+      flipWithDirection: true,
+      // 캔버스 22px, 센터 x=11, 던지는 끝 x=20 → 9px
+      muzzleFromCenter: 9,
+    };
+  }
+
   return {
     textureKey: null,
     offsetX: 0,
@@ -510,6 +545,10 @@ export function resolveWeaponFireStyle(weaponId: string): WeaponFireStyle {
     return "auto_flash";
   }
 
+  if (weaponId === "pinecone_grenade") {
+    return "mortar_arc";
+  }
+
   return "generic_line";
 }
 
@@ -557,6 +596,7 @@ export function ensureWeaponHudTextures(scene: Phaser.Scene) {
     else if (weaponId === "grab_spear") drawGrabSpearHudIcon(g);
     else if (weaponId === "acorn_sword") drawAcornSwordHudIcon(g);
     else if (weaponId === "hedgehog_spray") drawHedgehogSprayHudIcon(g);
+    else if (weaponId === "pinecone_grenade") drawPineconeGrenadeHudIcon(g);
     else drawFallbackHudIcon(g);
     g.generateTexture(key, HUD_ICON_SIZE, HUD_ICON_SIZE);
     g.destroy();
@@ -1814,4 +1854,91 @@ function drawHedgehogSprayEquipTexture(graphics: Phaser.GameObjects.Graphics) {
   // 아웃라인
   graphics.lineStyle(1, 0x3b1f0a, 1);
   graphics.strokeRoundedRect(1, 3, 24, 9, 3);
+}
+
+// ── 솔방울 수류탄 (pinecone_grenade) ─────────────────────────────────────────
+
+function drawPineconeGrenadeHudIcon(g: Phaser.GameObjects.Graphics) {
+  g.clear();
+  // 솔방울 몸체 (타원)
+  g.fillStyle(0x7c4a1e, 1);
+  g.fillEllipse(10, 13, 14, 18);
+  // 솔방울 음영
+  g.fillStyle(0x5a3310, 0.7);
+  g.fillEllipse(10, 16, 14, 10);
+  // 비늘 무늬 (3개 짧은 가로선)
+  g.fillStyle(0xd97706, 0.6);
+  g.fillRoundedRect(5, 8, 10, 2, 1);
+  g.fillRoundedRect(4, 12, 12, 2, 1);
+  g.fillRoundedRect(5, 16, 10, 2, 1);
+  // 안전핀 (작은 금속 링)
+  g.lineStyle(2, 0xe2e8f0, 1);
+  g.strokeCircle(10, 5, 3);
+  g.fillStyle(0x94a3b8, 1);
+  g.fillCircle(10, 5, 1.5);
+  // 퓨즈 선
+  g.lineStyle(1.5, 0xfef08a, 0.9);
+  g.lineBetween(10, 2, 14, 0);
+  // 아웃라인
+  g.lineStyle(1, 0x2d1508, 1);
+  g.strokeEllipse(10, 13, 14, 18);
+}
+
+function drawPineconeGrenadePickupTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+  // 솔방울 몸체
+  graphics.fillStyle(0x7c4a1e, 1);
+  graphics.fillEllipse(22, 22, 28, 34);
+  // 솔방울 음영 (하단)
+  graphics.fillStyle(0x5a3310, 0.6);
+  graphics.fillEllipse(22, 28, 28, 18);
+  // 비늘 4개 가로 줄무늬
+  graphics.fillStyle(0xd97706, 0.5);
+  graphics.fillRoundedRect(10, 9, 24, 3, 1);
+  graphics.fillRoundedRect(9, 15, 26, 3, 1);
+  graphics.fillRoundedRect(9, 21, 26, 3, 1);
+  graphics.fillRoundedRect(10, 27, 24, 3, 1);
+  // 꼭지 (맨 위 작은 줄기)
+  graphics.fillStyle(0x5a3310, 1);
+  graphics.fillEllipse(22, 5, 8, 8);
+  // 안전핀 (금속 링)
+  graphics.lineStyle(2.5, 0xd1d5db, 1);
+  graphics.strokeCircle(22, 4, 5);
+  graphics.fillStyle(0x9ca3af, 1);
+  graphics.fillCircle(22, 4, 2.5);
+  // 퓨즈 (연기 선)
+  graphics.lineStyle(2, 0xfef08a, 0.9);
+  graphics.lineBetween(22, -1, 30, -5);
+  graphics.fillStyle(0xfde68a, 0.7);
+  graphics.fillCircle(31, -5, 3);
+  // 보라/갈색 줄무늬 (수류탄 표시)
+  graphics.lineStyle(1.5, 0x8b5cf6, 0.4);
+  graphics.strokeEllipse(22, 22, 20, 28);
+  // 아웃라인
+  graphics.lineStyle(2, 0x2d1508, 1);
+  graphics.strokeEllipse(22, 22, 28, 34);
+}
+
+function drawPineconeGrenadeEquipTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+  // 솔방울 몸체
+  graphics.fillStyle(0x7c4a1e, 1);
+  graphics.fillEllipse(9, 8, 16, 20);
+  // 솔방울 음영
+  graphics.fillStyle(0x5a3310, 0.6);
+  graphics.fillEllipse(9, 12, 16, 10);
+  // 비늘 3개
+  graphics.fillStyle(0xd97706, 0.55);
+  graphics.fillRoundedRect(3, 4, 12, 2, 0);
+  graphics.fillRoundedRect(2, 8, 14, 2, 0);
+  graphics.fillRoundedRect(3, 12, 12, 2, 0);
+  // 안전핀 링
+  graphics.lineStyle(1.5, 0xd1d5db, 1);
+  graphics.strokeCircle(9, 1, 3);
+  // 퓨즈
+  graphics.lineStyle(1.5, 0xfef08a, 0.9);
+  graphics.lineBetween(9, -2, 14, -4);
+  // 아웃라인
+  graphics.lineStyle(1, 0x2d1508, 1);
+  graphics.strokeEllipse(9, 8, 16, 20);
 }

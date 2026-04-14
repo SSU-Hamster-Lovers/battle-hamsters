@@ -292,6 +292,13 @@ pub(crate) enum RuntimeWeaponSpecialEffect {
         #[serde(rename = "tickIntervalMs")]
         tick_interval_ms: u64,
     },
+    TimedExplode {
+        #[serde(rename = "delayMs")]
+        delay_ms: u64,
+        radius: f64,
+        #[serde(rename = "splashDamage")]
+        splash_damage: u16,
+    },
 }
 
 impl RuntimeWeaponSpecialEffect {
@@ -477,6 +484,11 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
             serde_json::from_str(acorn_sword_raw).expect("acorn sword JSON should deserialize");
         let hedgehog_spray: RuntimeWeaponDefinition = serde_json::from_str(hedgehog_spray_raw)
             .expect("hedgehog spray JSON should deserialize");
+        let pinecone_grenade_raw =
+            include_str!("../../packages/shared/weapons/pinecone-grenade.json");
+        let pinecone_grenade: RuntimeWeaponDefinition =
+            serde_json::from_str(pinecone_grenade_raw)
+                .expect("pinecone grenade JSON should deserialize");
 
         HashMap::from([
             (paws.id.clone(), paws),
@@ -491,6 +503,7 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
             (grab_spear.id.clone(), grab_spear),
             (acorn_sword.id.clone(), acorn_sword),
             (hedgehog_spray.id.clone(), hedgehog_spray),
+            (pinecone_grenade.id.clone(), pinecone_grenade),
         ])
     })
 }

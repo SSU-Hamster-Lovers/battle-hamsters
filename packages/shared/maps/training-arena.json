@@ -354,6 +354,17 @@
       "spawnStyle": "fade_in",
       "despawnStyle": "shrink_pop",
       "mode": "fixed"
+    },
+    {
+      "id": "weapon_center_platform_pinecone_grenade",
+      "weaponId": "pinecone_grenade",
+      "x": 700,
+      "y": 340,
+      "respawnMs": 12000,
+      "despawnAfterMs": 12000,
+      "spawnStyle": "airdrop",
+      "despawnStyle": "shrink_pop",
+      "mode": "fixed"
     }
   ],
   "itemSpawns": [

@@ -60,6 +60,14 @@ impl RoomState {
                     range_remaining: weapon.range,
                     special_effect: weapon.special_effect.clone(),
                     spawned_at: now_ms,
+                    explode_at: if let RuntimeWeaponSpecialEffect::TimedExplode {
+                        delay_ms, ..
+                    } = &weapon.special_effect
+                    {
+                        Some(now_ms + delay_ms)
+                    } else {
+                        None
+                    },
                 },
             );
         }
@@ -81,6 +89,32 @@ impl RoomState {
 
             if now_ms < projectile.spawned_at {
                 continue;
+            }
+
+            // timed_explode: 예약 시각에 도달하면 현재 위치에서 폭발
+            if let Some(et) = projectile.explode_at {
+                if now_ms >= et {
+                    if let RuntimeWeaponSpecialEffect::TimedExplode {
+                        radius,
+                        splash_damage,
+                        ..
+                    } = projectile.special_effect.clone()
+                    {
+                        self.apply_explosion(
+                            &projectile.owner_id,
+                            &projectile.weapon_id,
+                            &projectile.position,
+                            radius,
+                            splash_damage,
+                            projectile.knockback,
+                            now_ms,
+                            deaths,
+                            dying_this_tick,
+                        );
+                    }
+                    consumed_projectiles.push(projectile_id);
+                    continue;
+                }
             }
 
             let dt = TICK_INTERVAL_MS as f64 / 1000.0;
