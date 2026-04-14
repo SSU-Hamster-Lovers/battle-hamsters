@@ -332,6 +332,45 @@ function isRectHazard(hazard: HazardZone): hazard is HazardZone & {
   return "width" in hazard && "height" in hazard;
 }
 
+function drawSpikeStrip(
+  scene: Phaser.Scene,
+  hazard: HazardZone & {
+    type: "instant_kill_hazard";
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  },
+) {
+  scene.add.rectangle(
+    hazard.x + hazard.width / 2,
+    hazard.y + hazard.height - 3,
+    hazard.width,
+    6,
+    0x374151,
+    0.9,
+  );
+
+  const spikeCount = Math.max(4, Math.round(hazard.width / 24));
+  const spikeWidth = hazard.width / spikeCount;
+  for (let i = 0; i < spikeCount; i += 1) {
+    const centerX = hazard.x + spikeWidth * i + spikeWidth / 2;
+    const spike = scene.add.triangle(
+      centerX,
+      hazard.y + hazard.height / 2,
+      -spikeWidth / 2,
+      hazard.height / 2,
+      0,
+      -hazard.height / 2,
+      spikeWidth / 2,
+      hazard.height / 2,
+      0x9ca3af,
+      0.96,
+    );
+    spike.setStrokeStyle(1, 0xe5e7eb, 0.8);
+  }
+}
+
 function vectorLengthSquared(vector: Vector2): number {
   return vector.x * vector.x + vector.y * vector.y;
 }
@@ -383,23 +422,28 @@ function fallbackImpactDirection(
 function resolveProjectilePresentation(weaponId: string): {
   color: number;
   radius: number;
+  /** 타원 세로 반지름. 없으면 radius와 동일. */
+  radiusY?: number;
   trailLength: number;
   trailThickness: number;
 } {
   switch (weaponId) {
     case "seed_shotgun":
+      // 씨앗: 작고 녹색/갈색
       return {
-        color: 0x55ee66,
+        color: 0x88cc44,
         radius: 3,
-        trailLength: 4,
+        trailLength: 3,
         trailThickness: 2,
       };
-    case "hand_cannon":
+    case "walnut_cannon":
+      // 호두: 넓적하고 갈색, 포물선으로 회전하며 날아감
       return {
-        color: 0xff8800,
-        radius: 5,
-        trailLength: 8,
-        trailThickness: 3,
+        color: 0xc8a05a,
+        radius: 6,
+        radiusY: 4,
+        trailLength: 10,
+        trailThickness: 4,
       };
     default:
       return {
@@ -504,6 +548,7 @@ class MainScene extends Phaser.Scene {
   private networkStatusText!: Phaser.GameObjects.Text;
   private attackFlash!: Phaser.GameObjects.Graphics;
   private attackFlashUntil = 0;
+  private mortarArc!: Phaser.GameObjects.Graphics;
   private matchOverlayBg!: Phaser.GameObjects.Rectangle;
   private matchOverlayText!: Phaser.GameObjects.Text;
   private cameraConfigured = false;
@@ -733,6 +778,103 @@ class MainScene extends Phaser.Scene {
     }
   }
 
+  // ── Mortar arc preview ───────────────────────────────────────────────────
+
+  private updateMortarArc() {
+    this.mortarArc.clear();
+
+    const localPlayer = this.localPlayerId
+      ? this.renderedPlayers.get(this.localPlayerId)
+      : null;
+    if (!localPlayer || localPlayer.snapshot.equippedWeaponId !== "blueberry_mortar") {
+      return;
+    }
+
+    const mortarDef = weaponDefinitionById["blueberry_mortar"];
+    if (!mortarDef) return;
+
+    const pointer = this.input.activePointer;
+    const originX = localPlayer.root.x;
+    const originY = localPlayer.root.y;
+    const rawAimX = pointer.worldX - originX;
+    const rawAimY = pointer.worldY - originY;
+    const aimLength = Math.hypot(rawAimX, rawAimY) || 1;
+    const rawAim = { x: rawAimX / aimLength, y: rawAimY / aimLength };
+
+    const clampedAim = resolveClampedAimForWeapon(
+      "blueberry_mortar",
+      rawAim,
+      localPlayer.snapshot.direction,
+    );
+
+    const pres = resolveWeaponEquipPresentation("blueberry_mortar");
+    const dir = localPlayer.snapshot.direction;
+    const xSign = dir === "left" ? -1 : 1;
+    const xPull = Math.abs(clampedAim.y) * 3;
+    const anchorYOffset = clampedAim.y * 8;
+    const weaponCenterX = xSign * Math.max(0, pres.offsetX - xPull);
+    const weaponCenterY = pres.offsetY + anchorYOffset;
+    let px = originX + weaponCenterX + pres.muzzleFromCenter * clampedAim.x;
+    let py = originY + weaponCenterY + pres.muzzleFromCenter * clampedAim.y;
+
+    const speed = mortarDef.projectileSpeed;
+    const gravity = (mortarDef.projectileGravityPerSec2 ?? 0) as number;
+    let vx = clampedAim.x * speed;
+    let vy = clampedAim.y * speed;
+    let rangeRemaining = mortarDef.range;
+
+    const dt = 0.05; // 50ms steps (서버 TICK_INTERVAL_MS와 동일)
+    const maxSteps = 120;
+    const mapW = GAME_WIDTH;
+    const mapH = GAME_HEIGHT + 200;
+
+    for (let i = 0; i < maxSteps; i++) {
+      // 서버와 동일한 사다리꼴 적분 (trapezoidal): avg_vel * dt
+      const nvy = vy + gravity * dt;
+      const avgvy = (vy + nvy) * 0.5;
+      const nx = px + vx * dt;
+      const ny = py + avgvy * dt;
+      const stepLen = Math.hypot(vx * dt, avgvy * dt);
+      vy = nvy;
+
+      // 사거리 소진 → 현재 스텝의 비율만큼만 이동
+      if (stepLen > 0 && stepLen >= rangeRemaining) {
+        const scale = rangeRemaining / stepLen;
+        const ex = px + vx * dt * scale;
+        const ey = py + avgvy * dt * scale;
+        this.mortarArc.lineStyle(2, 0xa78bfa, 0.7);
+        this.mortarArc.strokeCircle(ex, ey, 12);
+        this.mortarArc.lineStyle(1, 0xffffff, 0.4);
+        this.mortarArc.strokeCircle(ex, ey, 6);
+        break;
+      }
+      rangeRemaining -= stepLen;
+
+      // 맵 경계 밖 → 중단
+      if (nx < 0 || nx > mapW || ny > mapH) break;
+
+      // 짝수 스텝만 점으로 그림 (점선 효과)
+      if (i % 2 === 0) {
+        const alpha = 0.25 + (i / maxSteps) * 0.4;
+        const radius = i < maxSteps * 0.8 ? 2.5 : 4;
+        this.mortarArc.fillStyle(0xc4b5fd, alpha);
+        this.mortarArc.fillCircle(nx, ny, radius);
+      }
+
+      px = nx;
+      py = ny;
+
+      // 맵 바닥(또는 마지막 스텝): 착지 예상 원 표시
+      if (i === maxSteps - 1 || ny > mapH - 200) {
+        this.mortarArc.lineStyle(2, 0xa78bfa, 0.7);
+        this.mortarArc.strokeCircle(nx, ny, 12);
+        this.mortarArc.lineStyle(1, 0xffffff, 0.4);
+        this.mortarArc.strokeCircle(nx, ny, 6);
+        break;
+      }
+    }
+  }
+
   // ── Burn flame ────────────────────────────────────────────────────────────
 
   private updateBurnFlames(now: number) {
@@ -857,6 +999,7 @@ class MainScene extends Phaser.Scene {
     this.refreshNetworkStatusText();
 
     this.attackFlash = this.add.graphics().setDepth(9);
+    this.mortarArc = this.add.graphics().setDepth(8);
 
     this.matchOverlayBg = this.add
       .rectangle(VIEWPORT_WIDTH / 2, VIEWPORT_HEIGHT / 2, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, 0x000000, 0.6)
@@ -981,14 +1124,7 @@ class MainScene extends Phaser.Scene {
         continue;
       }
 
-      this.add.rectangle(
-        hazard.x + hazard.width / 2,
-        hazard.y + hazard.height / 2,
-        hazard.width,
-        hazard.height,
-        0xc026d3,
-        0.55,
-      );
+      drawSpikeStrip(this, hazard);
     }
 
     const debug = this.addDebugObject(this.add.graphics().setDepth(2));
@@ -2206,6 +2342,21 @@ class MainScene extends Phaser.Scene {
       return;
     }
 
+    if (impactStyle === "seed_burst") {
+      this.spawnSeedImpactBurst(impactPoint, direction, isExact);
+      return;
+    }
+
+    if (impactStyle === "cannon_impact") {
+      this.spawnCannonImpactBurst(impactPoint, direction, isExact);
+      return;
+    }
+
+    if (impactStyle === "explosion_burst") {
+      this.spawnExplosionBurst(impactPoint);
+      return;
+    }
+
     this.spawnSparkImpactBurst(impactPoint, direction, damage, isExact, impactStyle);
   }
 
@@ -2255,6 +2406,152 @@ class MainScene extends Phaser.Scene {
         fadeAt: this.time.now + (isExact ? 160 : 120),
         destroyAt: this.time.now + (isExact ? 430 : 320),
         baseAlpha: 0.92,
+      });
+    }
+  }
+
+  private spawnSeedImpactBurst(
+    impactPoint: Vector2,
+    direction: Vector2,
+    isExact: boolean,
+  ) {
+    // 씨앗 파편 — 녹색/갈색 작은 타원 4~6개
+    const colors = [0x88cc44, 0x55cc44, 0xb8844e, 0x6da836];
+    const count = isExact ? 6 : 4;
+    for (let i = 0; i < count; i++) {
+      const speed = Phaser.Math.FloatBetween(1.2, 2.4);
+      const spreadX = Phaser.Math.FloatBetween(-0.4, 0.4);
+      const spreadY = Phaser.Math.FloatBetween(-0.3, 0.2);
+      const node = this.add
+        .ellipse(
+          impactPoint.x + Phaser.Math.FloatBetween(-2, 2),
+          impactPoint.y + Phaser.Math.FloatBetween(-2, 2),
+          Phaser.Math.Between(2, 4),
+          Phaser.Math.Between(3, 5),
+          Phaser.Utils.Array.GetRandom(colors) as number,
+          0.88,
+        )
+        .setDepth(8);
+      this.hitParticles.push({
+        node,
+        velocityX: (direction.x + spreadX) * speed,
+        velocityY: (direction.y + spreadY) * speed - 0.3,
+        angularVelocity: Phaser.Math.FloatBetween(-0.1, 0.1),
+        gravity: 0.18,
+        drag: 0.97,
+        scaleXVelocity: 0,
+        scaleYVelocity: 0,
+        fadeAt: this.time.now + (isExact ? 150 : 100),
+        destroyAt: this.time.now + (isExact ? 380 : 280),
+        baseAlpha: 0.88,
+      });
+    }
+  }
+
+  private spawnCannonImpactBurst(
+    impactPoint: Vector2,
+    direction: Vector2,
+    isExact: boolean,
+  ) {
+    // 호두 대포 충격 — 갈색/베이지 큰 파편 + 먼지 구름
+    const debrisColors = [0xd4b896, 0xf8c06a, 0xe2c88a, 0xc8a05a];
+    const dustColors = [0xd1d5db, 0xe5e7eb, 0xc8a05a];
+    const count = isExact ? 10 : 7;
+    for (let i = 0; i < count; i++) {
+      const isDust = i >= count - 3;
+      const speed = isDust
+        ? Phaser.Math.FloatBetween(0.6, 1.4)
+        : Phaser.Math.FloatBetween(1.8, 3.6);
+      const spreadX = Phaser.Math.FloatBetween(-0.5, 0.5);
+      const spreadY = Phaser.Math.FloatBetween(-0.4, 0.2);
+      const colors = isDust ? dustColors : debrisColors;
+      const size = isDust ? Phaser.Math.Between(5, 9) : Phaser.Math.Between(4, 7);
+      const node = this.add
+        .rectangle(
+          impactPoint.x + Phaser.Math.FloatBetween(-3, 3),
+          impactPoint.y + Phaser.Math.FloatBetween(-3, 3),
+          size,
+          isDust ? size : Phaser.Math.Between(3, 5),
+          Phaser.Utils.Array.GetRandom(colors) as number,
+          isDust ? 0.55 : 0.9,
+        )
+        .setDepth(8);
+      node.setAngle(Phaser.Math.FloatBetween(-45, 45));
+      this.hitParticles.push({
+        node,
+        velocityX: (direction.x + spreadX) * speed,
+        velocityY: (direction.y + spreadY) * speed - (isDust ? 0.2 : 0.5),
+        angularVelocity: Phaser.Math.FloatBetween(-0.06, 0.06),
+        gravity: isDust ? 0.04 : 0.2,
+        drag: isDust ? 0.94 : 0.95,
+        scaleXVelocity: 0,
+        scaleYVelocity: 0,
+        fadeAt: this.time.now + (isExact ? 200 : 140),
+        destroyAt: this.time.now + (isExact ? 520 : 380),
+        baseAlpha: isDust ? 0.55 : 0.9,
+      });
+    }
+  }
+
+  private spawnExplosionBurst(impactPoint: Vector2) {
+    // 블루베리 박격포 폭발 — 보라/흰 원형 파동 + 파편
+    const coreColors = [0xddd6fe, 0xffffff, 0xc4b5fd];
+    const fragmentColors = [0x7c3aed, 0x6d28d9, 0xa78bfa, 0xffffff];
+    // 폭발 중심 플래시
+    for (let i = 0; i < 3; i++) {
+      const size = Phaser.Math.Between(14, 22);
+      const node = this.add
+        .ellipse(
+          impactPoint.x + Phaser.Math.FloatBetween(-4, 4),
+          impactPoint.y + Phaser.Math.FloatBetween(-4, 4),
+          size,
+          size * 0.8,
+          Phaser.Utils.Array.GetRandom(coreColors) as number,
+          0.8,
+        )
+        .setDepth(9);
+      this.hitParticles.push({
+        node,
+        velocityX: Phaser.Math.FloatBetween(-0.4, 0.4),
+        velocityY: Phaser.Math.FloatBetween(-0.8, -0.2),
+        angularVelocity: Phaser.Math.FloatBetween(-0.04, 0.04),
+        gravity: 0.06,
+        drag: 0.9,
+        scaleXVelocity: 0.04,
+        scaleYVelocity: 0.04,
+        fadeAt: this.time.now + 100,
+        destroyAt: this.time.now + 350,
+        baseAlpha: 0.8,
+      });
+    }
+    // 파편 파티클 (방사형)
+    for (let i = 0; i < 8; i++) {
+      const angle = (Math.PI * 2 * i) / 8 + Phaser.Math.FloatBetween(-0.3, 0.3);
+      const speed = Phaser.Math.FloatBetween(2.5, 5.0);
+      const size = Phaser.Math.Between(3, 6);
+      const node = this.add
+        .rectangle(
+          impactPoint.x,
+          impactPoint.y,
+          size,
+          Phaser.Math.Between(2, 4),
+          Phaser.Utils.Array.GetRandom(fragmentColors) as number,
+          0.9,
+        )
+        .setDepth(8);
+      node.setAngle(Phaser.Math.RadToDeg(angle));
+      this.hitParticles.push({
+        node,
+        velocityX: Math.cos(angle) * speed,
+        velocityY: Math.sin(angle) * speed - 0.5,
+        angularVelocity: Phaser.Math.FloatBetween(-0.08, 0.08),
+        gravity: 0.18,
+        drag: 0.96,
+        scaleXVelocity: 0,
+        scaleYVelocity: 0,
+        fadeAt: this.time.now + 200,
+        destroyAt: this.time.now + 500,
+        baseAlpha: 0.9,
       });
     }
   }
@@ -2479,11 +2776,12 @@ class MainScene extends Phaser.Scene {
           presentation.color,
           0.32,
         );
+        const ry = presentation.radiusY ?? presentation.radius;
         const body = this.add.ellipse(
           0,
           0,
           presentation.radius * 2,
-          presentation.radius * 2,
+          ry * 2,
           presentation.color,
           0.96,
         );
@@ -2507,7 +2805,10 @@ class MainScene extends Phaser.Scene {
         this.renderedProjectiles.set(projectile.id, rendered);
       }
 
-      rendered.body.setSize(presentation.radius * 2, presentation.radius * 2);
+      rendered.body.setSize(
+        presentation.radius * 2,
+        (presentation.radiusY ?? presentation.radius) * 2,
+      );
       rendered.body.setFillStyle(presentation.color, 0.96);
       rendered.trail.setSize(presentation.trailLength, presentation.trailThickness);
       rendered.trail.setFillStyle(presentation.color, 0.32);
@@ -2538,6 +2839,13 @@ class MainScene extends Phaser.Scene {
 
     for (const [projectileId, rendered] of this.renderedProjectiles) {
       if (!nextIds.has(projectileId)) {
+        const def = weaponDefinitionById[rendered.weaponId];
+        if (def?.specialEffect?.kind === "timed_explode") {
+          this.spawnExplosionBurst({
+            x: rendered.root.x,
+            y: rendered.root.y,
+          });
+        }
         rendered.root.destroy();
         this.renderedProjectiles.delete(projectileId);
       }
@@ -2793,6 +3101,38 @@ class MainScene extends Phaser.Scene {
       );
     }
 
+    // 레이저 커터 빔 — attackHeld 동안 매 50ms 틱마다 지속 렌더
+    if (attackHeld && localPlayer?.snapshot.equippedWeaponId === "laser_cutter") {
+      const beamAim = resolveClampedAimForWeapon(
+        "laser_cutter",
+        aim,
+        localPlayer.snapshot.direction,
+      );
+      const beamPres = resolveWeaponEquipPresentation("laser_cutter");
+      const dir = localPlayer.snapshot.direction;
+      const xSign = dir === "left" ? -1 : 1;
+      const xPull = Math.abs(beamAim.y) * 3;
+      const anchorYOffset = beamAim.y * 8;
+      const weaponCenterX = xSign * Math.max(0, beamPres.offsetX - xPull);
+      const weaponCenterY = beamPres.offsetY + anchorYOffset;
+      const bMuzzleX = originX + weaponCenterX + beamPres.muzzleFromCenter * beamAim.x;
+      const bMuzzleY = originY + weaponCenterY + beamPres.muzzleFromCenter * beamAim.y;
+      this.attackFlash.clear();
+      // 외부 글로우 (넓고 반투명 시안)
+      this.attackFlash.lineStyle(4, 0x22d3ee, 0.3);
+      this.attackFlash.lineBetween(bMuzzleX, bMuzzleY, bMuzzleX + beamAim.x * 500, bMuzzleY + beamAim.y * 500);
+      // 코어 빔 (밝은 시안)
+      this.attackFlash.lineStyle(2, 0x67e8f9, 0.9);
+      this.attackFlash.lineBetween(bMuzzleX, bMuzzleY, bMuzzleX + beamAim.x * 500, bMuzzleY + beamAim.y * 500);
+      // 중심선 (흰색)
+      this.attackFlash.lineStyle(1, 0xffffff, 0.95);
+      this.attackFlash.lineBetween(bMuzzleX, bMuzzleY, bMuzzleX + beamAim.x * 500, bMuzzleY + beamAim.y * 500);
+      // 렌즈 글로우
+      this.attackFlash.fillStyle(0x22d3ee, 0.85);
+      this.attackFlash.fillCircle(bMuzzleX, bMuzzleY, 4);
+      this.attackFlashUntil = this.time.now + 80;
+    }
+
     // 불씨 뿌리개 연속 화염 파티클 — attackHeld 동안 매 50ms 틱마다 생성
     if (attackHeld && localPlayer?.snapshot.equippedWeaponId === "ember_sprinkler") {
       const flamAim = resolveClampedAimForWeapon(
@@ -2817,6 +3157,45 @@ class MainScene extends Phaser.Scene {
         flamMuzzleY = originY + flamAim.y * 14;
       }
       this.spawnFlameParticles(flamMuzzleX, flamMuzzleY, flamAim.x, flamAim.y);
+    }
+
+    // 다람쥐 기관총 연속 총구 섬광 — attackHeld 동안 매 50ms 틱마다 렌더
+    if (attackHeld && localPlayer?.snapshot.equippedWeaponId === "squirrel_gatling") {
+      const gatAim = resolveClampedAimForWeapon(
+        "squirrel_gatling",
+        aim,
+        localPlayer.snapshot.direction,
+      );
+      const gatPres = resolveWeaponEquipPresentation("squirrel_gatling");
+      const dir = localPlayer.snapshot.direction;
+      const xSign = dir === "left" ? -1 : 1;
+      const xPull = Math.abs(gatAim.y) * 3;
+      const anchorYOffset = gatAim.y * 8;
+      const weaponCenterX = xSign * Math.max(0, gatPres.offsetX - xPull);
+      const weaponCenterY = gatPres.offsetY + anchorYOffset;
+      const gatMuzzleX = originX + weaponCenterX + gatPres.muzzleFromCenter * gatAim.x;
+      const gatMuzzleY = originY + weaponCenterY + gatPres.muzzleFromCenter * gatAim.y;
+      // 매 틱 랜덤 크기로 기관총 특유의 깜박이는 총구 섬광 표현
+      const flashR = 4 + Math.random() * 3;
+      this.attackFlash.clear();
+      // 외부 글로우 (넓고 반투명 황금색)
+      this.attackFlash.fillStyle(0xfbbf24, 0.28);
+      this.attackFlash.fillCircle(gatMuzzleX, gatMuzzleY, flashR * 2.5);
+      // 중간 글로우
+      this.attackFlash.fillStyle(0xfef3c7, 0.65);
+      this.attackFlash.fillCircle(gatMuzzleX, gatMuzzleY, flashR * 1.4);
+      // 코어 섬광 (밝은 흰색)
+      this.attackFlash.fillStyle(0xffffff, 0.95);
+      this.attackFlash.fillCircle(gatMuzzleX, gatMuzzleY, flashR * 0.65);
+      // tracer 라인 (빠른 총알 궤적)
+      this.attackFlash.lineStyle(1.5, 0xfde68a, 0.55);
+      this.attackFlash.lineBetween(
+        gatMuzzleX,
+        gatMuzzleY,
+        gatMuzzleX + gatAim.x * 50,
+        gatMuzzleY + gatAim.y * 50,
+      );
+      this.attackFlashUntil = this.time.now + 60;
     }
 
     this.attackWasDown = attackHeld;
@@ -2860,6 +3239,51 @@ class MainScene extends Phaser.Scene {
 
     if (fireStyle === "flame_stream") {
       // 화염 파티클은 sendLatestInput에서 attackHeld 동안 매 틱 생성됨
+      return;
+    }
+
+    if (fireStyle === "beam_pulse") {
+      // 레이저 빔은 sendLatestInput에서 attackHeld 동안 매 틱 렌더됨
+      return;
+    }
+
+    if (fireStyle === "shotgun_spread") {
+      // 5줄기 부채꼴 tracer
+      const spreadAngles = [-0.38, -0.19, 0, 0.19, 0.38];
+      this.attackFlash.lineStyle(1.5, 0xd4e47c, 0.82);
+      for (const angle of spreadAngles) {
+        const cosA = Math.cos(angle);
+        const sinA = Math.sin(angle);
+        const sx = aimX * cosA - aimY * sinA;
+        const sy = aimX * sinA + aimY * cosA;
+        this.attackFlash.lineBetween(
+          muzzleX,
+          muzzleY,
+          muzzleX + sx * 28,
+          muzzleY + sy * 28,
+        );
+      }
+      this.attackFlash.fillStyle(0xfef9c3, 0.92);
+      this.attackFlash.fillCircle(muzzleX, muzzleY, 5);
+      this.attackFlashUntil = this.time.now + 80;
+      return;
+    }
+
+    if (fireStyle === "cannon_blast") {
+      // 크고 둥근 총구 화염 + 연기 링
+      const cx = muzzleX + aimX * 10;
+      const cy = muzzleY + aimY * 10;
+      // 연기 링 2개
+      this.attackFlash.lineStyle(5, 0x9ca3af, 0.45);
+      this.attackFlash.strokeCircle(muzzleX + aimX * 20, muzzleY + aimY * 20, 11);
+      this.attackFlash.lineStyle(3, 0xd1d5db, 0.3);
+      this.attackFlash.strokeCircle(muzzleX + aimX * 30, muzzleY + aimY * 30, 15);
+      // 화염 코어
+      this.attackFlash.fillStyle(0xfef08a, 0.95);
+      this.attackFlash.fillCircle(cx, cy, 13);
+      this.attackFlash.fillStyle(0xfef9c3, 1);
+      this.attackFlash.fillCircle(muzzleX + aimX * 5, muzzleY + aimY * 5, 8);
+      this.attackFlashUntil = this.time.now + 110;
       return;
     }
 
@@ -2930,6 +3354,83 @@ class MainScene extends Phaser.Scene {
       return;
     }
 
+    if (fireStyle === "sniper_flash") {
+      // 길고 얇은 흰색 트레이서
+      this.attackFlash.lineStyle(2, 0xffffff, 0.88);
+      this.attackFlash.lineBetween(
+        muzzleX,
+        muzzleY,
+        muzzleX + aimX * 500,
+        muzzleY + aimY * 500,
+      );
+      // 밝은 muzzle 섬광
+      this.attackFlash.fillStyle(0xe8f4ff, 0.95);
+      this.attackFlash.fillCircle(muzzleX, muzzleY, 5);
+      // 스코프 글린트 (총신 뒤쪽 위에 작은 시안 점)
+      this.attackFlash.fillStyle(0x7dd3fc, 0.7);
+      this.attackFlash.fillCircle(
+        muzzleX - aimX * 16,
+        muzzleY - aimY * 16 - 6,
+        3,
+      );
+      this.attackFlashUntil = this.time.now + 80;
+      return;
+    }
+
+    if (fireStyle === "auto_flash") {
+      // sendLatestInput 의 연속 섬광 블록이 이미 처리하므로 여기서는 스킵
+      // (첫 클릭 시 sendLatestInput 에서도 동시에 그리기 때문에 중복 방지)
+      return;
+    }
+
+    if (fireStyle === "mortar_arc") {
+      // 박격포 발사 — 크고 둥근 총구 폭발 + 보라/흰 섬광
+      this.attackFlash.fillStyle(0xddd6fe, 0.9);
+      this.attackFlash.fillCircle(muzzleX, muzzleY, 11);
+      this.attackFlash.fillStyle(0xffffff, 0.7);
+      this.attackFlash.fillCircle(muzzleX, muzzleY, 6);
+      // 연기 링
+      this.attackFlash.lineStyle(3, 0x8b5cf6, 0.45);
+      this.attackFlash.strokeCircle(muzzleX + aimX * 8, muzzleY + aimY * 8, 8);
+      this.attackFlashUntil = this.time.now + 100;
+      return;
+    }
+
+    if (fireStyle === "slash_arc") {
+      // 도토리 대검 — 넓은 부채꼴 호 섬광
+      const perpX = -aimY;
+      const perpY = aimX;
+      const slashDist = 50;
+      // 좌우로 퍼지는 세 줄기 섬광
+      for (let i = -1; i <= 1; i++) {
+        const spread = i * 0.38;
+        const ex = muzzleX + (aimX * Math.cos(spread) - aimY * Math.sin(spread)) * slashDist;
+        const ey = muzzleY + (aimX * Math.sin(spread) + aimY * Math.cos(spread)) * slashDist;
+        const alpha = i === 0 ? 0.85 : 0.5;
+        this.attackFlash.lineStyle(i === 0 ? 3 : 1.5, 0xe2e8f0, alpha);
+        this.attackFlash.lineBetween(muzzleX, muzzleY, ex, ey);
+      }
+      // 임팩트 원점 섬광 (갈색/황금)
+      this.attackFlash.fillStyle(0xd97706, 0.75);
+      this.attackFlash.fillCircle(muzzleX, muzzleY, 6);
+      this.attackFlash.fillStyle(0xfef3c7, 0.9);
+      this.attackFlash.fillCircle(muzzleX, muzzleY, 3);
+      // 파편 선 4개 (방사형)
+      this.attackFlash.lineStyle(1.5, 0xd97706, 0.6);
+      for (let i = 0; i < 4; i++) {
+        const angle = (i / 4) * Math.PI * 2 + Math.atan2(aimY, aimX);
+        const sx = Math.cos(angle);
+        const sy = Math.sin(angle);
+        this.attackFlash.lineBetween(
+          muzzleX + sx * 4, muzzleY + sy * 4,
+          muzzleX + sx * 12 + perpX * (i % 2 === 0 ? 4 : -4),
+          muzzleY + sy * 12 + perpY * (i % 2 === 0 ? 4 : -4),
+        );
+      }
+      this.attackFlashUntil = this.time.now + 90;
+      return;
+    }
+
     this.attackFlash.lineStyle(3, 0xfef08a, 0.95);
     this.attackFlash.lineBetween(
       muzzleX,
@@ -2957,6 +3458,8 @@ class MainScene extends Phaser.Scene {
       this.attackFlash.clear();
       this.attackFlashUntil = 0;
     }
+
+    this.updateMortarArc();
 
     for (const [, rendered] of this.renderedPlayers) {
       const lerpFactor = rendered.isLocal ? LOCAL_PLAYER_LERP : REMOTE_PLAYER_LERP;

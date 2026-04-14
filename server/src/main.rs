@@ -167,6 +167,13 @@ struct BurnEffect {
     tick_interval_ms: u64,
 }
 
+/// 서버 내부 잡기 상태 — 직렬화하지 않음.
+#[derive(Clone)]
+struct GrabEffect {
+    weapon_id: String,
+    expires_at: u64,
+}
+
 #[derive(Clone)]
 struct ProjectileRuntime {
     id: String,
@@ -180,6 +187,8 @@ struct ProjectileRuntime {
     range_remaining: f64,
     special_effect: game_data::RuntimeWeaponSpecialEffect,
     spawned_at: u64,
+    /// timed_explode 폭발 예약 시각 (ms). None이면 지연 폭발 없음.
+    explode_at: Option<u64>,
 }
 
 #[derive(Clone)]
@@ -194,6 +203,7 @@ struct PlayerRuntime {
     attack_was_down: bool,
     last_hit_by: Option<LastHitInfo>,
     active_burn: Option<BurnEffect>,
+    active_grab: Option<GrabEffect>,
     /// 현재 drop-through 중인 source 플랫폼 ID. 이 ID의 플랫폼만 착지 판정에서 제외한다.
     /// 서버 런타임 전용 — 스냅샷에 포함하지 않는다.
     drop_through_platform_id: Option<String>,
@@ -461,6 +471,7 @@ impl RoomState {
                 attack_was_down: false,
                 last_hit_by: None,
                 active_burn: None,
+                active_grab: None,
                 drop_through_platform_id: None,
             },
         );
@@ -943,6 +954,7 @@ mod tests {
             attack_was_down: false,
             last_hit_by: None,
             active_burn: None,
+            active_grab: None,
             drop_through_platform_id: None,
         }
     }
@@ -1107,33 +1119,50 @@ mod tests {
     #[test]
     fn room_starts_with_spawned_weapon_pickup() {
         let room = RoomState::new();
-        // weapon_group 후보 1개 + 중앙 hand_cannon 1개 + 좌측 armory 4개(acorn/seed/hand/ember) = 6개
-        assert_eq!(room.weapon_pickups.len(), 6);
+        // 좌/우 random 후보 각 1개 + 고정 12개(acorn/walnut/ember/seed/pine_sniper/squirrel_gatling/blueberry_mortar/laser_cutter/grab_spear/acorn_sword/hedgehog_spray/pinecone_grenade) = 14개
+        assert_eq!(room.weapon_pickups.len(), 14);
 
         let pickups: Vec<_> = room.weapon_pickups.values().collect();
 
-        // weapon_group 에서 스폰된 픽업: x=320 또는 x=1280 위치
-        let group_pickup = pickups
+        let random_group_pickups = pickups
             .iter()
-            .find(|p| matches!(p.position.x as u32, 320 | 1280))
-            .expect("weapon_group pickup should exist");
-        assert!(
-            group_pickup.weapon_id == "acorn_blaster"
-                || group_pickup.weapon_id == "seed_shotgun",
-            "weapon_group pickup should be acorn_blaster or seed_shotgun"
+            .filter(|p| matches!(p.position.x as u32, 550 | 1050))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            random_group_pickups.len(),
+            2,
+            "좌/우 random 후보군에서 각각 1개씩 스폰되어야 함"
         );
+        assert!(random_group_pickups.iter().all(|pickup| {
+            pickup.weapon_id == "acorn_blaster" || pickup.weapon_id == "seed_shotgun"
+        }));
 
-        // hand_cannon fixed 스폰: x=800
         let cannon_pickup = pickups
             .iter()
-            .find(|p| p.weapon_id == "hand_cannon" && p.position.x as u32 == 800)
-            .expect("hand_cannon pickup should exist");
+            .find(|p| p.weapon_id == "walnut_cannon" && p.position.x as u32 == 800)
+            .expect("walnut_cannon pickup should exist");
         assert_eq!(cannon_pickup.position.x as u32, 800);
 
-        assert!(pickups.iter().any(|p| p.weapon_id == "acorn_blaster" && p.position.x as u32 == 130));
-        assert!(pickups.iter().any(|p| p.weapon_id == "seed_shotgun" && p.position.x as u32 == 250));
-        assert!(pickups.iter().any(|p| p.weapon_id == "hand_cannon" && p.position.x as u32 == 370));
-        assert!(pickups.iter().any(|p| p.weapon_id == "ember_sprinkler" && p.position.x as u32 == 490));
+        assert!(
+            pickups
+                .iter()
+                .any(|p| p.weapon_id == "acorn_blaster" && p.position.x as u32 == 230)
+        );
+        assert!(
+            pickups
+                .iter()
+                .any(|p| p.weapon_id == "ember_sprinkler" && p.position.x as u32 == 560)
+        );
+        assert!(
+            pickups
+                .iter()
+                .any(|p| p.weapon_id == "seed_shotgun" && p.position.x as u32 == 1370)
+        );
+        assert!(
+            pickups
+                .iter()
+                .any(|p| p.weapon_id == "pine_sniper" && p.position.x as u32 == 1400)
+        );
     }
 
     #[test]
@@ -1153,7 +1182,7 @@ mod tests {
             .values()
             .find(|pickup| pickup.item_id == "health_pack_small")
             .expect("heal pickup should exist");
-        assert!(matches!(heal_pickup.position.x, 220.0 | 1380.0));
+        assert!(matches!(heal_pickup.position.x, 250.0 | 1350.0));
     }
 
     #[test]
@@ -1340,6 +1369,7 @@ mod tests {
             attack_was_down: true,
             last_hit_by: None,
             active_burn: None,
+            active_grab: None,
             drop_through_platform_id: None,
         };
 
@@ -1376,6 +1406,7 @@ mod tests {
             attack_was_down: false,
             last_hit_by: None,
             active_burn: None,
+            active_grab: None,
             drop_through_platform_id: None,
         };
 
@@ -1437,14 +1468,14 @@ mod tests {
     #[test]
     fn projectile_step_hits_target_after_multiple_ticks() {
         let mut room = RoomState::new();
-        assert_eq!(weapon_definition("hand_cannon").damage, 80);
+        assert_eq!(weapon_definition("walnut_cannon").damage, 80);
 
         let mut shooter = test_player(140.0, 120.0);
         shooter.snapshot.id = "shooter".to_string();
         shooter.snapshot.name = "shooter".to_string();
         shooter.snapshot.direction = Direction::Right;
         shooter.snapshot.grounded = true;
-        shooter.snapshot.equipped_weapon_id = "hand_cannon".to_string();
+        shooter.snapshot.equipped_weapon_id = "walnut_cannon".to_string();
         shooter.snapshot.equipped_weapon_resource = Some(1);
         shooter.latest_input.sequence = 1;
         shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
@@ -1488,8 +1519,8 @@ mod tests {
             ProjectileRuntime {
                 id: "proj_up".to_string(),
                 owner_id: "shooter".to_string(),
-                weapon_id: "hand_cannon".to_string(),
-                position: Vector2 { x: 800.0, y: 470.0 },
+                weapon_id: "walnut_cannon".to_string(),
+                position: Vector2 { x: 800.0, y: 490.0 },
                 velocity: Vector2 { x: 0.0, y: -800.0 },
                 gravity_per_sec2: 0.0,
                 damage: 80,
@@ -1497,6 +1528,7 @@ mod tests {
                 range_remaining: 200.0,
                 special_effect: RuntimeWeaponSpecialEffect::None,
                 spawned_at: 0,
+                explode_at: None,
             },
         );
 
@@ -1508,7 +1540,7 @@ mod tests {
             .projectiles
             .get("proj_up")
             .expect("projectile should remain");
-        assert!(projectile.position.y < 440.0);
+        assert!(projectile.position.y < 460.0);
         assert!(deaths.is_empty());
     }
 
@@ -1520,8 +1552,8 @@ mod tests {
             ProjectileRuntime {
                 id: "proj_down".to_string(),
                 owner_id: "shooter".to_string(),
-                weapon_id: "hand_cannon".to_string(),
-                position: Vector2 { x: 800.0, y: 410.0 },
+                weapon_id: "walnut_cannon".to_string(),
+                position: Vector2 { x: 800.0, y: 450.0 },
                 velocity: Vector2 { x: 0.0, y: 800.0 },
                 gravity_per_sec2: 0.0,
                 damage: 80,
@@ -1529,6 +1561,7 @@ mod tests {
                 range_remaining: 200.0,
                 special_effect: RuntimeWeaponSpecialEffect::None,
                 spawned_at: 0,
+                explode_at: None,
             },
         );
 
@@ -1557,6 +1590,7 @@ mod tests {
                 range_remaining: 400.0,
                 special_effect: RuntimeWeaponSpecialEffect::None,
                 spawned_at: 0,
+                explode_at: None,
             },
         );
 
@@ -2202,18 +2236,18 @@ mod tests {
         );
     }
 
-    // platform_left: topY=480, x=180-560
-    // armory_shelf_lower: topY=520, x=80-420
-    // x=300 은 두 플랫폼 x 범위 모두에 포함되고, 수직 간격은 40px.
-    // 버그 조건: 기존 전역 시간 무시(drop_active)는 armory_shelf_lower까지 함께 건너뜀 → 두 플랫폼을 한 번에 통과
-    // 수정 후: source 플랫폼(platform_left)만 무시하고 armory_shelf_lower에 정상 착지해야 함
+    // left_bunker_upper: topY=480, x=160-380
+    // left_bunker_lower: topY=580, x=120-340
+    // x=260 은 두 플랫폼 x 범위 모두에 포함되고, 수직 간격은 100px.
+    // 버그 조건: 기존 전역 시간 무시(drop_active)는 lower platform까지 함께 건너뜀 → 두 플랫폼을 한 번에 통과
+    // 수정 후: source 플랫폼(left_bunker_upper)만 무시하고 left_bunker_lower에 정상 착지해야 함
     #[test]
     fn drop_through_skips_only_source_platform_not_adjacent_platform_below() {
-        let platform_left_top_y = 480.0;
-        let armory_shelf_lower_top_y = 520.0;
-        let test_x = 300.0;
+        let left_bunker_upper_top_y = 480.0;
+        let left_bunker_lower_top_y = 580.0;
+        let test_x = 260.0;
 
-        let mut player = test_player(test_x, platform_left_top_y - PLAYER_HALF_SIZE);
+        let mut player = test_player(test_x, left_bunker_upper_top_y - PLAYER_HALF_SIZE);
         player.snapshot.grounded = true;
 
         // Tick 0: jump + down → drop-through 트리거
@@ -2239,11 +2273,11 @@ mod tests {
 
         assert!(
             player.snapshot.grounded,
-            "armory_shelf_lower에 착지해야 함 (두 플랫폼을 한 번에 통과하면 안 됨)"
+            "left_bunker_lower에 착지해야 함 (두 플랫폼을 한 번에 통과하면 안 됨)"
         );
         assert_approx_eq(
             player.snapshot.position.y,
-            armory_shelf_lower_top_y - PLAYER_HALF_SIZE,
+            left_bunker_lower_top_y - PLAYER_HALF_SIZE,
         );
     }
 
@@ -2323,6 +2357,148 @@ mod tests {
         );
     }
 
+    // pine_sniper: 사거리 안쪽의 대상을 hitscan으로 맞혀야 한다.
+    // damage=90, range=3000 (pine-sniper.json 기준)
+    #[test]
+    fn pine_sniper_hits_target_in_range() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "pine_sniper".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(3);
+        shooter.latest_input.sequence = 1;
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        // 사거리(3000px) 안쪽 700px 거리에 있는 대상
+        let mut target = test_player(700.0, 300.0);
+        target.snapshot.id = "target".to_string();
+        target.snapshot.name = "target".to_string();
+
+        let pine_damage = weapon_definition("pine_sniper").damage;
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let target_after = room.players.get("target").unwrap();
+        let expected_hp = 100u16.saturating_sub(pine_damage);
+        assert_eq!(
+            target_after.snapshot.hp,
+            expected_hp,
+            "pine_sniper 피해량은 {}이어야 함 (hp={})",
+            pine_damage,
+            target_after.snapshot.hp
+        );
+    }
+
+    // pine_sniper: 발사 시 resource가 1 소비되어야 한다.
+    #[test]
+    fn pine_sniper_consumes_resource_per_shot() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "pine_sniper".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(3);
+        shooter.latest_input.sequence = 1;
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        room.players.insert("shooter".to_string(), shooter);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let shooter_after = room.players.get("shooter").unwrap();
+        assert_eq!(
+            shooter_after.snapshot.equipped_weapon_resource,
+            Some(2),
+            "pine_sniper 발사 시 resource가 3 → 2로 소비되어야 함"
+        );
+    }
+
+    // squirrel_gatling: hitscan으로 사거리 안에 있는 대상에게 피해를 줘야 한다.
+    #[test]
+    fn squirrel_gatling_hits_target_in_range() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "squirrel_gatling".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(30);
+        shooter.latest_input.sequence = 1;
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        let mut target = test_player(400.0, 300.0);
+        target.snapshot.id = "target".to_string();
+        target.snapshot.name = "target".to_string();
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let target_after = room.players.get("target").unwrap();
+        let expected_hp = 100u16.saturating_sub(weapon_definition("squirrel_gatling").damage);
+        assert_eq!(
+            target_after.snapshot.hp,
+            expected_hp,
+            "squirrel_gatling이 사거리 안의 대상을 맞혀야 함"
+        );
+    }
+
+    // squirrel_gatling: 발사 시 resource가 1 소비되어야 한다.
+    #[test]
+    fn squirrel_gatling_consumes_resource_per_shot() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "squirrel_gatling".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(30);
+        shooter.latest_input.sequence = 1;
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        room.players.insert("shooter".to_string(), shooter);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let shooter_after = room.players.get("shooter").unwrap();
+        assert_eq!(
+            shooter_after.snapshot.equipped_weapon_resource,
+            Some(29),
+            "squirrel_gatling 발사 시 resource가 30 → 29로 소비되어야 함"
+        );
+    }
+
     // ember_sprinkler: 넓은 cone이므로 Paws 범위 밖에 있는 대상도 맞아야 한다.
     #[test]
     fn ember_sprinkler_wider_cone_hits_target_outside_paws_range() {
@@ -2357,6 +2533,611 @@ mod tests {
             target_after.snapshot.hp < 100,
             "ember_sprinkler 넓은 cone으로 인해 옆에 있는 대상도 맞아야 함 (hp={})",
             target_after.snapshot.hp
+        );
+    }
+
+    // blueberry_mortar: 직격한 대상에게 직접 피해 + 범위 피해가 모두 적용되어야 한다.
+    #[test]
+    fn blueberry_mortar_direct_hit_applies_direct_and_splash_damage() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "blueberry_mortar".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(5);
+        shooter.latest_input.sequence = 1;
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        // 직격 대상: 바로 오른쪽에 위치
+        let mut direct_target = test_player(150.0, 300.0);
+        direct_target.snapshot.id = "direct_target".to_string();
+        direct_target.snapshot.name = "direct_target".to_string();
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("direct_target".to_string(), direct_target);
+
+        // 투사체 발사
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        // 투사체가 대상에 충돌할 때까지 tick
+        for tick in 1..=10 {
+            room.step_projectiles(1000 + tick * 50, &mut deaths, &mut dying);
+            let target = room.players.get("direct_target").unwrap();
+            if target.snapshot.hp < 100 {
+                break;
+            }
+        }
+
+        let target_after = room.players.get("direct_target").unwrap();
+        // blueberry_mortar: damage + splashDamage 가 모두 적용되어야 함
+        let def = weapon_definition("blueberry_mortar");
+        let max_expected_hp = 100u16
+            .saturating_sub(def.damage)
+            .saturating_sub(def.special_effect.splash_damage().unwrap_or(0));
+        assert!(
+            target_after.snapshot.hp <= max_expected_hp,
+            "blueberry_mortar 직격 시 직접 피해 + 범위 피해가 모두 적용되어야 함 (hp={}, expected_max={})",
+            target_after.snapshot.hp,
+            max_expected_hp
+        );
+    }
+
+    // blueberry_mortar: 폭발 반경 안에 있는 인근 대상에게 범위 피해를 줘야 한다.
+    #[test]
+    fn blueberry_mortar_splash_damages_nearby_player() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "blueberry_mortar".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(5);
+        shooter.latest_input.sequence = 1;
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        // 직격 대상: 바로 오른쪽에 위치 (floor 위)
+        let mut direct_target = test_player(150.0, 300.0);
+        direct_target.snapshot.id = "direct_target".to_string();
+        direct_target.snapshot.name = "direct_target".to_string();
+
+        // 범위 대상: 직격 대상에서 50px 옆 (반경 80px 내부)
+        let mut splash_target = test_player(150.0, 350.0);
+        splash_target.snapshot.id = "splash_target".to_string();
+        splash_target.snapshot.name = "splash_target".to_string();
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("direct_target".to_string(), direct_target);
+        room.players.insert("splash_target".to_string(), splash_target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        for tick in 1..=10 {
+            room.step_projectiles(1000 + tick * 50, &mut deaths, &mut dying);
+            let direct = room.players.get("direct_target").unwrap();
+            let splash = room.players.get("splash_target").unwrap();
+            if direct.snapshot.hp < 100 || splash.snapshot.hp < 100 {
+                break;
+            }
+        }
+
+        let splash_after = room.players.get("splash_target").unwrap();
+        let def = weapon_definition("blueberry_mortar");
+        let splash_dmg = def.special_effect.splash_damage().unwrap_or(0);
+        let expected_hp = 100u16.saturating_sub(splash_dmg);
+        assert!(
+            splash_after.snapshot.hp <= expected_hp,
+            "blueberry_mortar 폭발 반경 내 대상에게 범위 피해가 적용되어야 함 (hp={}, splash_dmg={})",
+            splash_after.snapshot.hp,
+            splash_dmg
+        );
+    }
+
+    // laser_cutter: 빔이 사거리 내 대상에게 피해를 줘야 한다.
+    #[test]
+    fn laser_cutter_hits_target_in_range() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "laser_cutter".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(600);
+        shooter.latest_input.sequence = 1;
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        let mut target = test_player(300.0, 300.0);
+        target.snapshot.id = "target".to_string();
+        target.snapshot.name = "target".to_string();
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let target_after = room.players.get("target").unwrap();
+        assert!(
+            target_after.snapshot.hp < 100,
+            "laser_cutter가 사거리 내 대상을 맞혀야 함"
+        );
+    }
+
+    // laser_cutter: 발사 시 capacity가 resource_per_second 기반으로 소모되어야 한다.
+    #[test]
+    fn laser_cutter_drains_capacity_per_tick() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "laser_cutter".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(600);
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        room.players.insert("shooter".to_string(), shooter);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let shooter_after = room.players.get("shooter").unwrap();
+        let resource_after = shooter_after
+            .snapshot
+            .equipped_weapon_resource
+            .unwrap_or(0);
+        // capacity는 resource_per_second * TICK_INTERVAL_MS / 1000 만큼 소모됨
+        // resource_per_second가 있는 경우, 최초 600에서 일부 소모
+        assert!(
+            resource_after < 600,
+            "laser_cutter 발사 시 capacity가 소모되어야 함 (resource={})",
+            resource_after
+        );
+    }
+
+    // grab_spear: 적중 시 대상에게 grab 상태가 적용되어야 한다.
+    #[test]
+    fn grab_spear_applies_grab_on_hit() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "grab_spear".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(3);
+        shooter.latest_input.sequence = 1;
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        let mut target = test_player(200.0, 300.0);
+        target.snapshot.id = "target".to_string();
+        target.snapshot.name = "target".to_string();
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        // 투사체 발사
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        // 투사체가 대상에 충돌할 때까지 tick
+        for tick in 1..=10 {
+            room.step_projectiles(1000 + tick * 50, &mut deaths, &mut dying);
+            let target = room.players.get("target").unwrap();
+            if target.snapshot.hp < 100 {
+                break;
+            }
+        }
+
+        let target_after = room.players.get("target").unwrap();
+        // grab이 적용되면 effects에 "grabbed" 또는 플레이어에 active_grab이 있어야 함
+        let has_grab_effect = target_after
+            .snapshot
+            .effects
+            .iter()
+            .any(|e| e.kind == "grabbed");
+        assert!(
+            has_grab_effect,
+            "grab_spear 적중 시 대상에게 grab 상태가 적용되어야 함"
+        );
+    }
+
+    // laser_cutter: 빔이 적중 시 Burn DoT가 적용되어야 한다.
+    #[test]
+    fn laser_cutter_applies_burn_on_hit() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "laser_cutter".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(600);
+        shooter.latest_input.sequence = 1;
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        let mut target = test_player(300.0, 300.0);
+        target.snapshot.id = "target".to_string();
+        target.snapshot.name = "target".to_string();
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let target_after = room.players.get("target").unwrap();
+        assert!(
+            target_after.active_burn.is_some(),
+            "laser_cutter 명중 시 Burn DoT가 적용되어야 함"
+        );
+    }
+
+    // laser_cutter: 원웨이 플랫폼이 빔 경로를 차단할 때 대상에게 피해를 주지 않아야 한다.
+    // left_bunker_upper: topY=480, leftX=160, rightX=380
+    // shooter(160, 450) → 40° 아래 방향(0.766, 0.643) → target(351.5, 610.7)
+    // t_platform≈47, t_target≈250: 플랫폼이 중간에 위치
+    #[test]
+    fn laser_cutter_blocked_by_one_way_platform() {
+        let mut room = RoomState::new();
+
+        // aim 40° below horizontal (aimProfile.maxAimDeg=40 경계)
+        let aim_x = 40f64.to_radians().cos(); // ≈ 0.766
+        let aim_y = 40f64.to_radians().sin(); // ≈ 0.643
+
+        let mut shooter = test_player(160.0, 450.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "laser_cutter".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(600);
+        shooter.latest_input.sequence = 1;
+        shooter.latest_input.aim = Vector2 { x: aim_x, y: aim_y };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        // 빔 축 위에 위치 (t=250), 플랫폼(t≈47) 너머에 있음
+        let target = test_player(160.0 + aim_x * 250.0, 450.0 + aim_y * 250.0);
+        let mut target = target;
+        target.snapshot.id = "target".to_string();
+        target.snapshot.name = "target".to_string();
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let target_after = room.players.get("target").unwrap();
+        assert_eq!(
+            target_after.snapshot.hp, 100,
+            "원웨이 플랫폼 뒤의 대상에게는 피해를 주지 않아야 함"
+        );
+    }
+
+    // grab_effect: 그랩 상태인 플레이어는 수평 이동이 불가해야 한다.
+    #[test]
+    fn grab_effect_freezes_player_movement() {
+        let mut player = test_player(400.0, 300.0);
+        player.snapshot.grounded = true;
+        // 그랩 효과 직접 부여 (1초 지속)
+        player.active_grab = Some(GrabEffect {
+            weapon_id: "grab_spear".to_string(),
+            expires_at: 99999,
+        });
+        // 오른쪽으로 이동 시도
+        player.latest_input.movement = Vector2 { x: 1.0, y: 0.0 };
+
+        let x_before = player.snapshot.position.x;
+        step_player(&mut player, 0);
+
+        assert_eq!(
+            player.snapshot.position.x, x_before,
+            "그랩 상태에서는 수평 이동이 불가해야 함"
+        );
+    }
+
+    // acorn_sword: 사거리 내 대상에게 근접 피해를 줘야 한다.
+    #[test]
+    fn acorn_sword_hits_target_in_range() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(200.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "acorn_sword".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(8);
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        // 40px 거리 — 사거리(50px) 이내
+        let mut target = test_player(240.0, 300.0);
+        target.snapshot.id = "target".to_string();
+        target.snapshot.name = "target".to_string();
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let target_after = room.players.get("target").unwrap();
+        assert!(
+            target_after.snapshot.hp < 100,
+            "acorn_sword 사거리 내 대상에게 피해를 줘야 함 (hp={}/100)",
+            target_after.snapshot.hp
+        );
+    }
+
+    // acorn_sword: 공격 시 resource가 1 소비되어야 한다.
+    #[test]
+    fn acorn_sword_consumes_resource_per_swing() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(200.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "acorn_sword".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(8);
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        room.players.insert("shooter".to_string(), shooter);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let shooter_after = room.players.get("shooter").unwrap();
+        assert_eq!(
+            shooter_after.snapshot.equipped_weapon_resource,
+            Some(7),
+            "acorn_sword 1회 공격 후 resource 8 → 7이어야 함"
+        );
+    }
+
+    // hedgehog_spray: pelletCount=3이므로 단일 발사로 최소 1명에게 피해를 줘야 한다.
+    #[test]
+    fn hedgehog_spray_hits_target_in_range() {
+        let mut room = RoomState::new();
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.equipped_weapon_id = "hedgehog_spray".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(16);
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+        // target at (360, 300) — 260px, range 500px 이내, 속도 680px/s → ~380ms
+        let mut target = test_player(360.0, 300.0);
+        target.snapshot.hp = 100;
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+        // 투사체를 여러 틱 전진시켜 target에 도달
+        for i in 1..=10u64 {
+            room.step_projectiles(1000 + i * 50, &mut deaths, &mut dying);
+        }
+
+        let target_after = room.players.get("target").unwrap();
+        assert!(
+            target_after.snapshot.hp < 100,
+            "hedgehog_spray 발사 후 target이 피해를 입어야 함 (hp={}/100)",
+            target_after.snapshot.hp
+        );
+    }
+
+    // hedgehog_spray: 발사 시 resource가 1 소비되어야 한다.
+    #[test]
+    fn hedgehog_spray_consumes_resource_per_shot() {
+        let mut room = RoomState::new();
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.equipped_weapon_id = "hedgehog_spray".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(16);
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+        room.players.insert("shooter".to_string(), shooter);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let shooter_after = room.players.get("shooter").unwrap();
+        assert_eq!(
+            shooter_after.snapshot.equipped_weapon_resource,
+            Some(15),
+            "hedgehog_spray 1회 발사 후 resource 16 → 15이어야 함"
+        );
+    }
+
+    // pinecone_grenade: 1500ms 지연 후 폭발하여 범위 내 target에게 피해를 줘야 한다.
+    #[test]
+    fn pinecone_grenade_explodes_after_delay_and_damages_target() {
+        let mut room = RoomState::new();
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.equipped_weapon_id = "pinecone_grenade".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(2);
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+        // target은 2틱 후 수류탄 위치(x≈170) 기준 폭발 반경(120px) 이내
+        // 수류탄: x=100+20(spawn_offset)+25*2(2틱)=170, 타겟 x=200 → 거리≈30px < 120px
+        let mut target = test_player(200.0, 300.0);
+        target.snapshot.hp = 100;
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        // 1499ms — 아직 폭발 전: target 피해 없음 (1틱만 이동, 직격 범위 밖)
+        room.step_projectiles(2499, &mut deaths, &mut dying);
+        assert_eq!(
+            room.players.get("target").unwrap().snapshot.hp,
+            100,
+            "1499ms에 target은 아직 피해를 받지 않아야 함"
+        );
+
+        // 1500ms 경과 → 폭발 트리거 (2틱 이동 후 위치 기준 광역 피해)
+        room.step_projectiles(2500, &mut deaths, &mut dying);
+        let target_after = room.players.get("target").unwrap();
+        assert!(
+            target_after.snapshot.hp < 100,
+            "1500ms 후 폭발로 target이 피해를 입어야 함 (hp={}/100)",
+            target_after.snapshot.hp
+        );
+    }
+
+    // pinecone_grenade: 발사 시 resource가 1 소비되어야 한다.
+    #[test]
+    fn pinecone_grenade_consumes_resource_per_shot() {
+        let mut room = RoomState::new();
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.equipped_weapon_id = "pinecone_grenade".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(2);
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+        room.players.insert("shooter".to_string(), shooter);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let shooter_after = room.players.get("shooter").unwrap();
+        assert_eq!(
+            shooter_after.snapshot.equipped_weapon_resource,
+            Some(1),
+            "pinecone_grenade 1회 발사 후 resource 2 → 1이어야 함"
+        );
+    }
+
+    // 수류탄: 지형 충돌 시 즉시 폭발하여 범위 내 target에게 피해를 줘야 한다.
+    #[test]
+    fn pinecone_grenade_explodes_on_terrain_hit() {
+        let mut room = RoomState::new();
+        // target: 바닥(y=680) 위 20px, 수류탄 x와 동일
+        let mut target = test_player(800.0, 660.0);
+        target.snapshot.hp = 100;
+        room.players.insert("target".to_string(), target);
+
+        // 수류탄 투사체: y=640에서 아래로 빠르게 낙하 → 1틱 내 바닥(680) 충돌
+        // explode_at 미래로 설정해 타이머는 발동 안 됨 (지형 충돌이 먼저)
+        room.projectiles.insert(
+            "grenade".to_string(),
+            ProjectileRuntime {
+                id: "grenade".to_string(),
+                owner_id: "shooter".to_string(),
+                weapon_id: "pinecone_grenade".to_string(),
+                position: Vector2 { x: 800.0, y: 640.0 },
+                velocity: Vector2 { x: 0.0, y: 1000.0 },
+                gravity_per_sec2: 0.0,
+                damage: 0,
+                knockback: 0.0,
+                range_remaining: 500.0,
+                special_effect: RuntimeWeaponSpecialEffect::TimedExplode {
+                    delay_ms: 99999,
+                    radius: 120.0,
+                    splash_damage: 55,
+                },
+                spawned_at: 0,
+                explode_at: Some(99999999),
+            },
+        );
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.step_projectiles(1000, &mut deaths, &mut dying);
+
+        let target_after = room.players.get("target").unwrap();
+        assert!(
+            target_after.snapshot.hp < 100,
+            "지형 충돌 시 즉시 폭발해 target이 피해를 받아야 함 (hp={}/100)",
+            target_after.snapshot.hp
+        );
+    }
+
+    // 폭발: shooter가 폭발 반경 내에 있으면 자폭 데미지를 받아야 한다.
+    #[test]
+    fn explosion_damages_shooter_self_damage() {
+        let mut room = RoomState::new();
+        let mut shooter = test_player(500.0, 300.0);
+        shooter.snapshot.hp = 100;
+        room.players.insert("shooter".to_string(), shooter);
+
+        // 폭발 중심 = shooter 위치, 반경 120 → shooter가 맞아야 함
+        room.projectiles.insert(
+            "grenade".to_string(),
+            ProjectileRuntime {
+                id: "grenade".to_string(),
+                owner_id: "shooter".to_string(),
+                weapon_id: "pinecone_grenade".to_string(),
+                position: Vector2 { x: 500.0, y: 300.0 },
+                velocity: Vector2 { x: 0.0, y: 0.0 },
+                gravity_per_sec2: 0.0,
+                damage: 0,
+                knockback: 0.0,
+                range_remaining: 100.0,
+                special_effect: RuntimeWeaponSpecialEffect::TimedExplode {
+                    delay_ms: 0,
+                    radius: 120.0,
+                    splash_damage: 55,
+                },
+                spawned_at: 0,
+                explode_at: Some(1000), // now_ms=1000에서 폭발
+            },
+        );
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.step_projectiles(1000, &mut deaths, &mut dying);
+
+        let shooter_after = room.players.get("shooter").unwrap();
+        assert!(
+            shooter_after.snapshot.hp < 100,
+            "폭발 반경 내 shooter가 자폭 데미지를 받아야 함 (hp={}/100)",
+            shooter_after.snapshot.hp
         );
     }
 }

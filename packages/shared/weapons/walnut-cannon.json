@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "id": "hand_cannon",
-  "name": "Hand Cannon",
+  "id": "walnut_cannon",
+  "name": "호두 대포",
   "hitType": "projectile",
   "fireMode": "single",
   "resourceModel": "magazine",

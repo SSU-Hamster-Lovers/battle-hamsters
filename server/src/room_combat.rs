@@ -5,7 +5,7 @@ use crate::{
     room_config::RoomGameplayConfig,
     weapon_definition,
     BurnEffect, DeathCause, Direction, HitType, LastHitInfo, PlayerRuntime, PlayerState,
-    RoomState, StatusEffectSnapshot, Vector2, PLAYER_HALF_SIZE, RESPAWN_DELAY_MS,
+    ResourceModel, RoomState, StatusEffectSnapshot, Vector2, PLAYER_HALF_SIZE, RESPAWN_DELAY_MS,
 };
 
 impl RoomState {
@@ -147,7 +147,7 @@ impl RoomState {
             return;
         }
 
-        if !matches!(weapon.hit_type, HitType::Hitscan | HitType::Projectile) {
+        if !matches!(weapon.hit_type, HitType::Hitscan | HitType::Beam | HitType::Projectile) {
             return;
         }
 
@@ -221,7 +221,16 @@ impl RoomState {
                     weapon.self_recoil_air_multiplier
                 };
 
-            let remaining = current_resource.saturating_sub(weapon.resource_per_shot);
+            let per_shot_drain =
+                if matches!(weapon.resource_model, ResourceModel::Capacity)
+                    && weapon.resource_per_second > 0
+                {
+                    (weapon.resource_per_second as u64 * weapon.attack_interval_ms / 1000)
+                        .max(1) as u32
+                } else {
+                    weapon.resource_per_shot
+                };
+            let remaining = current_resource.saturating_sub(per_shot_drain);
             if remaining == 0 && weapon.discard_on_empty {
                 shooter.snapshot.equipped_weapon_id = "paws".to_string();
                 shooter.snapshot.equipped_weapon_resource = None;
@@ -242,6 +251,7 @@ impl RoomState {
                 &shooter_position,
                 pellet_aim,
                 weapon.range,
+                weapon.pierces_one_way_platforms,
                 dying_this_tick,
             );
 
@@ -367,6 +377,7 @@ impl RoomState {
         shooter_position: &Vector2,
         aim_direction: &Vector2,
         range: f64,
+        pierces_one_way_platforms: bool,
         dying_this_tick: &HashSet<String>,
     ) -> Option<String> {
         self.players
@@ -393,8 +404,27 @@ impl RoomState {
                 let dx = target.snapshot.position.x - closest_point.x;
                 let dy = target.snapshot.position.y - closest_point.y;
                 let distance_sq = dx * dx + dy * dy;
-                (distance_sq <= (PLAYER_HALF_SIZE * PLAYER_HALF_SIZE * 1.5))
-                    .then_some((target_id.clone(), projected))
+                if distance_sq > PLAYER_HALF_SIZE * PLAYER_HALF_SIZE * 1.5 {
+                    return None;
+                }
+
+                // 원웨이 플랫폼 차단 검사 (피어싱 불가 빔만)
+                if !pierces_one_way_platforms && aim_direction.y.abs() > 1e-6 {
+                    let platforms = &crate::game_data::runtime_map_data().one_way_platforms;
+                    for platform in platforms {
+                        let t = (platform.top_y - shooter_position.y) / aim_direction.y;
+                        if t <= 0.0 || t >= projected {
+                            continue;
+                        }
+                        let ix = shooter_position.x + aim_direction.x * t;
+                        if ix >= platform.left_x && ix <= platform.right_x {
+                            // 플랫폼이 슈터와 대상 사이를 가로막음
+                            return None;
+                        }
+                    }
+                }
+
+                Some((target_id.clone(), projected))
             })
             .min_by(|a, b| a.1.total_cmp(&b.1))
             .map(|(target_id, _)| target_id)
@@ -491,6 +521,21 @@ impl RoomState {
             }
         }
     }
+
+    pub(crate) fn tick_grab_effects(&mut self, now_ms: u64) {
+        for player in self.players.values_mut() {
+            if player.snapshot.state != PlayerState::Alive {
+                continue;
+            }
+            let Some(grab) = player.active_grab.as_ref() else {
+                continue;
+            };
+            if now_ms >= grab.expires_at {
+                player.active_grab = None;
+                player.snapshot.effects.retain(|e| e.kind != "grabbed");
+            }
+        }
+    }
 }
 
 pub(crate) fn reset_general_combat_state(
@@ -512,6 +557,7 @@ pub(crate) fn reset_general_combat_state(
     player.next_attack_at = 0;
     player.last_hit_by = None;
     player.active_burn = None;
+    player.active_grab = None;
     player.snapshot.effects.clear();
 }
 

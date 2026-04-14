@@ -1,7 +1,7 @@
 {
   "version": 1,
   "id": "seed_shotgun",
-  "name": "Seed Shotgun",
+  "name": "씨앗 산탄총",
   "hitType": "projectile",
   "fireMode": "single",
   "resourceModel": "magazine",

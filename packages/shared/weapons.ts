@@ -16,7 +16,8 @@ export type WeaponSpecialEffect =
   | { kind: "explode"; fuseMs?: number; radius?: number }
   | { kind: "grab"; grabDurationMs: number }
   | { kind: "heal_block"; durationMs: number }
-  | { kind: "burn"; durationMs: number; tickDamage: number; tickIntervalMs: number };
+  | { kind: "burn"; durationMs: number; tickDamage: number; tickIntervalMs: number }
+  | { kind: "timed_explode"; delayMs: number; radius: number; splashDamage: number };
 
 /**
  * 무기별 허용 조준 각도 범위.
@@ -59,6 +60,8 @@ export interface WeaponDefinition {
   aimProfile?: WeaponAimProfile;
   meleeConeNearHalfWidth?: number;
   meleeConeFarHalfWidth?: number;
+  /** true이면 빔이 원웨이 플랫폼을 통과한다. 생략 또는 false → 플랫폼에 막힘. */
+  piercesOneWayPlatforms?: boolean;
 }
 
 export interface WeaponSpawnPoint {

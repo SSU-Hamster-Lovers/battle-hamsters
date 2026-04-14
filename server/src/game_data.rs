@@ -261,6 +261,9 @@ pub(crate) struct RuntimeWeaponDefinition {
     pub(crate) melee_cone_near_half_width: Option<f64>,
     #[serde(rename = "meleeConeFarHalfWidth")]
     pub(crate) melee_cone_far_half_width: Option<f64>,
+    /// true이면 빔이 원웨이 플랫폼을 통과한다. 기본값 false → 플랫폼에 막힘.
+    #[serde(default)]
+    pub(crate) pierces_one_way_platforms: bool,
 }
 
 #[allow(dead_code)]
@@ -271,8 +274,11 @@ pub(crate) enum RuntimeWeaponSpecialEffect {
     Explode {
         fuse_ms: Option<u64>,
         radius: Option<f64>,
+        #[serde(rename = "splashDamage")]
+        splash_damage: Option<u16>,
     },
     Grab {
+        #[serde(rename = "grabDurationMs")]
         grab_duration_ms: u64,
     },
     HealBlock {
@@ -286,6 +292,23 @@ pub(crate) enum RuntimeWeaponSpecialEffect {
         #[serde(rename = "tickIntervalMs")]
         tick_interval_ms: u64,
     },
+    TimedExplode {
+        #[serde(rename = "delayMs")]
+        delay_ms: u64,
+        radius: f64,
+        #[serde(rename = "splashDamage")]
+        splash_damage: u16,
+    },
+}
+
+impl RuntimeWeaponSpecialEffect {
+    pub(crate) fn splash_damage(&self) -> Option<u16> {
+        if let RuntimeWeaponSpecialEffect::Explode { splash_damage, .. } = self {
+            *splash_damage
+        } else {
+            None
+        }
+    }
 }
 
 pub(crate) fn runtime_map_data() -> &'static RuntimeMapData {
@@ -420,9 +443,20 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
         let paws_raw = include_str!("../../packages/shared/weapons/paws.json");
         let acorn_raw = include_str!("../../packages/shared/weapons/acorn-blaster.json");
         let seed_shotgun_raw = include_str!("../../packages/shared/weapons/seed-shotgun.json");
-        let hand_cannon_raw = include_str!("../../packages/shared/weapons/hand-cannon.json");
+        let walnut_cannon_raw = include_str!("../../packages/shared/weapons/walnut-cannon.json");
         let ember_sprinkler_raw =
             include_str!("../../packages/shared/weapons/ember-sprinkler.json");
+        let pine_sniper_raw = include_str!("../../packages/shared/weapons/pine-sniper.json");
+        let squirrel_gatling_raw =
+            include_str!("../../packages/shared/weapons/squirrel-gatling.json");
+        let blueberry_mortar_raw =
+            include_str!("../../packages/shared/weapons/blueberry-mortar.json");
+        let laser_cutter_raw =
+            include_str!("../../packages/shared/weapons/laser-cutter.json");
+        let grab_spear_raw = include_str!("../../packages/shared/weapons/grab-spear.json");
+        let acorn_sword_raw = include_str!("../../packages/shared/weapons/acorn-sword.json");
+        let hedgehog_spray_raw =
+            include_str!("../../packages/shared/weapons/hedgehog-spray.json");
 
         let paws: RuntimeWeaponDefinition =
             serde_json::from_str(paws_raw).expect("paws JSON should deserialize");
@@ -430,17 +464,46 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
             serde_json::from_str(acorn_raw).expect("acorn blaster JSON should deserialize");
         let seed_shotgun: RuntimeWeaponDefinition =
             serde_json::from_str(seed_shotgun_raw).expect("seed shotgun JSON should deserialize");
-        let hand_cannon: RuntimeWeaponDefinition =
-            serde_json::from_str(hand_cannon_raw).expect("hand cannon JSON should deserialize");
+        let walnut_cannon: RuntimeWeaponDefinition =
+            serde_json::from_str(walnut_cannon_raw).expect("walnut cannon JSON should deserialize");
         let ember_sprinkler: RuntimeWeaponDefinition = serde_json::from_str(ember_sprinkler_raw)
             .expect("ember sprinkler JSON should deserialize");
+        let pine_sniper: RuntimeWeaponDefinition =
+            serde_json::from_str(pine_sniper_raw).expect("pine sniper JSON should deserialize");
+        let squirrel_gatling: RuntimeWeaponDefinition =
+            serde_json::from_str(squirrel_gatling_raw)
+                .expect("squirrel gatling JSON should deserialize");
+        let blueberry_mortar: RuntimeWeaponDefinition =
+            serde_json::from_str(blueberry_mortar_raw)
+                .expect("blueberry mortar JSON should deserialize");
+        let laser_cutter: RuntimeWeaponDefinition =
+            serde_json::from_str(laser_cutter_raw).expect("laser cutter JSON should deserialize");
+        let grab_spear: RuntimeWeaponDefinition =
+            serde_json::from_str(grab_spear_raw).expect("grab spear JSON should deserialize");
+        let acorn_sword: RuntimeWeaponDefinition =
+            serde_json::from_str(acorn_sword_raw).expect("acorn sword JSON should deserialize");
+        let hedgehog_spray: RuntimeWeaponDefinition = serde_json::from_str(hedgehog_spray_raw)
+            .expect("hedgehog spray JSON should deserialize");
+        let pinecone_grenade_raw =
+            include_str!("../../packages/shared/weapons/pinecone-grenade.json");
+        let pinecone_grenade: RuntimeWeaponDefinition =
+            serde_json::from_str(pinecone_grenade_raw)
+                .expect("pinecone grenade JSON should deserialize");
 
         HashMap::from([
             (paws.id.clone(), paws),
             (acorn.id.clone(), acorn),
             (seed_shotgun.id.clone(), seed_shotgun),
-            (hand_cannon.id.clone(), hand_cannon),
+            (walnut_cannon.id.clone(), walnut_cannon),
             (ember_sprinkler.id.clone(), ember_sprinkler),
+            (pine_sniper.id.clone(), pine_sniper),
+            (squirrel_gatling.id.clone(), squirrel_gatling),
+            (blueberry_mortar.id.clone(), blueberry_mortar),
+            (laser_cutter.id.clone(), laser_cutter),
+            (grab_spear.id.clone(), grab_spear),
+            (acorn_sword.id.clone(), acorn_sword),
+            (hedgehog_spray.id.clone(), hedgehog_spray),
+            (pinecone_grenade.id.clone(), pinecone_grenade),
         ])
     })
 }

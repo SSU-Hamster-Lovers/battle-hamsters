@@ -1,0 +1,26 @@
+name: Main PR Source Guard
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, edited]
+
+jobs:
+  main-pr-source:
+    name: main-pr-source
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate source branch
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          case "$HEAD_REF" in
+            develop|hotfix/*)
+              echo "Allowed PR: $HEAD_REF -> $BASE_REF"
+              ;;
+            *)
+              echo "::error::main 브랜치에는 develop 또는 hotfix/* 브랜치에서만 PR 할 수 있습니다. 현재 source branch: $HEAD_REF"
+              exit 1
+              ;;
+          esac
