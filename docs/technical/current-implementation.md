@@ -395,11 +395,14 @@
 - **서버**: `packages/shared/weapons/pinecone-grenade.json`. `hitType: "projectile"`, `fireMode: "single"`, damage 0, projectileSpeed 500, gravity 600, maxResource 2, rarity rare. `specialEffect: { kind: "timed_explode", delayMs: 1500, radius: 120, splashDamage: 55 }`.
 - **서버 신규**: `RuntimeWeaponSpecialEffect::TimedExplode { delay_ms, radius, splash_damage }` variant 추가 (`game_data.rs`).
 - **서버 신규**: `ProjectileRuntime.explode_at: Option<u64>` 필드 추가. 스폰 시 `now_ms + delay_ms`로 설정.
-- **서버 신규**: `step_projectiles`에서 `now_ms >= explode_at` 시 현재 위치에서 `apply_explosion` 호출 후 소멸.
+- **서버 신규**: `step_projectiles`에서 `now_ms >= explode_at` 시 현재 위치에서 `apply_explosion` 호출 후 소멸. 지형/플레이어 직격 시에도 즉시 `TimedExplode` 폭발 처리.
+- **서버 버그 수정**: `apply_explosion`에서 owner 제외 필터 제거 → `walnut_cannon`, `blueberry_mortar`, `pinecone_grenade` 전부 자폭 데미지 적용.
 - **맵**: `training-arena.json` center_platform(x=700, y=340) airdrop 스폰, respawnMs 12000.
 - **공유 타입**: `packages/shared/weapons.ts`에 `timed_explode` variant 추가. `weapon-data.ts`에 `pinecone_grenade` 등록.
 - **클라이언트**: pickup(48×36, 솔방울 + 안전핀 + 퓨즈 스파크) + equip(22×14) + HUD 아이콘. `mortar_arc` 재사용.
-- **단위 테스트**: `pinecone_grenade_explodes_after_delay_and_damages_target`, `pinecone_grenade_consumes_resource_per_shot`. 누적 69개.
+- **클라이언트 VFX**: `resolveWeaponImpactStyle("pinecone_grenade")` → `"explosion_burst"`. `renderProjectiles`에서 `timed_explode` 발사체가 스냅샷에서 사라질 때 마지막 렌더 위치에서 `spawnExplosionBurst` 호출 — 범위 내 아무도 없어도 항상 폭발 VFX 재생.
+- **단위 테스트**: `pinecone_grenade_explodes_after_delay_and_damages_target`, `pinecone_grenade_consumes_resource_per_shot`, `pinecone_grenade_explodes_on_terrain_hit`, `explosion_damages_shooter_self_damage`. 누적 71개.
+- **알려진 한계**: 폭발 VFX 크기/파티클 수가 blueberry_mortar와 동일함. 무기 VFX 일괄 개선 시 차별화 예정.
 
 ## 다음 구현 우선순위
 

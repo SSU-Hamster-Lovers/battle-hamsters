@@ -2839,6 +2839,13 @@ class MainScene extends Phaser.Scene {
 
     for (const [projectileId, rendered] of this.renderedProjectiles) {
       if (!nextIds.has(projectileId)) {
+        const def = weaponDefinitionById[rendered.weaponId];
+        if (def?.specialEffect?.kind === "timed_explode") {
+          this.spawnExplosionBurst({
+            x: rendered.root.x,
+            y: rendered.root.y,
+          });
+        }
         rendered.root.destroy();
         this.renderedProjectiles.delete(projectileId);
       }

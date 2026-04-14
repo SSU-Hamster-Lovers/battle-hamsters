@@ -574,6 +574,10 @@ export function resolveWeaponImpactStyle(weaponId: string): WeaponImpactStyle {
     return "explosion_burst";
   }
 
+  if (weaponId === "pinecone_grenade") {
+    return "explosion_burst";
+  }
+
   return "generic_spark";
 }
 
