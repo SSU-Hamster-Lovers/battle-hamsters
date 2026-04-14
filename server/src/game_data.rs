@@ -299,12 +299,33 @@ pub(crate) enum RuntimeWeaponSpecialEffect {
         #[serde(rename = "splashDamage")]
         splash_damage: u16,
     },
+    Stun {
+        #[serde(rename = "durationMs")]
+        duration_ms: u64,
+    },
+    Airstrike {
+        #[serde(rename = "delayMs")]
+        delay_ms: u64,
+        #[serde(rename = "columnHalfWidth")]
+        column_half_width: f64,
+        #[serde(rename = "splashDamage")]
+        splash_damage: u16,
+        knockback: f64,
+    },
 }
 
 impl RuntimeWeaponSpecialEffect {
     pub(crate) fn splash_damage(&self) -> Option<u16> {
         if let RuntimeWeaponSpecialEffect::Explode { splash_damage, .. } = self {
             *splash_damage
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn stun_duration_ms(&self) -> Option<u64> {
+        if let RuntimeWeaponSpecialEffect::Stun { duration_ms } = self {
+            Some(*duration_ms)
         } else {
             None
         }
@@ -489,6 +510,13 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
         let pinecone_grenade: RuntimeWeaponDefinition =
             serde_json::from_str(pinecone_grenade_raw)
                 .expect("pinecone grenade JSON should deserialize");
+        let stun_acorn_raw = include_str!("../../packages/shared/weapons/stun-acorn.json");
+        let stun_acorn: RuntimeWeaponDefinition =
+            serde_json::from_str(stun_acorn_raw).expect("stun acorn JSON should deserialize");
+        let airstrike_remote_raw =
+            include_str!("../../packages/shared/weapons/airstrike-remote.json");
+        let airstrike_remote: RuntimeWeaponDefinition = serde_json::from_str(airstrike_remote_raw)
+            .expect("airstrike remote JSON should deserialize");
 
         HashMap::from([
             (paws.id.clone(), paws),
@@ -504,6 +532,8 @@ fn runtime_weapon_definitions() -> &'static HashMap<String, RuntimeWeaponDefinit
             (acorn_sword.id.clone(), acorn_sword),
             (hedgehog_spray.id.clone(), hedgehog_spray),
             (pinecone_grenade.id.clone(), pinecone_grenade),
+            (stun_acorn.id.clone(), stun_acorn),
+            (airstrike_remote.id.clone(), airstrike_remote),
         ])
     })
 }

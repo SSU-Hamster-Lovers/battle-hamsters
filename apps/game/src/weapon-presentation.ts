@@ -30,6 +30,10 @@ const HEDGEHOG_SPRAY_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-hedge
 const HEDGEHOG_SPRAY_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-hedgehog-spray`;
 const PINECONE_GRENADE_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-pinecone-grenade`;
 const PINECONE_GRENADE_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-pinecone-grenade`;
+const STUN_ACORN_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-stun-acorn`;
+const STUN_ACORN_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-stun-acorn`;
+const AIRSTRIKE_REMOTE_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-airstrike-remote`;
+const AIRSTRIKE_REMOTE_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-airstrike-remote`;
 
 type WeaponPickupSource = "spawn" | "dropped" | "reward";
 
@@ -59,7 +63,9 @@ export type WeaponFireStyle =
   | "auto_flash"
   | "mortar_arc"
   | "beam_pulse"
-  | "slash_arc";
+  | "slash_arc"
+  | "stun_flash"
+  | "beacon_toss";
 
 export type WeaponImpactStyle =
   | "generic_spark"
@@ -237,6 +243,34 @@ export function ensureWeaponPickupTextures(scene: Phaser.Scene) {
     graphics.generateTexture(PINECONE_GRENADE_EQUIP_TEXTURE_KEY, 22, 14);
     graphics.destroy();
   }
+
+  if (!scene.textures.exists(STUN_ACORN_PICKUP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawStunAcornPickupTexture(graphics);
+    graphics.generateTexture(STUN_ACORN_PICKUP_TEXTURE_KEY, 48, 36);
+    graphics.destroy();
+  }
+
+  if (!scene.textures.exists(STUN_ACORN_EQUIP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawStunAcornEquipTexture(graphics);
+    graphics.generateTexture(STUN_ACORN_EQUIP_TEXTURE_KEY, 28, 12);
+    graphics.destroy();
+  }
+
+  if (!scene.textures.exists(AIRSTRIKE_REMOTE_PICKUP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawAirstrikeRemotePickupTexture(graphics);
+    graphics.generateTexture(AIRSTRIKE_REMOTE_PICKUP_TEXTURE_KEY, 48, 32);
+    graphics.destroy();
+  }
+
+  if (!scene.textures.exists(AIRSTRIKE_REMOTE_EQUIP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawAirstrikeRemoteEquipTexture(graphics);
+    graphics.generateTexture(AIRSTRIKE_REMOTE_EQUIP_TEXTURE_KEY, 30, 10);
+    graphics.destroy();
+  }
 }
 
 export function resolveWeaponPickupPresentation(
@@ -334,6 +368,22 @@ export function resolveWeaponPickupPresentation(
     return {
       textureKey: PINECONE_GRENADE_PICKUP_TEXTURE_KEY,
       code: "PG",
+      showNameLabel: false,
+    };
+  }
+
+  if (weaponId === "stun_acorn") {
+    return {
+      textureKey: STUN_ACORN_PICKUP_TEXTURE_KEY,
+      code: "SA",
+      showNameLabel: false,
+    };
+  }
+
+  if (weaponId === "airstrike_remote") {
+    return {
+      textureKey: AIRSTRIKE_REMOTE_PICKUP_TEXTURE_KEY,
+      code: "AR",
       showNameLabel: false,
     };
   }
@@ -491,6 +541,28 @@ export function resolveWeaponEquipPresentation(
     };
   }
 
+  if (weaponId === "stun_acorn") {
+    return {
+      textureKey: STUN_ACORN_EQUIP_TEXTURE_KEY,
+      offsetX: 8,
+      offsetY: 0,
+      flipWithDirection: true,
+      // 캔버스 28px, 센터 x=14, 총구 x=26 → 12px
+      muzzleFromCenter: 12,
+    };
+  }
+
+  if (weaponId === "airstrike_remote") {
+    return {
+      textureKey: AIRSTRIKE_REMOTE_EQUIP_TEXTURE_KEY,
+      offsetX: 6,
+      offsetY: 1,
+      flipWithDirection: true,
+      // 캔버스 30px, 센터 x=15, 안테나 끝 x=28 → 13px
+      muzzleFromCenter: 13,
+    };
+  }
+
   return {
     textureKey: null,
     offsetX: 0,
@@ -549,6 +621,14 @@ export function resolveWeaponFireStyle(weaponId: string): WeaponFireStyle {
     return "mortar_arc";
   }
 
+  if (weaponId === "stun_acorn") {
+    return "stun_flash";
+  }
+
+  if (weaponId === "airstrike_remote") {
+    return "beacon_toss";
+  }
+
   return "generic_line";
 }
 
@@ -578,6 +658,10 @@ export function resolveWeaponImpactStyle(weaponId: string): WeaponImpactStyle {
     return "explosion_burst";
   }
 
+  if (weaponId === "airstrike_remote") {
+    return "explosion_burst";
+  }
+
   return "generic_spark";
 }
 
@@ -601,6 +685,8 @@ export function ensureWeaponHudTextures(scene: Phaser.Scene) {
     else if (weaponId === "acorn_sword") drawAcornSwordHudIcon(g);
     else if (weaponId === "hedgehog_spray") drawHedgehogSprayHudIcon(g);
     else if (weaponId === "pinecone_grenade") drawPineconeGrenadeHudIcon(g);
+    else if (weaponId === "stun_acorn") drawStunAcornHudIcon(g);
+    else if (weaponId === "airstrike_remote") drawAirstrikeRemoteHudIcon(g);
     else drawFallbackHudIcon(g);
     g.generateTexture(key, HUD_ICON_SIZE, HUD_ICON_SIZE);
     g.destroy();
@@ -1945,4 +2031,146 @@ function drawPineconeGrenadeEquipTexture(graphics: Phaser.GameObjects.Graphics) 
   // 아웃라인
   graphics.lineStyle(1, 0x2d1508, 1);
   graphics.strokeEllipse(9, 8, 16, 20);
+}
+
+// ── 스턴 도토리 (stun_acorn) ──────────────────────────────────────────────
+
+function drawStunAcornHudIcon(g: Phaser.GameObjects.Graphics) {
+  g.clear();
+  // 총신 (노란색 계열)
+  g.fillStyle(0xca8a04, 1);
+  g.fillRoundedRect(4, 10, 16, 4, 1);
+  // 총구
+  g.fillStyle(0x78350f, 1);
+  g.fillRoundedRect(19, 9, 3, 6, 1);
+  // 탄창 (도토리 모양)
+  g.fillStyle(0xd97706, 1);
+  g.fillEllipse(9, 17, 8, 10);
+  // 번개 문양
+  g.fillStyle(0xfef08a, 0.9);
+  g.fillTriangle(8, 11, 11, 11, 9, 14);
+  g.fillTriangle(9, 14, 12, 14, 10, 17);
+  // 아웃라인
+  g.lineStyle(1, 0x451a03, 1);
+  g.strokeRoundedRect(4, 10, 16, 4, 1);
+}
+
+function drawStunAcornPickupTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+  // 총신
+  graphics.fillStyle(0xca8a04, 1);
+  graphics.fillRoundedRect(8, 12, 36, 8, 2);
+  graphics.fillStyle(0xe6b800, 0.4);
+  graphics.fillRoundedRect(8, 12, 36, 3, 1); // 상단 하이라이트
+  // 총구 캡
+  graphics.fillStyle(0x78350f, 1);
+  graphics.fillRoundedRect(43, 11, 5, 10, 1);
+  // 탄창 (도토리)
+  graphics.fillStyle(0xd97706, 1);
+  graphics.fillEllipse(14, 26, 18, 20);
+  // 도토리 뚜껑
+  graphics.fillStyle(0x92400e, 1);
+  graphics.fillRoundedRect(8, 14, 14, 5, 1);
+  // 번개 심볼
+  graphics.fillStyle(0xfef08a, 0.95);
+  graphics.fillTriangle(18, 14, 24, 14, 21, 20);
+  graphics.fillTriangle(21, 20, 27, 20, 24, 26);
+  // 아웃라인
+  graphics.lineStyle(1.5, 0x451a03, 1);
+  graphics.strokeRoundedRect(8, 12, 36, 8, 2);
+  graphics.strokeEllipse(14, 26, 18, 20);
+}
+
+function drawStunAcornEquipTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+  // 총신
+  graphics.fillStyle(0xca8a04, 1);
+  graphics.fillRoundedRect(4, 4, 20, 5, 1);
+  // 총구
+  graphics.fillStyle(0x78350f, 1);
+  graphics.fillRoundedRect(23, 3, 3, 7, 1);
+  // 탄창
+  graphics.fillStyle(0xd97706, 1);
+  graphics.fillEllipse(8, 11, 10, 10);
+  // 번개
+  graphics.fillStyle(0xfef08a, 0.9);
+  graphics.fillTriangle(6, 5, 9, 5, 7, 8);
+  graphics.fillTriangle(7, 8, 10, 8, 8, 11);
+  // 아웃라인
+  graphics.lineStyle(1, 0x451a03, 1);
+  graphics.strokeRoundedRect(4, 4, 20, 5, 1);
+}
+
+// ── 공습 리모컨 (airstrike_remote) ───────────────────────────────────────
+
+function drawAirstrikeRemoteHudIcon(g: Phaser.GameObjects.Graphics) {
+  g.clear();
+  // 리모컨 몸체 (진한 회색)
+  g.fillStyle(0x374151, 1);
+  g.fillRoundedRect(6, 6, 12, 18, 2);
+  // 빨간 버튼
+  g.fillStyle(0xef4444, 1);
+  g.fillCircle(12, 11, 3);
+  g.fillStyle(0xdc2626, 1);
+  g.fillCircle(12, 11, 2);
+  // 안테나
+  g.lineStyle(2, 0x9ca3af, 1);
+  g.lineBetween(12, 6, 14, 0);
+  // 안테나 끝
+  g.fillStyle(0x6b7280, 1);
+  g.fillCircle(14, 0, 1.5);
+  // 그리드 버튼들
+  g.fillStyle(0x6b7280, 1);
+  g.fillRoundedRect(8, 16, 3, 3, 0.5);
+  g.fillRoundedRect(13, 16, 3, 3, 0.5);
+  // 아웃라인
+  g.lineStyle(1, 0x1f2937, 1);
+  g.strokeRoundedRect(6, 6, 12, 18, 2);
+}
+
+function drawAirstrikeRemotePickupTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+  // 리모컨 몸체
+  graphics.fillStyle(0x374151, 1);
+  graphics.fillRoundedRect(10, 4, 20, 28, 3);
+  // 화면 (작은 LCD)
+  graphics.fillStyle(0x1a3a2a, 1);
+  graphics.fillRoundedRect(13, 7, 14, 8, 1);
+  graphics.fillStyle(0x4ade80, 0.5);
+  graphics.fillRoundedRect(14, 8, 12, 2, 0);
+  // 빨간 발사 버튼 (크고 눈에 띄게)
+  graphics.fillStyle(0xef4444, 1);
+  graphics.fillCircle(20, 21, 5);
+  graphics.fillStyle(0xfca5a5, 0.4);
+  graphics.fillCircle(19, 19, 2.5);
+  // 안테나
+  graphics.lineStyle(2.5, 0x9ca3af, 1);
+  graphics.lineBetween(20, 4, 24, -4);
+  graphics.fillStyle(0x6b7280, 1);
+  graphics.fillCircle(24, -4, 2.5);
+  // 작은 보조 버튼들
+  graphics.fillStyle(0x6b7280, 1);
+  graphics.fillRoundedRect(12, 28, 5, 3, 1);
+  graphics.fillRoundedRect(23, 28, 5, 3, 1);
+  // 아웃라인
+  graphics.lineStyle(1.5, 0x111827, 1);
+  graphics.strokeRoundedRect(10, 4, 20, 28, 3);
+}
+
+function drawAirstrikeRemoteEquipTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+  // 리모컨 몸체 (가로 방향 - 손에 쥔 형태)
+  graphics.fillStyle(0x374151, 1);
+  graphics.fillRoundedRect(3, 2, 22, 7, 2);
+  // 빨간 버튼
+  graphics.fillStyle(0xef4444, 1);
+  graphics.fillCircle(8, 5, 2.5);
+  // 안테나 (앞쪽으로 뻗음)
+  graphics.lineStyle(2, 0x9ca3af, 1);
+  graphics.lineBetween(24, 3, 28, 1);
+  graphics.fillStyle(0x6b7280, 1);
+  graphics.fillCircle(28, 1, 1.5);
+  // 아웃라인
+  graphics.lineStyle(1, 0x111827, 1);
+  graphics.strokeRoundedRect(3, 2, 22, 7, 2);
 }
