@@ -61,6 +61,7 @@ impl RoomState {
             server_tick: self.server_tick,
             players: self.player_snapshots(),
             projectiles: self.projectile_snapshots(),
+            world_events: self.world_event_snapshots(),
             weapon_pickups: self.weapon_pickup_snapshots(),
             item_pickups: self.item_pickup_snapshots(),
             time_remaining_ms: self.time_remaining_ms,
@@ -212,8 +213,10 @@ impl RoomState {
         }
 
         self.step_projectiles(now_ms, &mut deaths, &mut dying_this_tick);
+        self.step_world_events(now_ms, &mut deaths, &mut dying_this_tick);
         self.tick_burn_effects(now_ms, &mut deaths, &mut dying_this_tick);
         self.tick_grab_effects(now_ms);
+        self.tick_stun_effects(now_ms);
 
         for (player_id, cause) in deaths {
             // 점수 추적: killer +1 kill, victim +1 death
@@ -269,8 +272,13 @@ pub(crate) fn surface_contains_x(left_x: f64, right_x: f64, x: f64) -> bool {
 pub(crate) fn step_player(player: &mut PlayerRuntime, now_ms: u64) {
     let input = player.latest_input.clone();
     let grabbed = player.active_grab.as_ref().map_or(false, |g| now_ms < g.expires_at);
-    // 그랩 상태이면 수평 이동 및 점프 입력 무시
-    let move_x = if grabbed { 0.0 } else { input.move_ref().x.clamp(-1.0, 1.0) };
+    let stunned = player.active_stun.as_ref().map_or(false, |s| now_ms < s.expires_at);
+    // 그랩 또는 스턴 상태이면 수평 이동 및 점프 입력 무시
+    let move_x = if grabbed || stunned {
+        0.0
+    } else {
+        input.move_ref().x.clamp(-1.0, 1.0)
+    };
     let down_pressed = input.move_ref().y > 0.5;
 
     if input.aim.x.abs() >= 0.12 {
@@ -284,7 +292,7 @@ pub(crate) fn step_player(player: &mut PlayerRuntime, now_ms: u64) {
 
     let on_one_way_platform = is_on_one_way_platform(&player.snapshot);
 
-    if input.jump && !grabbed {
+    if input.jump && !grabbed && !stunned {
         if player.snapshot.grounded && down_pressed && on_one_way_platform {
             // source 플랫폼 ID를 기억해 해당 플랫폼만 무시한다 (전역 무시 제거)
             let source_id = runtime_map_data()

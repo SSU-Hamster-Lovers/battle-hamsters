@@ -17,7 +17,15 @@ export type WeaponSpecialEffect =
   | { kind: "grab"; grabDurationMs: number }
   | { kind: "heal_block"; durationMs: number }
   | { kind: "burn"; durationMs: number; tickDamage: number; tickIntervalMs: number }
-  | { kind: "timed_explode"; delayMs: number; radius: number; splashDamage: number };
+  | { kind: "timed_explode"; delayMs: number; radius: number; splashDamage: number }
+  | { kind: "stun"; durationMs: number }
+  | {
+      kind: "airstrike";
+      delayMs: number;
+      columnHalfWidth: number;
+      splashDamage: number;
+      knockback: number;
+    };
 
 /**
  * 무기별 허용 조준 각도 범위.

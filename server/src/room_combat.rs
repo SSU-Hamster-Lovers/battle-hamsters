@@ -5,7 +5,8 @@ use crate::{
     room_config::RoomGameplayConfig,
     weapon_definition,
     BurnEffect, DeathCause, Direction, HitType, LastHitInfo, PlayerRuntime, PlayerState,
-    ResourceModel, RoomState, StatusEffectSnapshot, Vector2, PLAYER_HALF_SIZE, RESPAWN_DELAY_MS,
+    ResourceModel, RoomState, StatusEffectSnapshot, StunEffect, Vector2, PLAYER_HALF_SIZE,
+    RESPAWN_DELAY_MS,
 };
 
 impl RoomState {
@@ -141,6 +142,12 @@ impl RoomState {
                             tick_damage,
                             tick_interval_ms,
                         );
+                    }
+                } else if let RuntimeWeaponSpecialEffect::Stun { duration_ms } =
+                    weapon.special_effect
+                {
+                    if let Some(target) = self.players.get_mut(&target_id) {
+                        apply_or_refresh_stun(target, now_ms, duration_ms);
                     }
                 }
             }
@@ -318,6 +325,10 @@ impl RoomState {
                         tick_damage,
                         tick_interval_ms,
                     );
+                }
+            } else if let RuntimeWeaponSpecialEffect::Stun { duration_ms } = weapon.special_effect {
+                if let Some(target) = self.players.get_mut(&target_id) {
+                    apply_or_refresh_stun(target, now_ms, duration_ms);
                 }
             }
         }
@@ -536,6 +547,21 @@ impl RoomState {
             }
         }
     }
+
+    pub(crate) fn tick_stun_effects(&mut self, now_ms: u64) {
+        for player in self.players.values_mut() {
+            if player.snapshot.state != PlayerState::Alive {
+                continue;
+            }
+            let Some(stun) = player.active_stun.as_ref() else {
+                continue;
+            };
+            if now_ms >= stun.expires_at {
+                player.active_stun = None;
+                player.snapshot.effects.retain(|e| e.kind != "stun");
+            }
+        }
+    }
 }
 
 pub(crate) fn reset_general_combat_state(
@@ -558,6 +584,7 @@ pub(crate) fn reset_general_combat_state(
     player.last_hit_by = None;
     player.active_burn = None;
     player.active_grab = None;
+    player.active_stun = None;
     player.snapshot.effects.clear();
 }
 
@@ -599,6 +626,24 @@ pub(crate) fn apply_or_refresh_burn(
         kind: "burn",
         killer_id,
         weapon_id,
+        expires_at,
+    });
+}
+
+pub(crate) fn apply_or_refresh_stun(player: &mut PlayerRuntime, now_ms: u64, duration_ms: u64) {
+    let expires_at = now_ms + duration_ms;
+    if let Some(existing) = player.active_stun.as_mut() {
+        existing.expires_at = expires_at;
+        if let Some(effect) = player.snapshot.effects.iter_mut().find(|e| e.kind == "stun") {
+            effect.expires_at = expires_at;
+        }
+        return;
+    }
+    player.active_stun = Some(StunEffect { expires_at });
+    player.snapshot.effects.push(StatusEffectSnapshot {
+        kind: "stun",
+        killer_id: None,
+        weapon_id: String::new(),
         expires_at,
     });
 }

@@ -154,6 +154,15 @@ export interface RoomConfig {
   friendlyFire: boolean;
 }
 
+/** 서버가 예약한 공습(또는 기타 지연 발동형 맵 이벤트) 스냅샷. */
+export type WorldEventSnapshot = {
+  id: number;
+  kind: "airstrike";
+  x: number;
+  columnHalfWidth: number;
+  triggerAtMs: number;
+};
+
 export interface MatchSnapshot {
   version: number;
   roomId: EntityId;
@@ -161,6 +170,7 @@ export interface MatchSnapshot {
   serverTick: number;
   players: PlayerSnapshot[];
   projectiles: ProjectileSnapshot[];
+  worldEvents: WorldEventSnapshot[];
   weaponPickups: WorldWeaponPickup[];
   itemPickups: WorldItemPickup[];
   timeRemainingMs: number;

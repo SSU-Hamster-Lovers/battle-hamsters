@@ -4,7 +4,7 @@
 
 ## 최신 기준
 
-- 기준 브랜치: `feat/weapon-expansion-v3` (develop 위)
+- 기준 브랜치: `feat/weapons-expansion-v4` (develop 위)
 - 마지막 동기화 기준: 2026-04-14
 
 ## 현재 구현된 것
@@ -17,10 +17,13 @@
 - `boundaryPolicy`, `cameraPolicy`, `visualBounds`, `gameplayBounds`, `deathBounds`를 포함한 `MapDefinition` 타입이 정리되었다.
 - `packages/shared/maps/training-arena.json` 공통 테스트 맵 파일과 `trainingArenaMap` export가 있다.
 - `PlayerSnapshot`에는 `kills`, `deaths`, `lastDeathCause`가 포함되어 매치 점수와 최근 사망 원인을 함께 전달한다.
-- `PlayerSnapshot.effects: StatusEffectInstance[]`로 현재 활성 상태이상을 클라이언트에 전달한다. 현재 `kind: "burn"`, `kind: "grabbed"` 2종 구현.
+- `PlayerSnapshot.effects: StatusEffectInstance[]`로 현재 활성 상태이상을 클라이언트에 전달한다. 현재 `kind: "burn"`, `kind: "grabbed"`, `kind: "stun"` 3종 구현.
 - `WeaponDefinition`에 `piercesOneWayPlatforms?: boolean` 선택 필드 추가. 기본 생략(= false)이면 beam 히트스캔이 원웨이 플랫폼에 차단된다.
 - `ProjectileSnapshot` 타입과 `MatchSnapshot.projectiles: ProjectileSnapshot[]` 계약이 추가되었다.
 - `WeaponSpecialEffect`에 `timed_explode` variant 추가: `{ kind: "timed_explode"; delayMs: number; radius: number; splashDamage: number }`.
+- `WeaponSpecialEffect`에 `stun` variant 추가: `{ kind: "stun"; durationMs: number }`.
+- `WeaponSpecialEffect`에 `airstrike` variant 추가: `{ kind: "airstrike"; delayMs: number; columnHalfWidth: number; splashDamage: number; knockback: number }`.
+- `WorldEventSnapshot` 타입 추가(`packages/shared/world.ts`): `{ id, kind: "airstrike", x, columnHalfWidth, triggerAtMs }`. `MatchSnapshot.worldEvents: WorldEventSnapshot[]` 필드 추가.
 
 ### Server
 
@@ -109,7 +112,18 @@
   - 전투/사망 리셋: `server/src/room_combat.rs`
   - room loop / movement orchestration: `server/src/room_runtime.rs`
   - ws/session 처리: `server/src/ws_runtime.rs`
-- pit wall / fall zone / instant kill hazard 판정을 검증하는 단위 테스트가 있다.
+  - WorldEvent (공중 폭격 등 지연 이벤트) 처리: `server/src/room_world_events.rs`
+- Stun 상태이상:
+  - `PlayerRuntime.active_stun: Option<StunEffect>` — 스턴 만료 시각 보관
+  - `tick_stun_effects(now_ms)` — 만료된 스턴 자동 제거
+  - `step_player()`에서 `grabbed || stunned` 체크 — 이동/점프 차단
+  - `room_combat.rs`의 melee/hitscan 히트 경로에 `Stun` 특수효과 처리 추가
+- WorldEvent 시스템:
+  - `WorldEventRuntime { id, kind, trigger_at_ms }` + `WorldEventKind::Airstrike { x, column_half_width, splash_damage, knockback, attacker_id, weapon_id }`
+  - `airstrike` 투사체가 지형/플레이어에 충돌하면 `WorldEventRuntime`을 생성해 지정 delay 후 발동
+  - `step_world_events()` — `trigger_at_ms` 도달 시 `|player.x - event.x| < column_half_width + PLAYER_HALF_SIZE` 범위의 모든 플레이어에 열 피해/넉백 적용 (Y 무관 컬럼 판정)
+  - `world_snapshot.worldEvents`에 미발동 이벤트를 실어 클라이언트에 전달
+- pit wall / fall zone / instant kill hazard 판정을 검증하는 단위 테스트가 있다. (서버 전체 테스트: 78개)
 
 ### Game Client
 
@@ -148,7 +162,7 @@
   - 카드형보다 얇은 `얼굴 + 가로 HP 바 + 생명 pip + 작은 무기/킬 정보` 중심 구조로 정리했다.
   - Free Play에서는 우측 카드가 `최근 공격한 대상 -> 킬 최다 상대` 우선순위로 표시된다.
 - 좌상단에는 큰 제목/room/server tick 대신 작은 `WS/ping` 상태만 표시한다.
-- 무기 아이콘 레지스트리: `getWeaponHudTextureKey(weaponId)` → `RenderTexture` 코드 생성 아이콘 (`paws`, `acorn_blaster`, `ember_sprinkler`, `seed_shotgun`, `walnut_cannon`, `pine_sniper`, `squirrel_gatling`, `blueberry_mortar`, `laser_cutter`, `grab_spear`, `acorn_sword`, `hedgehog_spray`, `pinecone_grenade` 전용 HUD 아이콘; 그 외 자동 fallback)
+- 무기 아이콘 레지스트리: `getWeaponHudTextureKey(weaponId)` → `RenderTexture` 코드 생성 아이콘 (`paws`, `acorn_blaster`, `ember_sprinkler`, `seed_shotgun`, `walnut_cannon`, `pine_sniper`, `squirrel_gatling`, `blueberry_mortar`, `laser_cutter`, `grab_spear`, `acorn_sword`, `hedgehog_spray`, `pinecone_grenade`, `stun_acorn`, `airstrike_remote` 전용 HUD 아이콘; 그 외 자동 fallback)
 - `aimProfile`이 있는 무기에 대해 클라이언트 오버레이 회전 각도를 `[minAimDeg, maxAimDeg]`로 클램프하고, 서버 공격 판정도 같은 범위를 사용한다.
 - 발사 시 로컬 보조용 무기별 연출을 적용한다.
   - `Acorn Blaster`: 총구 화염 + 짧은 tracer
@@ -164,7 +178,12 @@
   - `Acorn Sword`: 넓은 부채꼴 호 섬광 — 3줄기 부채꼴(±22°) + 황금 원점 + 4방향 파편 (`slash_arc`, 90ms 지속)
   - `Hedgehog Spray`: Squirrel Gatling 동일 연속 섬광 재사용 (`auto_flash`)
   - `Pinecone Grenade`: Blueberry Mortar 총구 폭발 + 포물선 조준선 재사용 (`mortar_arc`)
+  - `Stun Acorn`: 노란 트레이서 + muzzle 섬광 + 3개 전기 스파크 선 (`stun_flash`, 100ms)
+  - `Airstrike Remote`: 빨간/핑크 원형 섬광 + 에임 방향 선 (`beacon_toss`, 120ms)
   - 그 외: 기존 선형 fallback
+- 공중 폭격 위험 구역 연출:
+  - `renderWorldEvents(worldEvents)` — 미발동 이벤트마다 반투명 빨간 컬럼 오버레이 + `⚠ X.Xs` 카운트다운 텍스트 표시. 남은 시간에 비례해 알파 증가.
+  - 이벤트 소멸(발동) 감지 시 `spawnAirstrikeVfx(x)` 실행 — 흰 수직 섬광 + `spawnExplosionBurst` 지상 폭발.
 - 피격 연출 1차/2차를 적용한다.
   - `damageEvents` 가 있으면 정확한 `impactPoint` / `impactDirection` 기준으로 작은 파편 파티클을 생성한다.
   - 정확 이벤트가 없을 때는 `hp` 감소와 넉백 방향으로 fallback 파티클을 생성한다.
@@ -295,6 +314,30 @@
 - **클라이언트**: `WeaponFireStyle: "sniper_flash"`. 길고 얇은 흰색 트레이서(500px, 2px 두께) + muzzle 섬광(반지름 5) + 스코프 시안 글린트. 지속 80ms.
 - **단위 테스트 2개 추가**: `pine_sniper_hits_target_in_range`, `pine_sniper_consumes_resource_per_shot`.
 - **맵 스폰**: `training-arena.json` 우측 고지대 right_roof_perch(x=1400, y=373) 고정 스폰. map-rework-v2와 함께 반영.
+
+### 스턴 도토리 (stun_acorn) — feat/weapons-expansion-v4 완료
+
+- **서버**: `packages/shared/weapons/stun-acorn.json` 추가. hitscan, damage 12, knockback 4, attackIntervalMs 900, range 700, maxResource 6, rarity uncommon, `specialEffect: { kind: "stun", durationMs: 1500 }`.
+- **서버**: `RuntimeWeaponSpecialEffect::Stun { duration_ms }` 변형 추가. melee/hitscan 히트 경로에 `apply_or_refresh_stun(player, now_ms, duration_ms)` 호출.
+- **서버**: `PlayerRuntime.active_stun: Option<StunEffect>` 필드 추가. `step_player()`에서 `stunned` 체크로 이동·점프 차단.
+- **공유 타입**: `WeaponSpecialEffect`에 `{ kind: "stun"; durationMs: number }` variant 추가.
+- **공유 타입**: `packages/shared/weapon-data.ts`에 `stun_acorn` 등록.
+- **클라이언트**: `stun_acorn` pickup 스프라이트 (62×32, 청록+금색 도토리 + 전기 스파크) + equip 오버레이 (44×12) + HUD 아이콘 (24×24).
+- **클라이언트**: `WeaponFireStyle: "stun_flash"`. 노란 트레이서(400px, 1.5px) + muzzle 섬광(반지름 4) + 3개 전기 스파크 선(랜덤 방향, 15-25px). 100ms 지속.
+- **단위 테스트 4개 추가**: `stun_acorn_applies_stun_on_hit`, `stun_acorn_suppresses_movement_while_active`, `stun_acorn_suppresses_jump_while_active`, `stun_acorn_expires_after_duration`.
+
+### 공중 폭격 원격기 (airstrike_remote) — feat/weapons-expansion-v4 완료
+
+- **서버**: `packages/shared/weapons/airstrike-remote.json` 추가. projectile, damage 0, knockback 0, projectileSpeed 600, projectileGravityPerSec2 800, maxResource 1, rarity rare, discardOnEmpty true, `specialEffect: { kind: "airstrike", delayMs: 2500, columnHalfWidth: 60, splashDamage: 70, knockback: 25 }`.
+- **서버**: `RuntimeWeaponSpecialEffect::Airstrike { delay_ms, column_half_width, splash_damage, knockback }` 변형 추가.
+- **서버**: `WorldEventRuntime` + `WorldEventKind::Airstrike` + `room_world_events.rs` 신규 모듈 추가. 투사체 지형/플레이어 충돌 시 `spawn_airstrike_event()` 호출 → `trigger_at_ms` 경과 후 컬럼 AoE 적용.
+- **서버**: `world_snapshot.worldEvents: Vec<WorldEventSnapshot>` 필드 추가. 미발동 이벤트를 매 틱 클라이언트로 전달.
+- **공유 타입**: `WeaponSpecialEffect`에 airstrike variant 추가. `WorldEventSnapshot` 타입 + `MatchSnapshot.worldEvents` 필드 추가.
+- **공유 타입**: `packages/shared/weapon-data.ts`에 `airstrike_remote` 등록.
+- **클라이언트**: `airstrike_remote` pickup 스프라이트 (60×30, 검정 리모컨 + 빨간 버튼) + equip 오버레이 (40×12) + HUD 아이콘 (24×24).
+- **클라이언트**: `WeaponFireStyle: "beacon_toss"`. 빨간/핑크 원형 섬광(반지름 10/7) + 에임 방향 선. 120ms 지속.
+- **클라이언트**: `renderWorldEvents()` — 위험 구역 빨간 컬럼 오버레이 + `⚠ X.Xs` 카운트다운. `spawnAirstrikeVfx()` — 발동 시 흰 수직 섬광 + 지상 폭발.
+- **단위 테스트 3개 추가**: `airstrike_remote_creates_world_event_on_terrain`, `airstrike_event_deals_splash_damage_in_column`, `airstrike_event_expires_after_trigger`.
 
 ### 훈련 아레나 맵 리워크 (feat/map-rework-v2 완료)
 
