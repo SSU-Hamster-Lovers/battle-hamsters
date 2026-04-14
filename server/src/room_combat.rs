@@ -5,7 +5,7 @@ use crate::{
     room_config::RoomGameplayConfig,
     weapon_definition,
     BurnEffect, DeathCause, Direction, HitType, LastHitInfo, PlayerRuntime, PlayerState,
-    RoomState, StatusEffectSnapshot, Vector2, PLAYER_HALF_SIZE, RESPAWN_DELAY_MS,
+    ResourceModel, RoomState, StatusEffectSnapshot, Vector2, PLAYER_HALF_SIZE, RESPAWN_DELAY_MS,
 };
 
 impl RoomState {
@@ -147,7 +147,7 @@ impl RoomState {
             return;
         }
 
-        if !matches!(weapon.hit_type, HitType::Hitscan | HitType::Projectile) {
+        if !matches!(weapon.hit_type, HitType::Hitscan | HitType::Beam | HitType::Projectile) {
             return;
         }
 
@@ -221,7 +221,16 @@ impl RoomState {
                     weapon.self_recoil_air_multiplier
                 };
 
-            let remaining = current_resource.saturating_sub(weapon.resource_per_shot);
+            let per_shot_drain =
+                if matches!(weapon.resource_model, ResourceModel::Capacity)
+                    && weapon.resource_per_second > 0
+                {
+                    (weapon.resource_per_second as u64 * weapon.attack_interval_ms / 1000)
+                        .max(1) as u32
+                } else {
+                    weapon.resource_per_shot
+                };
+            let remaining = current_resource.saturating_sub(per_shot_drain);
             if remaining == 0 && weapon.discard_on_empty {
                 shooter.snapshot.equipped_weapon_id = "paws".to_string();
                 shooter.snapshot.equipped_weapon_resource = None;
@@ -491,6 +500,21 @@ impl RoomState {
             }
         }
     }
+
+    pub(crate) fn tick_grab_effects(&mut self, now_ms: u64) {
+        for player in self.players.values_mut() {
+            if player.snapshot.state != PlayerState::Alive {
+                continue;
+            }
+            let Some(grab) = player.active_grab.as_ref() else {
+                continue;
+            };
+            if now_ms >= grab.expires_at {
+                player.active_grab = None;
+                player.snapshot.effects.retain(|e| e.kind != "grabbed");
+            }
+        }
+    }
 }
 
 pub(crate) fn reset_general_combat_state(
@@ -512,6 +536,7 @@ pub(crate) fn reset_general_combat_state(
     player.next_attack_at = 0;
     player.last_hit_by = None;
     player.active_burn = None;
+    player.active_grab = None;
     player.snapshot.effects.clear();
 }
 

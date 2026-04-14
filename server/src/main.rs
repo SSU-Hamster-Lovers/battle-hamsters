@@ -167,6 +167,13 @@ struct BurnEffect {
     tick_interval_ms: u64,
 }
 
+/// 서버 내부 잡기 상태 — 직렬화하지 않음.
+#[derive(Clone)]
+struct GrabEffect {
+    weapon_id: String,
+    expires_at: u64,
+}
+
 #[derive(Clone)]
 struct ProjectileRuntime {
     id: String,
@@ -194,6 +201,7 @@ struct PlayerRuntime {
     attack_was_down: bool,
     last_hit_by: Option<LastHitInfo>,
     active_burn: Option<BurnEffect>,
+    active_grab: Option<GrabEffect>,
     /// 현재 drop-through 중인 source 플랫폼 ID. 이 ID의 플랫폼만 착지 판정에서 제외한다.
     /// 서버 런타임 전용 — 스냅샷에 포함하지 않는다.
     drop_through_platform_id: Option<String>,
@@ -461,6 +469,7 @@ impl RoomState {
                 attack_was_down: false,
                 last_hit_by: None,
                 active_burn: None,
+                active_grab: None,
                 drop_through_platform_id: None,
             },
         );
@@ -943,6 +952,7 @@ mod tests {
             attack_was_down: false,
             last_hit_by: None,
             active_burn: None,
+            active_grab: None,
             drop_through_platform_id: None,
         }
     }
@@ -1107,8 +1117,8 @@ mod tests {
     #[test]
     fn room_starts_with_spawned_weapon_pickup() {
         let room = RoomState::new();
-        // 좌/우 random 후보 각 1개 + 고정 7개(acorn/walnut/ember/seed/pine_sniper/squirrel_gatling/blueberry_mortar) = 9개
-        assert_eq!(room.weapon_pickups.len(), 9);
+        // 좌/우 random 후보 각 1개 + 고정 9개(acorn/walnut/ember/seed/pine_sniper/squirrel_gatling/blueberry_mortar/laser_cutter/grab_spear) = 11개
+        assert_eq!(room.weapon_pickups.len(), 11);
 
         let pickups: Vec<_> = room.weapon_pickups.values().collect();
 
@@ -1357,6 +1367,7 @@ mod tests {
             attack_was_down: true,
             last_hit_by: None,
             active_burn: None,
+            active_grab: None,
             drop_through_platform_id: None,
         };
 
@@ -1393,6 +1404,7 @@ mod tests {
             attack_was_down: false,
             last_hit_by: None,
             active_burn: None,
+            active_grab: None,
             drop_through_platform_id: None,
         };
 
@@ -2625,6 +2637,128 @@ mod tests {
             "blueberry_mortar 폭발 반경 내 대상에게 범위 피해가 적용되어야 함 (hp={}, splash_dmg={})",
             splash_after.snapshot.hp,
             splash_dmg
+        );
+    }
+
+    // laser_cutter: 빔이 사거리 내 대상에게 피해를 줘야 한다.
+    #[test]
+    fn laser_cutter_hits_target_in_range() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "laser_cutter".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(600);
+        shooter.latest_input.sequence = 1;
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        let mut target = test_player(300.0, 300.0);
+        target.snapshot.id = "target".to_string();
+        target.snapshot.name = "target".to_string();
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let target_after = room.players.get("target").unwrap();
+        assert!(
+            target_after.snapshot.hp < 100,
+            "laser_cutter가 사거리 내 대상을 맞혀야 함"
+        );
+    }
+
+    // laser_cutter: 발사 시 capacity가 resource_per_second 기반으로 소모되어야 한다.
+    #[test]
+    fn laser_cutter_drains_capacity_per_tick() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "laser_cutter".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(600);
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        room.players.insert("shooter".to_string(), shooter);
+
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        let shooter_after = room.players.get("shooter").unwrap();
+        let resource_after = shooter_after
+            .snapshot
+            .equipped_weapon_resource
+            .unwrap_or(0);
+        // capacity는 resource_per_second * TICK_INTERVAL_MS / 1000 만큼 소모됨
+        // resource_per_second가 있는 경우, 최초 600에서 일부 소모
+        assert!(
+            resource_after < 600,
+            "laser_cutter 발사 시 capacity가 소모되어야 함 (resource={})",
+            resource_after
+        );
+    }
+
+    // grab_spear: 적중 시 대상에게 grab 상태가 적용되어야 한다.
+    #[test]
+    fn grab_spear_applies_grab_on_hit() {
+        let mut room = RoomState::new();
+
+        let mut shooter = test_player(100.0, 300.0);
+        shooter.snapshot.id = "shooter".to_string();
+        shooter.snapshot.name = "shooter".to_string();
+        shooter.snapshot.direction = Direction::Right;
+        shooter.snapshot.grounded = true;
+        shooter.snapshot.equipped_weapon_id = "grab_spear".to_string();
+        shooter.snapshot.equipped_weapon_resource = Some(3);
+        shooter.latest_input.sequence = 1;
+        shooter.latest_input.aim = Vector2 { x: 1.0, y: 0.0 };
+        shooter.attack_queued = true;
+        shooter.attack_was_down = true;
+
+        let mut target = test_player(200.0, 300.0);
+        target.snapshot.id = "target".to_string();
+        target.snapshot.name = "target".to_string();
+
+        room.players.insert("shooter".to_string(), shooter);
+        room.players.insert("target".to_string(), target);
+
+        // 투사체 발사
+        let mut deaths = Vec::new();
+        let mut dying = std::collections::HashSet::new();
+        room.handle_weapon_attack("shooter", 1000, &mut deaths, &mut dying);
+
+        // 투사체가 대상에 충돌할 때까지 tick
+        for tick in 1..=10 {
+            room.step_projectiles(1000 + tick * 50, &mut deaths, &mut dying);
+            let target = room.players.get("target").unwrap();
+            if target.snapshot.hp < 100 {
+                break;
+            }
+        }
+
+        let target_after = room.players.get("target").unwrap();
+        // grab이 적용되면 effects에 "grabbed" 또는 플레이어에 active_grab이 있어야 함
+        let has_grab_effect = target_after
+            .snapshot
+            .effects
+            .iter()
+            .any(|e| e.kind == "grabbed");
+        assert!(
+            has_grab_effect,
+            "grab_spear 적중 시 대상에게 grab 상태가 적용되어야 함"
         );
     }
 }

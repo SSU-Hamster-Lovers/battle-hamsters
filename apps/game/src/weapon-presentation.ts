@@ -20,6 +20,10 @@ const SQUIRREL_GATLING_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-squ
 const SQUIRREL_GATLING_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-squirrel-gatling`;
 const BLUEBERRY_MORTAR_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-blueberry-mortar`;
 const BLUEBERRY_MORTAR_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-blueberry-mortar`;
+const LASER_CUTTER_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-laser-cutter`;
+const LASER_CUTTER_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-laser-cutter`;
+const GRAB_SPEAR_PICKUP_TEXTURE_KEY = `${WEAPON_PICKUP_TEXTURE_PREFIX}-grab-spear`;
+const GRAB_SPEAR_EQUIP_TEXTURE_KEY = `${WEAPON_EQUIP_TEXTURE_PREFIX}-grab-spear`;
 
 type WeaponPickupSource = "spawn" | "dropped" | "reward";
 
@@ -47,7 +51,8 @@ export type WeaponFireStyle =
   | "cannon_blast"
   | "sniper_flash"
   | "auto_flash"
-  | "mortar_arc";
+  | "mortar_arc"
+  | "beam_pulse";
 
 export type WeaponImpactStyle =
   | "generic_spark"
@@ -155,6 +160,34 @@ export function ensureWeaponPickupTextures(scene: Phaser.Scene) {
     graphics.generateTexture(BLUEBERRY_MORTAR_EQUIP_TEXTURE_KEY, 36, 18);
     graphics.destroy();
   }
+
+  if (!scene.textures.exists(LASER_CUTTER_PICKUP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawLaserCutterPickupTexture(graphics);
+    graphics.generateTexture(LASER_CUTTER_PICKUP_TEXTURE_KEY, 64, 36);
+    graphics.destroy();
+  }
+
+  if (!scene.textures.exists(LASER_CUTTER_EQUIP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawLaserCutterEquipTexture(graphics);
+    graphics.generateTexture(LASER_CUTTER_EQUIP_TEXTURE_KEY, 44, 12);
+    graphics.destroy();
+  }
+
+  if (!scene.textures.exists(GRAB_SPEAR_PICKUP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawGrabSpearPickupTexture(graphics);
+    graphics.generateTexture(GRAB_SPEAR_PICKUP_TEXTURE_KEY, 64, 32);
+    graphics.destroy();
+  }
+
+  if (!scene.textures.exists(GRAB_SPEAR_EQUIP_TEXTURE_KEY)) {
+    const graphics = new Phaser.GameObjects.Graphics(scene);
+    drawGrabSpearEquipTexture(graphics);
+    graphics.generateTexture(GRAB_SPEAR_EQUIP_TEXTURE_KEY, 52, 10);
+    graphics.destroy();
+  }
 }
 
 export function resolveWeaponPickupPresentation(
@@ -212,6 +245,22 @@ export function resolveWeaponPickupPresentation(
     return {
       textureKey: BLUEBERRY_MORTAR_PICKUP_TEXTURE_KEY,
       code: "BM",
+      showNameLabel: false,
+    };
+  }
+
+  if (weaponId === "laser_cutter") {
+    return {
+      textureKey: LASER_CUTTER_PICKUP_TEXTURE_KEY,
+      code: "LC",
+      showNameLabel: false,
+    };
+  }
+
+  if (weaponId === "grab_spear") {
+    return {
+      textureKey: GRAB_SPEAR_PICKUP_TEXTURE_KEY,
+      code: "GS",
       showNameLabel: false,
     };
   }
@@ -314,6 +363,28 @@ export function resolveWeaponEquipPresentation(
     };
   }
 
+  if (weaponId === "laser_cutter") {
+    return {
+      textureKey: LASER_CUTTER_EQUIP_TEXTURE_KEY,
+      offsetX: 14,
+      offsetY: 0,
+      flipWithDirection: true,
+      // 캔버스 44px, 센터 x=22, 총구 x=41 → 19px
+      muzzleFromCenter: 19,
+    };
+  }
+
+  if (weaponId === "grab_spear") {
+    return {
+      textureKey: GRAB_SPEAR_EQUIP_TEXTURE_KEY,
+      offsetX: 16,
+      offsetY: 0,
+      flipWithDirection: true,
+      // 캔버스 52px, 센터 x=26, 창끝 x=50 → 24px
+      muzzleFromCenter: 24,
+    };
+  }
+
   return {
     textureKey: null,
     offsetX: 0,
@@ -354,6 +425,10 @@ export function resolveWeaponFireStyle(weaponId: string): WeaponFireStyle {
 
   if (weaponId === "blueberry_mortar") {
     return "mortar_arc";
+  }
+
+  if (weaponId === "laser_cutter") {
+    return "beam_pulse";
   }
 
   return "generic_line";
@@ -399,6 +474,8 @@ export function ensureWeaponHudTextures(scene: Phaser.Scene) {
     else if (weaponId === "pine_sniper") drawPineSniperHudIcon(g);
     else if (weaponId === "squirrel_gatling") drawSquirrelGatlingHudIcon(g);
     else if (weaponId === "blueberry_mortar") drawBlueberryMortarHudIcon(g);
+    else if (weaponId === "laser_cutter") drawLaserCutterHudIcon(g);
+    else if (weaponId === "grab_spear") drawGrabSpearHudIcon(g);
     else drawFallbackHudIcon(g);
     g.generateTexture(key, HUD_ICON_SIZE, HUD_ICON_SIZE);
     g.destroy();
@@ -1313,4 +1390,167 @@ function drawBlueberryMortarPickupTexture(graphics: Phaser.GameObjects.Graphics)
   // 블루베리 꼭지
   graphics.fillStyle(baseDark, 1);
   graphics.fillRoundedRect(25, -7, 4, 5, 1);
+}
+
+// ── 레이저 커터 (laser_cutter) ──────────────────────────────────────────────
+
+function drawLaserCutterHudIcon(g: Phaser.GameObjects.Graphics) {
+  g.clear();
+  // 바디 (슬림 실버)
+  g.fillStyle(0x94a3b8, 1);
+  g.fillRoundedRect(2, 9, 16, 7, 2);
+  // 바디 음영
+  g.fillStyle(0x64748b, 1);
+  g.fillRoundedRect(2, 13, 16, 3, 2);
+  // 렌즈 하우징
+  g.fillStyle(0x475569, 1);
+  g.fillRoundedRect(17, 10, 5, 5, 1);
+  // 렌즈 글로우 (시안)
+  g.fillStyle(0x22d3ee, 0.95);
+  g.fillCircle(22, 12, 3);
+  g.fillStyle(0xffffff, 0.85);
+  g.fillCircle(22, 12, 1.5);
+  // 아웃라인
+  g.lineStyle(1.5, 0x1e293b, 1);
+  g.strokeRoundedRect(2, 9, 16, 7, 2);
+}
+
+function drawLaserCutterPickupTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+
+  // 바디
+  graphics.fillStyle(0x94a3b8, 1);
+  graphics.fillRoundedRect(6, 10, 44, 16, 5);
+  // 바디 하단 음영
+  graphics.fillStyle(0x64748b, 1);
+  graphics.fillRoundedRect(6, 20, 44, 6, 5);
+  // 바디 구분선 (디테일)
+  graphics.fillStyle(0x475569, 0.6);
+  graphics.fillRect(22, 10, 3, 16);
+  // 아웃라인
+  graphics.lineStyle(2, 0x1e293b, 1);
+  graphics.strokeRoundedRect(6, 10, 44, 16, 5);
+  // 렌즈 하우징
+  graphics.fillStyle(0x334155, 1);
+  graphics.fillRoundedRect(50, 11, 10, 14, 2);
+  graphics.lineStyle(1.5, 0x1e293b, 1);
+  graphics.strokeRoundedRect(50, 11, 10, 14, 2);
+  // 렌즈 (시안 글로우)
+  graphics.fillStyle(0x22d3ee, 0.95);
+  graphics.fillCircle(56, 18, 5);
+  graphics.fillStyle(0x7fefff, 0.85);
+  graphics.fillCircle(55, 17, 2.5);
+  // 렌즈 링
+  graphics.lineStyle(2, 0x0e7490, 1);
+  graphics.strokeCircle(56, 18, 5);
+  // 파워 셀 인디케이터 (작은 파란 점 3개)
+  graphics.fillStyle(0x38bdf8, 1);
+  for (let i = 0; i < 3; i++) {
+    graphics.fillCircle(10 + i * 7, 14, 2);
+  }
+}
+
+function drawLaserCutterEquipTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+  // 슬림 총신
+  graphics.fillStyle(0x94a3b8, 1);
+  graphics.fillRoundedRect(2, 2, 36, 7, 2);
+  // 음영
+  graphics.fillStyle(0x64748b, 1);
+  graphics.fillRoundedRect(2, 6, 36, 3, 2);
+  // 총신 상단 하이라이트
+  graphics.fillStyle(0xcbd5e1, 0.7);
+  graphics.fillRoundedRect(2, 2, 36, 2, 1);
+  // 렌즈 하우징
+  graphics.fillStyle(0x334155, 1);
+  graphics.fillRoundedRect(38, 1, 6, 9, 1);
+  // 렌즈 글로우
+  graphics.fillStyle(0x22d3ee, 1);
+  graphics.fillCircle(41, 5, 3.5);
+  graphics.fillStyle(0xffffff, 0.9);
+  graphics.fillCircle(40, 4, 1.5);
+  // 아웃라인
+  graphics.lineStyle(1.5, 0x1e293b, 1);
+  graphics.strokeRoundedRect(2, 2, 36, 7, 2);
+}
+
+// ── 잡기 창 (grab_spear) ─────────────────────────────────────────────────────
+
+function drawGrabSpearHudIcon(g: Phaser.GameObjects.Graphics) {
+  g.clear();
+  // 창 자루
+  g.fillStyle(0x92400e, 1);
+  g.fillRoundedRect(1, 11, 17, 3, 1);
+  // 창 자루 하이라이트
+  g.fillStyle(0xb45309, 0.7);
+  g.fillRoundedRect(1, 11, 17, 1, 1);
+  // 창끝 바디
+  g.fillStyle(0x94a3b8, 1);
+  g.fillRoundedRect(17, 9, 5, 7, 1);
+  // 갈고리 팁
+  g.fillStyle(0x475569, 1);
+  g.fillTriangle(22, 9, 22, 15, 24, 12);
+  // 갈고리 돌기
+  g.fillStyle(0x64748b, 1);
+  g.fillTriangle(20, 14, 22, 15, 22, 12);
+  // 아웃라인
+  g.lineStyle(1.5, 0x1e293b, 1);
+  g.strokeRoundedRect(17, 9, 5, 7, 1);
+}
+
+function drawGrabSpearPickupTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+
+  // 창 자루
+  graphics.fillStyle(0x92400e, 1);
+  graphics.fillRoundedRect(4, 13, 42, 6, 2);
+  // 하이라이트
+  graphics.fillStyle(0xb45309, 0.6);
+  graphics.fillRoundedRect(4, 13, 42, 2, 2);
+  // 아웃라인
+  graphics.lineStyle(1.5, 0x451a03, 1);
+  graphics.strokeRoundedRect(4, 13, 42, 6, 2);
+  // 창날 바디
+  graphics.fillStyle(0x94a3b8, 1);
+  graphics.fillRoundedRect(44, 8, 12, 16, 2);
+  // 창날 음영
+  graphics.fillStyle(0x64748b, 1);
+  graphics.fillRoundedRect(44, 17, 12, 7, 2);
+  // 갈고리 팁
+  graphics.fillStyle(0x475569, 1);
+  graphics.fillTriangle(56, 8, 56, 24, 62, 16);
+  // 갈고리 돌기
+  graphics.fillStyle(0x64748b, 1);
+  graphics.fillTriangle(52, 20, 56, 24, 56, 17);
+  // 창날 아웃라인
+  graphics.lineStyle(2, 0x1e293b, 1);
+  graphics.strokeRoundedRect(44, 8, 12, 16, 2);
+  // 창끝 빛 반사
+  graphics.fillStyle(0xe2e8f0, 0.7);
+  graphics.fillRoundedRect(45, 9, 3, 8, 1);
+}
+
+function drawGrabSpearEquipTexture(graphics: Phaser.GameObjects.Graphics) {
+  graphics.clear();
+  // 자루
+  graphics.fillStyle(0x92400e, 1);
+  graphics.fillRoundedRect(2, 3, 38, 5, 1);
+  // 하이라이트
+  graphics.fillStyle(0xb45309, 0.6);
+  graphics.fillRoundedRect(2, 3, 38, 1, 1);
+  // 자루 아웃라인
+  graphics.lineStyle(1.5, 0x451a03, 1);
+  graphics.strokeRoundedRect(2, 3, 38, 5, 1);
+  // 창날
+  graphics.fillStyle(0x94a3b8, 1);
+  graphics.fillRoundedRect(39, 1, 9, 9, 1);
+  // 갈고리 팁
+  graphics.fillStyle(0x475569, 1);
+  graphics.fillTriangle(48, 1, 48, 9, 52, 5);
+  // 갈고리 돌기
+  graphics.fillStyle(0x64748b, 1);
+  graphics.fillTriangle(46, 7, 48, 9, 48, 5);
+  // 창날 아웃라인
+  graphics.lineStyle(1.5, 0x1e293b, 1);
+  graphics.strokeRoundedRect(39, 1, 9, 9, 1);
 }

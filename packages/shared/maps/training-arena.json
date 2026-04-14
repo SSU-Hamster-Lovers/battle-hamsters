@@ -310,6 +310,28 @@
       "spawnStyle": "airdrop",
       "despawnStyle": "shrink_pop",
       "mode": "fixed"
+    },
+    {
+      "id": "weapon_highground_left_laser",
+      "weaponId": "laser_cutter",
+      "x": 200,
+      "y": 373,
+      "respawnMs": 10000,
+      "despawnAfterMs": 8000,
+      "spawnStyle": "airdrop",
+      "despawnStyle": "shrink_pop",
+      "mode": "fixed"
+    },
+    {
+      "id": "weapon_bunker_upper_right_grab",
+      "weaponId": "grab_spear",
+      "x": 1310,
+      "y": 473,
+      "respawnMs": 8000,
+      "despawnAfterMs": 8000,
+      "spawnStyle": "fade_in",
+      "despawnStyle": "shrink_pop",
+      "mode": "fixed"
     }
   ],
   "itemSpawns": [
