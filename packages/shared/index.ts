@@ -4,6 +4,8 @@ export * from "./item-data";
 export * from "./items";
 export * from "./map-data";
 export * from "./protocol";
+export * from "./vfx-bundle";
+export * from "./vfx-mappings";
 export * from "./weapon-data";
 export * from "./weapons";
 export * from "./world";
