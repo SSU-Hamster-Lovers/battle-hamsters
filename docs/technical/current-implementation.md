@@ -4,8 +4,8 @@
 
 ## 최신 기준
 
-- 기준 브랜치: `develop` (fix/map-polish-v1 포함)
-- 마지막 동기화 기준: 2026-04-13
+- 기준 브랜치: `feat/weapon-polish-v1` (feat/beam-grab-v1 위)
+- 마지막 동기화 기준: 2026-04-14
 
 ## 현재 구현된 것
 
@@ -17,7 +17,8 @@
 - `boundaryPolicy`, `cameraPolicy`, `visualBounds`, `gameplayBounds`, `deathBounds`를 포함한 `MapDefinition` 타입이 정리되었다.
 - `packages/shared/maps/training-arena.json` 공통 테스트 맵 파일과 `trainingArenaMap` export가 있다.
 - `PlayerSnapshot`에는 `kills`, `deaths`, `lastDeathCause`가 포함되어 매치 점수와 최근 사망 원인을 함께 전달한다.
-- `PlayerSnapshot.effects: StatusEffectInstance[]`로 현재 활성 상태이상을 클라이언트에 전달한다. 현재 `kind: "burn"` 1종만 구현.
+- `PlayerSnapshot.effects: StatusEffectInstance[]`로 현재 활성 상태이상을 클라이언트에 전달한다. 현재 `kind: "burn"`, `kind: "grabbed"` 2종 구현.
+- `WeaponDefinition`에 `piercesOneWayPlatforms?: boolean` 선택 필드 추가. 기본 생략(= false)이면 beam 히트스캔이 원웨이 플랫폼에 차단된다.
 - `ProjectileSnapshot` 타입과 `MatchSnapshot.projectiles: ProjectileSnapshot[]` 계약이 추가되었다.
 
 ### Server
@@ -146,7 +147,7 @@
   - 카드형보다 얇은 `얼굴 + 가로 HP 바 + 생명 pip + 작은 무기/킬 정보` 중심 구조로 정리했다.
   - Free Play에서는 우측 카드가 `최근 공격한 대상 -> 킬 최다 상대` 우선순위로 표시된다.
 - 좌상단에는 큰 제목/room/server tick 대신 작은 `WS/ping` 상태만 표시한다.
-- 무기 아이콘 레지스트리: `getWeaponHudTextureKey(weaponId)` → `RenderTexture` 코드 생성 아이콘 (`paws`, `acorn_blaster`, `ember_sprinkler`, `seed_shotgun`, `walnut_cannon`, `pine_sniper`, `squirrel_gatling`, `blueberry_mortar`, `laser_cutter`, `grab_spear`는 전용 HUD 아이콘; 그 외 자동 fallback)
+- 무기 아이콘 레지스트리: `getWeaponHudTextureKey(weaponId)` → `RenderTexture` 코드 생성 아이콘 (`paws`, `acorn_blaster`, `ember_sprinkler`, `seed_shotgun`, `walnut_cannon`, `pine_sniper`, `squirrel_gatling`, `blueberry_mortar`, `laser_cutter`, `grab_spear` 전용 HUD 아이콘; 그 외 자동 fallback)
 - `aimProfile`이 있는 무기에 대해 클라이언트 오버레이 회전 각도를 `[minAimDeg, maxAimDeg]`로 클램프하고, 서버 공격 판정도 같은 범위를 사용한다.
 - 발사 시 로컬 보조용 무기별 연출을 적용한다.
   - `Acorn Blaster`: 총구 화염 + 짧은 tracer
@@ -155,8 +156,10 @@
   - `Seed Shotgun`: ±22° 범위 5줄기 부채꼴 tracer
   - `Walnut Cannon`: 크고 둥근 총구 화염(반지름 13) + 연기 링 2개
   - `Pine Sniper`: 길고 얇은 흰색 트레이서(500px) + muzzle 섬광(반지름 5) + 스코프 시안 글린트
-  - `Squirrel Gatling`: 짧고 빠른 총구 섬광(반지름 4) + 30px tracer, 50ms 지속 (`auto_flash`)
-  - `Blueberry Mortar`: 크고 둥근 총구 폭발(보라/흰, 반지름 11) + 연기 링, 100ms 지속 (`mortar_arc`)
+  - `Squirrel Gatling`: attack 버튼 유지 중 매 50ms 틱 3레이어 글로우 섬광(황금 외부→밝은 중간→흰색 코어, 랜덤 반지름 4~7) + 50px tracer 지속 렌더링 (`auto_flash`, `sendLatestInput` 틱 기반)
+  - `Blueberry Mortar`: 크고 둥근 총구 폭발(보라/흰, 반지름 11) + 연기 링, 100ms 지속 (`mortar_arc`). 장착 중 에임 방향으로 포물선 점선 조준선(보라 점) + 착탄 예상 원 오버레이 표시. 서버와 동일한 사다리꼴 적분으로 시뮬레이션.
+  - `Laser Cutter`: attack 버튼 유지 중 매 50ms 틱 3중 레이어 시안 빔(800px) 지속 렌더링 (`beam_pulse`, `sendLatestInput` 틱 기반)
+  - `Grab Spear`: 기존 선형 flash (`generic_line`)
   - 그 외: 기존 선형 fallback
 - 피격 연출 1차/2차를 적용한다.
   - `damageEvents` 가 있으면 정확한 `impactPoint` / `impactDirection` 기준으로 작은 파편 파티클을 생성한다.
@@ -299,9 +302,9 @@
 - **클라이언트**: `instant_kill_hazard`를 90° 수직 상향 가시 strip으로 렌더링 (회색 배색).
 - **서버 테스트 갱신**: 스폰 카운트 7, 새 좌표 기준 어설션, 플랫폼 이름 갱신.
 
-### 블루베리 박격포 (blueberry_mortar) — feat/blueberry-mortar-v1 완료
+### 블루베리 박격포 (blueberry_mortar) — feat/blueberry-mortar-v1 → feat/weapon-polish-v1 완료
 
-- **서버**: `packages/shared/weapons/blueberry-mortar.json` 추가. projectile, damage 30, splashDamage 15, knockback 18, attackIntervalMs 1200, maxResource 5, projectileGravityPerSec2 1800, `aimProfile: -80°~-10°` (고각도 발사).
+- **서버**: `packages/shared/weapons/blueberry-mortar.json`. projectile, damage 90, splashDamage 45, knockback 18, attackIntervalMs 1200, maxResource 5, range 2200, projectileSpeed 600, projectileGravityPerSec2 900, `aimProfile: -85°~+5°`.
 - **서버**: `RuntimeWeaponSpecialEffect::Explode`에 `splash_damage: Option<u16>` 추가. `splash_damage()` 메서드 구현.
 - **서버**: `room_projectiles.rs`에 `apply_explosion` 함수 구현. 플레이어 직격 또는 지형 충돌 시 반경 80px 내 모든 적에게 범위 피해 + 거리 비례 넉백.
 - **맵**: `training-arena.json` center_crown(x=800, y=373)에 airdrop 고정 스폰. respawnMs 12000.
@@ -311,18 +314,19 @@
 - **클라이언트**: `WeaponImpactStyle: "explosion_burst"`. 방사형 8개 파편 + 3개 원형 코어 파티클.
 - **단위 테스트 2개 추가**: `blueberry_mortar_direct_hit_applies_direct_and_splash_damage`, `blueberry_mortar_splash_damages_nearby_player`.
 
-### 레이저 커터 + 잡기 창 (laser_cutter, grab_spear) — feat/beam-grab-v1 완료
+### 레이저 커터 + 잡기 창 (laser_cutter, grab_spear) — feat/beam-grab-v1 → feat/weapon-polish-v1 완료
 
-- **레이저 커터 서버**: `packages/shared/weapons/laser-cutter.json` 추가. `hitType: "beam"`, `fireMode: "channel"`, `resourceModel: "capacity"`, damage 3, range 500, attackIntervalMs 50, resourcePerSecond 200, maxResource 600(= 3초 연속 사격), rarity rare.
-- **잡기 창 서버**: `packages/shared/weapons/grab-spear.json` 추가. `hitType: "projectile"`, damage 10, projectileSpeed 650, maxResource 3, `specialEffect: { kind: "grab", grabDurationMs: 1500 }`, rarity uncommon.
-- **서버 beam 구현**: `HitType::Beam`이 `room_combat.rs`에서 Hitscan과 동일한 경로로 처리됨 (channel 연속 공격은 기존 auto-requeue 로직 재사용).
-- **서버 capacity 드레인**: `ResourceModel::Capacity` 시 `resource_per_second * attack_interval_ms / 1000`을 발사 1회당 소모. laser_cutter는 10/발 소모(200×50/1000).
-- **서버 grab 구현**: 투사체 적중 시 `active_grab: Option<GrabEffect>` 설정 + `StatusEffectSnapshot { kind: "grabbed" }` 추가. `tick_grab_effects`에서 `expires_at` 도달 시 자동 해제.
+- **레이저 커터 서버**: `packages/shared/weapons/laser-cutter.json`. `hitType: "beam"`, `fireMode: "channel"`, `resourceModel: "capacity"`, damage 3, range 800, attackIntervalMs 50, resourcePerSecond 200, maxResource 600(= 3초 연속), rarity rare. `specialEffect: burn(1000ms / 2dmg / 500ms 틱)`. `piercesOneWayPlatforms: false`.
+- **잡기 창 서버**: `packages/shared/weapons/grab-spear.json`. `hitType: "projectile"`, damage 15, projectileSpeed 650, maxResource 2, `specialEffect: { kind: "grab", grabDurationMs: 1500 }`, rarity uncommon.
+- **서버 beam 구현**: `HitType::Beam`이 `room_combat.rs`에서 Hitscan과 동일한 경로 처리. channel 연속 공격은 기존 auto-requeue 재사용.
+- **서버 capacity 드레인**: `ResourceModel::Capacity` 시 `resource_per_second * attack_interval_ms / 1000`을 발사 1회당 소모. laser_cutter는 10/발(200×50/1000).
+- **서버 grab 구현**: 투사체 적중 시 `active_grab: Option<GrabEffect>` 설정 + `StatusEffectSnapshot { kind: "grabbed" }` 추가. grab 상태에서 `step_player`가 수평 이동·점프 입력 무시. `tick_grab_effects`에서 만료 시 해제.
+- **서버 beam 원웨이 플랫폼 차단**: `find_hitscan_target`에 `pierces_one_way_platforms` 파라미터 추가. false인 경우 빔 경로와 원웨이 플랫폼 교차 시 차단. laser_cutter 기본값 false.
 - **맵**: laser_cutter — 좌측 고지대(x=200, y=373) airdrop. grab_spear — 우측 벙커 상층(x=1310, y=473) 고정 스폰.
 - **공유 타입**: `packages/shared/weapon-data.ts`에 `laser_cutter`, `grab_spear` 등록.
-- **클라이언트 laser_cutter**: pickup 스프라이트(64×36, 은색 바디 + 시안 렌즈 글로우) + equip 오버레이(44×12) + HUD 아이콘. `WeaponFireStyle: "beam_pulse"`. attack 버튼 누르는 동안 매 50ms 틱마다 3중 레이어 시안 빔(500px) 렌더링.
-- **클라이언트 grab_spear**: pickup 스프라이트(64×32, 갈색 자루 + 은색 창날 + 갈고리 팁) + equip 오버레이(52×10) + HUD 아이콘. 발사 스타일: `generic_line` (표준 선형 flash 재사용).
-- **단위 테스트 3개 추가**: `laser_cutter_hits_target_in_range`, `laser_cutter_drains_capacity_per_tick`, `grab_spear_applies_grab_on_hit`.
+- **클라이언트 laser_cutter**: pickup(64×36, 은색 바디 + 시안 렌즈) + equip(44×12) + HUD 아이콘. `WeaponFireStyle: "beam_pulse"`. `sendLatestInput` 틱마다 3중 레이어 시안 빔(800px) 렌더. 총구 xPull/anchorYOffset 보정.
+- **클라이언트 grab_spear**: pickup(64×32, 갈색 자루 + 은색 창날 + 갈고리 팁) + equip(52×10) + HUD 아이콘. `generic_line` flash.
+- **단위 테스트 6개**: `laser_cutter_hits_target_in_range`, `laser_cutter_drains_capacity_per_tick`, `grab_spear_applies_grab_on_hit`, `laser_cutter_applies_burn_on_hit`, `laser_cutter_blocked_by_one_way_platform`, `grab_effect_freezes_player_movement`.
 
 ### 다람쥐 기관총 (squirrel_gatling) — feat/squirrel-gatling-v1 완료
 
@@ -348,9 +352,22 @@
 - 플레이어 바닥이 source 플랫폼 아래 8px를 넘으면 자동 해제되어 source 플랫폼도 다시 착지 후보가 됨.
 - 세로로 가까운 플랫폼 조합(좌측 벙커 상/하층 등)에서도 두 번째 플랫폼에 정상 착지한다.
 
+### 무기 polish (feat/weapon-polish-v1 완료)
+
+- **레이저 커터 총구 정렬**: 빔 렌더링에서 xPull/anchorYOffset 누락 수정 → 시각-판정 총구 일치.
+- **레이저 커터 Burn**: `specialEffect: burn(1000ms / 2dmg / 500ms 틱)` 추가. range 500→800.
+- **레이저 커터 원웨이 플랫폼 차단**: `piercesOneWayPlatforms: false`. `find_hitscan_target`에 플랫폼 교차 차단 로직 추가.
+- **블루베리 박격포 리밸런싱**: damage 30→90, range 900→2200, speed 420→600, gravity 1800→900, splashRadius 80→140, splashDamage 15→45, aimProfile -85°~+5°.
+- **블루베리 박격포 조준선**: `updateMortarArc()` 추가. 서버 동일 사다리꼴 적분 + 사거리 소진 지점 표시. 보라 점선 + 착탄 예상 원.
+- **다람쥐 기관총 연속 VFX**: `sendLatestInput` 50ms 틱마다 3레이어 글로우 섬광(황금 외부→중간→흰색 코어, 랜덤 반지름 4~7) + 50px tracer 지속 렌더링.
+- **잡기 창 grab CC 구현 완성**: `step_player`에서 `active_grab.is_some()` 검사 → 수평 이동·점프 차단.
+- **잡기 창 리밸런싱**: maxResource 3→2, damage 10→15.
+- **단위 테스트**: `grab_effect_freezes_player_movement`, `laser_cutter_applies_burn_on_hit`, `laser_cutter_blocked_by_one_way_platform` 추가. 누적 63개.
+- **알려진 한계**: 레이저 커터 빔 VFX가 원웨이 플랫폼을 시각적으로 통과함 (서버 판정은 차단됨). 후속 VFX 개선 시 처리 예정.
+
 ## 다음 구현 우선순위
 
-1. 무기 추가 계속 (목표 16~20종) — 현재 10종 구현 (laser_cutter, grab_spear 추가)
+1. 무기 추가 계속 (목표 16~20종) — 현재 10종
 2. 실제 아트 atlas / spritesheet 기반 햄스터 / 무기 / 아이템 교체 (투사체 texture hookup 포함)
 3. `weapon/self` 사망 더미를 실제 래그돌/시체 연출로 확장
 4. `develop` preview / staging 배포 전략 분리
@@ -389,3 +406,5 @@
 - 다람쥐 기관총(squirrel_gatling) 완료 미니 스펙: 후보 스펙은 `docs/technical/mini-spec-weapons-next-candidates.md` 참조
 - 블루베리 박격포(blueberry_mortar) 완료 미니 스펙: 후보 스펙은 `docs/technical/mini-spec-weapons-next-candidates.md` 참조
 - 씨앗 샷건 + 호두 대포 스프라이트 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-weapon-sprites-v2.md`
+- 무기 polish v1 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-weapon-polish-v1.md`
+- 빔/잡기 런타임 완료 미니 스펙: `docs/archive/mini-specs/mini-spec-beam-grab-v1.md`
