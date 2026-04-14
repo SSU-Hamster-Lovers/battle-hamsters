@@ -190,9 +190,13 @@ export const WEAPON_VFX_MAPPINGS: WeaponVFXMapping[] = [
 
 ## 9. 검증 체크리스트
 
-- [ ] `packages/shared` 타입 체크 통과 (`pnpm -F @battle-hamsters/shared typecheck`)
-- [ ] `packages/vfx-runtime` 타입 체크 통과 (`pnpm -F @battle-hamsters/vfx-runtime typecheck`)
-- [ ] `apps/game` 타입 체크 통과 (`pnpm -F @battle-hamsters/game typecheck`)
-- [ ] seed_shotgun 발사 시 `tryBundleFireVFX()` 호출 경로 존재 확인
-- [ ] 번들 파일 없을 때 fallback 절차적 렌더링 정상 동작
-- [ ] `vfx-bundle.ts` 타입이 bh-vfx-gen `frontend/lib/vfx-bundle.ts`와 동일
+- [x] `packages/shared` 타입 체크 통과 — PR #85
+- [x] `packages/vfx-runtime` 타입 체크 통과 — PR #86
+- [x] `apps/game` 타입 체크 통과 — PR #87
+- [x] seed_shotgun 발사 시 `tryBundleFireVFX()` 호출 경로 존재 확인 — `main.ts showAttackFlash()` PR #87
+- [x] 번들 파일 없을 때 fallback 절차적 렌더링 정상 동작 — `loader.get()` undefined 시 tryBundle* false 반환
+- [x] `vfx-bundle.ts` 타입이 bh-vfx-gen `frontend/lib/vfx-bundle.ts`와 동일 — PR #85
+
+**Phase 2 완료** (2026-04-14)  
+실제 시각적 렌더링 확인을 위해서는 bh-vfx-gen에서 생성한 번들을  
+`apps/game/public/bundles/{bundle_id}/` 에 복사 후 게임 실행 필요.
