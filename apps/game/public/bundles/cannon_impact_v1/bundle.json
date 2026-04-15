@@ -1,0 +1,17 @@
+{
+  "id": "cannon_impact_v1",
+  "schemaVersion": 2,
+  "generatedAt": "2026-04-15T07:03:24.723356+00:00",
+  "effects": [
+    {
+      "id": "hit",
+      "type": "animation",
+      "sheet": "vfx/hit_vfx_sheet.png",
+      "frameWidth": 128,
+      "frameHeight": 128,
+      "frameCount": 6,
+      "fps": 16,
+      "loop": false
+    }
+  ]
+}

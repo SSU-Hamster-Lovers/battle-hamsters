@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "vfx_category": "hitscan",
+  "generated_at": "2026-04-15T07:02:41.968207+00:00",
+  "assets": {
+    "muzzle_flash": {
+      "sheet": "vfx/muzzle_flash_sheet.png",
+      "frames": 4,
+      "fps": 16,
+      "frame_width": 128,
+      "frame_height": 128
+    }
+  }
+}

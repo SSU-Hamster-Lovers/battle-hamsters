@@ -45,8 +45,7 @@ export async function initVFXBundleSystem(scene: Phaser.Scene): Promise<void> {
     hasTexturesToLoad = true;
   }
 
-  // Phaser 로더 큐에 항목이 있으면 로딩 완료 후 애니메이션 등록
-  if (hasTexturesToLoad && scene.load.isLoading()) {
+  if (hasTexturesToLoad) {
     await new Promise<void>((resolve) => {
       scene.load.once("complete", () => {
         _registerAnimations(bundleIds);
