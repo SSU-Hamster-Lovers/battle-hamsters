@@ -1,0 +1,17 @@
+{
+  "id": "shotgun_spread_v1",
+  "schemaVersion": 2,
+  "generatedAt": "2026-04-15T07:02:41.968474+00:00",
+  "effects": [
+    {
+      "id": "muzzle",
+      "type": "animation",
+      "sheet": "vfx/muzzle_flash_sheet.png",
+      "frameWidth": 128,
+      "frameHeight": 128,
+      "frameCount": 4,
+      "fps": 16,
+      "loop": false
+    }
+  ]
+}

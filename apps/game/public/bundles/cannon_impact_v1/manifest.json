@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "vfx_category": "projectile",
+  "generated_at": "2026-04-15T07:03:24.723130+00:00",
+  "assets": {
+    "hit_vfx": {
+      "sheet": "vfx/hit_vfx_sheet.png",
+      "frames": 6,
+      "fps": 16,
+      "frame_width": 128,
+      "frame_height": 128
+    }
+  }
+}
