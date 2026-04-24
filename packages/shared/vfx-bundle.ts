@@ -1,9 +1,56 @@
-// VFX Bundle Schema v2
+// VFX Bundle Schema v2 + semantics extension
 // ⚠️  이 파일은 bh-vfx-gen/frontend/lib/vfx-bundle.ts 와 동기화되어야 한다.
-// 마지막 동기화: 2026-04-14
+// 마지막 동기화: 2026-04-24
 // 스키마 변경 시 두 파일을 같은 PR 사이클 내에 수정할 것.
 
 export type VFXType = "sprite" | "animation" | "beam" | "particle" | "trail";
+
+export type PlacementKind = "point" | "segment" | "follow" | "attached";
+export type SemanticAnchor =
+  | "center"
+  | "emission_origin"
+  | "impact_origin"
+  | "projectile_tail"
+  | "weapon_grip"
+  | "swing_origin";
+export type OrientationMode = "none" | "face_forward" | "follow_velocity" | "along_segment";
+export type CompositionKind =
+  | "item_sprite"
+  | "radial_burst"
+  | "directional_burst"
+  | "trail_strip"
+  | "segment_strip"
+  | "arc_sweep";
+export type MotionKind = "static" | "expand_fade" | "pulse" | "backward_scroll" | "arc_swing";
+
+export interface NormalizedPoint {
+  x: number;
+  y: number;
+}
+
+export interface NormalizedRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+export interface EffectSemantics {
+  placement: {
+    kind: PlacementKind;
+    semanticAnchor: SemanticAnchor;
+    pivot?: NormalizedPoint;
+    orientation: OrientationMode;
+  };
+  composition: {
+    kind: CompositionKind;
+    contentBounds?: NormalizedRect;
+    symmetry?: "radial" | "bilateral" | "asymmetric";
+  };
+  animation: {
+    motion: MotionKind;
+  };
+}
 
 // ── 개별 VFX Effect 타입 ──────────────────────────────────────────────
 
@@ -12,6 +59,7 @@ export interface SpriteVFX {
   id: string;
   type: "sprite";
   texture: string;
+  semantics?: EffectSemantics;
 }
 
 /** 프레임 애니메이션 (sprite sheet 기반) */
@@ -24,6 +72,7 @@ export interface AnimationVFX {
   frameCount: number;
   fps: number;
   loop: boolean;
+  semantics?: EffectSemantics;
 }
 
 /** 빔 — 두 점 사이를 잇는 선형 렌더링 */
@@ -34,6 +83,7 @@ export interface BeamVFX {
   start?: string;
   end?: string;
   mode: "stretch" | "tile";
+  semantics?: EffectSemantics;
 }
 
 /**
@@ -48,6 +98,7 @@ export interface ParticleVFX {
   lifetime: number;
   speed: number;
   spread: number;
+  semantics?: EffectSemantics;
 }
 
 /** 트레일 */
@@ -56,6 +107,7 @@ export interface TrailVFX {
   type: "trail";
   texture: string;
   length: number;
+  semantics?: EffectSemantics;
 }
 
 export type VFX = SpriteVFX | AnimationVFX | BeamVFX | ParticleVFX | TrailVFX;

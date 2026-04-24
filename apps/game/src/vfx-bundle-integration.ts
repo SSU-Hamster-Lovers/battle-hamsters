@@ -16,6 +16,11 @@ const BUNDLES_BASE_PATH = "/bundles";
 let _loader: VFXBundleLoader | null = null;
 let _renderer: VFXBundleRenderer | null = null;
 
+type BundleEffectOptions = {
+  flipX?: boolean;
+  showSemanticsDebug?: boolean;
+};
+
 /**
  * VFX Bundle 시스템을 초기화한다.
  * 씬 create() 에서 `void initVFXBundleSystem(this)` 로 호출한다 (fire-and-forget).
@@ -70,24 +75,34 @@ function _registerAnimations(bundleIds: Set<string>): void {
  * 발사(attack) VFX를 번들로 렌더링 시도한다.
  * @returns true = 번들로 처리됨 (절차적 렌더링 스킵), false = fallback 필요
  */
-export function tryBundleFireVFX(weaponId: string, x: number, y: number): boolean {
+export function tryBundleFireVFX(
+  weaponId: string,
+  x: number,
+  y: number,
+  options: BundleEffectOptions = {},
+): boolean {
   if (!_loader || !_renderer) return false;
   const mapping = getWeaponVFXMapping(weaponId);
   if (!mapping?.attackVFX) return false;
   const bundle = _loader.get(mapping.attackVFX);
   if (!bundle || !_renderer.canRender(bundle)) return false;
-  return _renderer.playEffect("muzzle", bundle, x, y);
+  return _renderer.playEffect("muzzle", bundle, x, y, options);
 }
 
 /**
  * 피격(hit) VFX를 번들로 렌더링 시도한다.
  * @returns true = 번들로 처리됨 (절차적 렌더링 스킵), false = fallback 필요
  */
-export function tryBundleHitVFX(weaponId: string, x: number, y: number): boolean {
+export function tryBundleHitVFX(
+  weaponId: string,
+  x: number,
+  y: number,
+  options: BundleEffectOptions = {},
+): boolean {
   if (!_loader || !_renderer) return false;
   const mapping = getWeaponVFXMapping(weaponId);
   if (!mapping?.hitVFX) return false;
   const bundle = _loader.get(mapping.hitVFX);
   if (!bundle || !_renderer.canRender(bundle)) return false;
-  return _renderer.playEffect("hit", bundle, x, y);
+  return _renderer.playEffect("hit", bundle, x, y, options);
 }
