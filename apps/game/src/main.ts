@@ -2345,7 +2345,14 @@ class MainScene extends Phaser.Scene {
     isExact: boolean,
   ) {
     // 번들 기반 hit VFX 우선 시도. 성공하면 절차적 렌더링 스킵.
-    if (weaponId && tryBundleHitVFX(weaponId, impactPoint.x, impactPoint.y)) return;
+    if (
+      weaponId &&
+      tryBundleHitVFX(weaponId, impactPoint.x, impactPoint.y, {
+        showSemanticsDebug: this.debugEnabled,
+      })
+    ) {
+      return;
+    }
 
     const impactStyle = weaponId
       ? resolveWeaponImpactStyle(weaponId)
@@ -3319,7 +3326,14 @@ class MainScene extends Phaser.Scene {
   ) {
     this.attackFlash.clear();
     // 번들 기반 fire VFX 우선 시도. 성공하면 절차적 렌더링 스킵.
-    if (tryBundleFireVFX(weaponId, muzzleX, muzzleY)) return;
+    if (
+      tryBundleFireVFX(weaponId, muzzleX, muzzleY, {
+        flipX: aimX < 0,
+        showSemanticsDebug: this.debugEnabled,
+      })
+    ) {
+      return;
+    }
     const fireStyle = resolveWeaponFireStyle(weaponId);
 
     if (fireStyle === "flame_stream") {

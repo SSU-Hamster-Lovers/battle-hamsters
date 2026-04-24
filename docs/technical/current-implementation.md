@@ -4,8 +4,8 @@
 
 ## 최신 기준
 
-- 기준 브랜치: `feat/weapons-expansion-v4` (develop 위)
-- 마지막 동기화 기준: 2026-04-14
+- 기준 브랜치: `feat/phase3-e2e-verify-sprite-anim` (develop 위)
+- 마지막 동기화 기준: 2026-04-24
 
 ## 현재 구현된 것
 
@@ -181,6 +181,10 @@
   - `Stun Acorn`: 노란 트레이서 + muzzle 섬광 + 3개 전기 스파크 선 (`stun_flash`, 100ms)
   - `Airstrike Remote`: 빨간/핑크 원형 섬광 + 에임 방향 선 (`beacon_toss`, 120ms)
   - 그 외: 기존 선형 fallback
+- `@battle-hamsters/vfx-runtime`는 번들 `effect.semantics.placement.pivot`를 `sprite/animation`의 Phaser `origin`으로 적용한다.
+- 게임 클라이언트는 발사 번들 VFX 재생 시 현재 조준 방향을 `flipX`로 함께 넘겨 `muzzle_flash` 같은 비대칭 이미지를 좌/우 조준에 맞게 반전한다.
+- debug 모드(`?ops=1` + `Alt + Shift + D`)에서는 번들 VFX 위에 semantics overlay를 함께 표시한다.
+- overlay에는 실제 배치점(anchor cross), 최종 image bounds, `contentBounds`, `semanticAnchor/pivot/composition` 라벨이 포함된다.
 - 공중 폭격 위험 구역 연출:
   - `renderWorldEvents(worldEvents)` — 미발동 이벤트마다 반투명 빨간 컬럼 오버레이 + `⚠ X.Xs` 카운트다운 텍스트 표시. 남은 시간에 비례해 알파 증가.
   - 이벤트 소멸(발동) 감지 시 `spawnAirstrikeVfx(x)` 실행 — 흰 수직 섬광 + `spawnExplosionBurst` 지상 폭발.
